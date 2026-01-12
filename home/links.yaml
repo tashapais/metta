@@ -76,6 +76,9 @@ links:
       - name: Usage
         url: https://app.blacksmith.sh/Metta-AI/usage
         short_urls: [bsu]
+  - name: Graphite
+    url: https://app.graphite.com
+    short_urls: [graphite, gt]
   - name: Spacelift
     url: https://metta-ai.app.spacelift.io/launchpad
     short_urls: [sl, spacelift]
