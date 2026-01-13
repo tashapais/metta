@@ -5,9 +5,9 @@ import uuid
 from typing import Any, TypeVar
 
 import httpx
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 
-from metta.app_backend.clients.base_client import NotAuthenticatedError, get_machine_token
+from metta.app_backend.clients.base_client import BaseAppBackendClient, NotAuthenticatedError, get_machine_token
 from metta.app_backend.metta_repo import EvalTaskRow, PolicyVersionWithName
 from metta.app_backend.models.job_request import JobRequest, JobRequestCreate, JobRequestUpdate, JobStatus, JobType
 from metta.app_backend.routes.eval_task_routes import TaskCreateRequest, TaskFilterParams, TasksResponse
@@ -25,7 +25,6 @@ from metta.app_backend.routes.stats_routes import (
     UUIDResponse,
 )
 from metta.common.util.collections import remove_none_values
-from metta.common.util.constants import PROD_STATS_SERVER_URI
 
 logger = logging.getLogger("stats_client")
 
@@ -36,45 +35,12 @@ class WhoAmIResponse(BaseModel):
     user_email: str
 
 
-class StatsClient:
-    """Synchronous wrapper around AsyncStatsClient using httpx sync client."""
-
-    def __init__(self, backend_url: str = PROD_STATS_SERVER_URI, machine_token: str | None = None):
-        self._backend_url = backend_url
-        self._http_client = httpx.Client(
-            base_url=backend_url,
-            timeout=30.0,
-        )
-
-        self.machine_token = machine_token or get_machine_token(backend_url)
-        self._machine_token = self.machine_token
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:
-        self.close()
-
-    def close(self):
-        self._http_client.close()
-
-    def _make_sync_request(self, response_type: type[T], method: str, url: str, **kwargs) -> T:
-        headers = remove_none_values({"X-Auth-Token": self._machine_token})
-        response = self._http_client.request(method, url, headers=headers, **kwargs)
-        response.raise_for_status()
-        return TypeAdapter(response_type).validate_python(response.json())
-
-    def _validate_authenticated(self) -> str:
-        auth_user = self._make_sync_request(WhoAmIResponse, "GET", "/whoami")
-        if auth_user.user_email in ["unknown", None]:
-            raise NotAuthenticatedError(f"Not authenticated. User: {auth_user.user_email}")
-        return auth_user.user_email
-
+class StatsClient(BaseAppBackendClient):
     def create_policy(
         self, name: str, attributes: dict[str, Any] | None = None, is_system_policy: bool = False
     ) -> UUIDResponse:
         data = PolicyCreate(name=name, attributes=attributes or {}, is_system_policy=is_system_policy)
-        return self._make_sync_request(UUIDResponse, "POST", "/stats/policies", json=data.model_dump(mode="json"))
+        return self._make_request(UUIDResponse, "POST", "/stats/policies", json=data.model_dump(mode="json"))
 
     def create_policy_version(
         self,
@@ -87,22 +53,22 @@ class StatsClient:
         data = PolicyVersionCreate(
             git_hash=git_hash, policy_spec=policy_spec, attributes=attributes or {}, s3_path=s3_path
         )
-        return self._make_sync_request(
+        return self._make_request(
             UUIDResponse, "POST", f"/stats/policies/{policy_id}/versions", json=data.model_dump(mode="json")
         )
 
     def get_policy_version(self, policy_version_id: uuid.UUID) -> PolicyVersionWithName:
-        return self._make_sync_request(PolicyVersionWithName, "GET", f"/stats/policies/versions/{policy_version_id}")
+        return self._make_request(PolicyVersionWithName, "GET", f"/stats/policies/versions/{policy_version_id}")
 
     def create_eval_task(self, request: TaskCreateRequest) -> EvalTaskRow:
-        return self._make_sync_request(EvalTaskRow, "POST", "/tasks", json=request.model_dump(mode="json"))
+        return self._make_request(EvalTaskRow, "POST", "/tasks", json=request.model_dump(mode="json"))
 
     def get_all_tasks(self, filters: TaskFilterParams | None = None) -> TasksResponse:
         params = filters.model_dump(mode="json", exclude_none=True) if filters else {}
-        return self._make_sync_request(TasksResponse, "GET", "/tasks/all", params=params)
+        return self._make_request(TasksResponse, "GET", "/tasks/all", params=params)
 
     def sql_query(self, query: str) -> SQLQueryResponse:
-        return self._make_sync_request(SQLQueryResponse, "POST", "/sql/query", json={"query": query})
+        return self._make_request(SQLQueryResponse, "POST", "/sql/query", json={"query": query})
 
     def bulk_upload_episodes(self, duckdb_path: str) -> BulkEpisodeUploadResponse:
         """Upload a DuckDB file containing episode stats using presigned URL approach.
@@ -115,7 +81,7 @@ class StatsClient:
         The backend will then process the file from S3 and write aggregated episodes to the database.
         """
         # Step 1: Get presigned URL
-        presigned_response = self._make_sync_request(
+        presigned_response = self._make_request(
             PresignedUploadUrlResponse, "POST", "/stats/episodes/bulk_upload/presigned-url"
         )
 
@@ -133,7 +99,7 @@ class StatsClient:
         # Step 3: Notify backend to process the uploaded file
 
         completion_request = CompleteBulkUploadRequest(upload_id=presigned_response.upload_id)
-        completion_response = self._make_sync_request(
+        completion_response = self._make_request(
             BulkEpisodeUploadResponse,
             "POST",
             "/stats/episodes/bulk_upload/complete",
@@ -144,12 +110,10 @@ class StatsClient:
 
     def update_policy_version_tags(self, policy_version_id: uuid.UUID, tags: dict[str, str]) -> UUIDResponse:
         """Update tags for a specific policy version in Observatory."""
-        return self._make_sync_request(
-            UUIDResponse, "PUT", f"/stats/policies/versions/{policy_version_id}/tags", json=tags
-        )
+        return self._make_request(UUIDResponse, "PUT", f"/stats/policies/versions/{policy_version_id}/tags", json=tags)
 
     def get_my_policy_versions(self) -> MyPolicyVersionsResponse:
-        return self._make_sync_request(
+        return self._make_request(
             MyPolicyVersionsResponse,
             "GET",
             "/stats/policies/my-versions",
@@ -172,7 +136,7 @@ class StatsClient:
                 "offset": offset,
             }
         )
-        return self._make_sync_request(PolicyVersionsResponse, "GET", "/stats/policy-versions", params=params)
+        return self._make_request(PolicyVersionsResponse, "GET", "/stats/policy-versions", params=params)
 
     def get_versions_for_policy(
         self,
@@ -181,17 +145,15 @@ class StatsClient:
         offset: int = 0,
     ) -> PolicyVersionsResponse:
         params = remove_none_values({"limit": limit, "offset": offset})
-        return self._make_sync_request(
-            PolicyVersionsResponse, "GET", f"/stats/policies/{policy_id}/versions", params=params
-        )
+        return self._make_request(PolicyVersionsResponse, "GET", f"/stats/policies/{policy_id}/versions", params=params)
 
     def query_episodes(self, request: EpisodeQueryRequest) -> EpisodeQueryResponse:
-        return self._make_sync_request(
+        return self._make_request(
             EpisodeQueryResponse, "POST", "/stats/episodes/query", json=request.model_dump(mode="json")
         )
 
     def create_jobs(self, jobs: list[JobRequestCreate]) -> list[uuid.UUID]:
-        return self._make_sync_request(
+        return self._make_request(
             list[uuid.UUID], "POST", "/jobs/batch", json=[j.model_dump(mode="json") for j in jobs]
         )
 

@@ -1,13 +1,13 @@
-from typing import Type, TypeVar
+from typing import Any, Type, TypeVar
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from metta.common.auth.auth_config_reader_writer import observatory_auth_config
 from metta.common.util.collections import remove_none_values
 from metta.common.util.constants import PROD_STATS_SERVER_URI
 
-T = TypeVar("T", bound=BaseModel)
+T = TypeVar("T")
 
 
 class WhoAmIResponse(BaseModel):
@@ -48,6 +48,12 @@ class BaseAppBackendClient:
 
         self._machine_token = machine_token or get_machine_token(backend_url)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:
+        self.close()
+
     def close(self):
         self._http_client.close()
 
@@ -55,7 +61,7 @@ class BaseAppBackendClient:
         headers = remove_none_values({"X-Auth-Token": self._machine_token})
         response = self._http_client.request(method, url, headers=headers, **kwargs)
         response.raise_for_status()
-        return response_type.model_validate(response.json())
+        return TypeAdapter(response_type).validate_python(response.json())
 
     def _validate_authenticated(self) -> str:
         auth_user = self._make_request(WhoAmIResponse, "GET", "/whoami")

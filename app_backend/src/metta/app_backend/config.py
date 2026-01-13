@@ -4,8 +4,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     STATS_DB_URI: str = "postgres://postgres:password@127.0.0.1/postgres"
-    DEBUG_USER_EMAIL: str | None = None
     OBSERVATORY_AUTH_SECRET: str | None = None
+    DEBUG_USER_EMAIL: str | None = None  # if set, you can set machine_token to this value and it will be accepted
     HOST: str = "127.0.0.1"
     PORT: int = 8000
     ANTHROPIC_API_KEY: str | None = None

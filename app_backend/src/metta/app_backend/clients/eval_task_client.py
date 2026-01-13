@@ -1,7 +1,3 @@
-from typing import TypeVar
-
-from pydantic import BaseModel
-
 from metta.app_backend.clients.base_client import BaseAppBackendClient
 from metta.app_backend.metta_repo import EvalTaskRow
 from metta.app_backend.routes.eval_task_routes import (
@@ -16,8 +12,6 @@ from metta.app_backend.routes.eval_task_routes import (
     TaskIdResponse,
     TasksResponse,
 )
-
-T = TypeVar("T", bound=BaseModel)
 
 
 class EvalTaskClient(BaseAppBackendClient):
