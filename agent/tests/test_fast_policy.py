@@ -34,7 +34,7 @@ def test_fast_policy_initialize_sets_action_metadata():
 
     # Initialization returns a list containing the observation shim log (may be None)
     assert isinstance(logs, list)
-    assert policy.action_probs.num_actions == len(policy_env_info.actions.actions())
+    assert policy.action_probs.num_actions == len(policy_env_info.action_names)
 
 
 def test_fast_policy_forward_produces_actions_and_values():

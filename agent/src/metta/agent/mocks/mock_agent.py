@@ -107,7 +107,7 @@ class MockAgent(Policy):
         self.training = is_training
 
         # Action configuration
-        self.action_names = list([action.name for action in policy_env_info.actions.actions()])
+        self.action_names = list(policy_env_info.action_names)
 
         features = policy_env_info.obs_features
         self.feature_id_to_name = {feat.id: feat.name for feat in features}

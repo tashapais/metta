@@ -136,7 +136,6 @@ class Policy(MultiAgentPolicy, nn.Module):
     def __init__(self, policy_env_info: PolicyEnvInterface):
         MultiAgentPolicy.__init__(self, policy_env_info)
         nn.Module.__init__(self)
-        self._actions_by_id = self._policy_env_info.actions.actions()
         self._stateful_impl = self.make_stateful_policy_impl()
 
     @abstractmethod
@@ -209,7 +208,7 @@ class Policy(MultiAgentPolicy, nn.Module):
         self(td)
         new_state = self.dump_agent_state()
         action_idx = int(td["actions"][0].item())
-        return self._actions_by_id[action_idx], new_state
+        return Action(name=self._policy_env_info.action_names[action_idx]), new_state
 
     def _obs_to_td(self, obs: AgentObservation, device: torch.device, agent_id: int | None = None) -> TensorDict:
         obs_tensor = obs_to_obs_tensor(obs, self._policy_env_info.observation_space.shape, device)

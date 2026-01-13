@@ -5,7 +5,6 @@ from tensordict import TensorDict
 
 from metta.agent.policy import Policy
 from mettagrid.config.id_map import ObservationFeatureSpec
-from mettagrid.config.mettagrid_config import ActionsConfig
 from mettagrid.policy.policy import AgentPolicy, MultiAgentPolicy
 from mettagrid.policy.policy_env_interface import PolicyEnvInterface
 from mettagrid.simulator import Action, AgentObservation, ObservationToken
@@ -14,7 +13,7 @@ from mettagrid.simulator import Action, AgentObservation, ObservationToken
 class SimplePolicy(Policy):
     """Minimal concrete policy for testing."""
 
-    def __init__(self, actions: ActionsConfig, policy_env_info: PolicyEnvInterface | None = None):
+    def __init__(self, policy_env_info: PolicyEnvInterface | None = None):
         if policy_env_info is None:
             # Create a minimal PolicyEnvInterface for testing
             from mettagrid.config.mettagrid_config import MettaGridConfig
@@ -44,11 +43,10 @@ def test_policy_inherits_from_multi_agent_policy():
 
 def test_policy_implements_network_method():
     """Verify Policy implements network() method that returns self."""
-    actions = ActionsConfig()
     from mettagrid.config.mettagrid_config import MettaGridConfig
 
     policy_env_info = PolicyEnvInterface.from_mg_cfg(MettaGridConfig())
-    policy = SimplePolicy(actions, policy_env_info)
+    policy = SimplePolicy(policy_env_info)
 
     network = policy.network()
     assert network is policy
@@ -57,11 +55,10 @@ def test_policy_implements_network_method():
 
 def test_policy_implements_agent_policy_method():
     """Verify Policy implements agent_policy() method."""
-    actions = ActionsConfig()
     from mettagrid.config.mettagrid_config import MettaGridConfig
 
     policy_env_info = PolicyEnvInterface.from_mg_cfg(MettaGridConfig())
-    policy = SimplePolicy(actions, policy_env_info)
+    policy = SimplePolicy(policy_env_info)
 
     agent_policy = policy.agent_policy(agent_id=0)
     assert isinstance(agent_policy, AgentPolicy)
@@ -69,11 +66,10 @@ def test_policy_implements_agent_policy_method():
 
 def test_agent_policy_adapter_step():
     """Verify the AgentPolicy adapter can step."""
-    actions = ActionsConfig()
     from mettagrid.config.mettagrid_config import MettaGridConfig
 
     policy_env_info = PolicyEnvInterface.from_mg_cfg(MettaGridConfig())
-    policy = SimplePolicy(actions, policy_env_info)
+    policy = SimplePolicy(policy_env_info)
     agent_policy = policy.agent_policy(agent_id=0)
 
     # Create a simple observation (single agent, token-based)
@@ -89,29 +85,14 @@ def test_agent_policy_adapter_step():
 
 def test_agent_policy_adapter_reset():
     """Verify the AgentPolicy adapter can reset."""
-    actions = ActionsConfig()
     from mettagrid.config.mettagrid_config import MettaGridConfig
 
     policy_env_info = PolicyEnvInterface.from_mg_cfg(MettaGridConfig())
-    policy = SimplePolicy(actions, policy_env_info)
+    policy = SimplePolicy(policy_env_info)
     agent_policy = policy.agent_policy(agent_id=0)
 
     # Should not raise
     agent_policy.reset()
-
-
-def test_policy_has_actions_config():
-    """Verify Policy stores ActionsConfig."""
-    actions = ActionsConfig()
-    from mettagrid.config.mettagrid_config import MettaGridConfig
-
-    mg_cfg = MettaGridConfig()
-    mg_cfg.game.actions = actions
-    policy_env_info = PolicyEnvInterface.from_mg_cfg(mg_cfg)
-    policy = SimplePolicy(actions, policy_env_info)
-
-    assert policy._actions is policy_env_info.actions
-    assert policy._actions is actions
 
 
 def test_policy_load_save_delegates_to_network():
@@ -119,11 +100,10 @@ def test_policy_load_save_delegates_to_network():
     import tempfile
     from pathlib import Path
 
-    actions = ActionsConfig()
     from mettagrid.config.mettagrid_config import MettaGridConfig
 
     policy_env_info = PolicyEnvInterface.from_mg_cfg(MettaGridConfig())
-    policy = SimplePolicy(actions, policy_env_info)
+    policy = SimplePolicy(policy_env_info)
 
     # Save
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -131,7 +111,7 @@ def test_policy_load_save_delegates_to_network():
         policy.save_policy_data(str(path))
 
         # Load into new policy
-        new_policy = SimplePolicy(actions, policy_env_info)
+        new_policy = SimplePolicy(policy_env_info)
         new_policy.load_policy_data(str(path))
 
         # Verify weights match

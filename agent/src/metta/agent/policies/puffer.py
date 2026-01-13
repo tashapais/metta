@@ -105,7 +105,7 @@ class PufferPolicy(Policy):
         max_vec = max_vec[None, :, None, None]
         self.policy.register_buffer("max_vec", max_vec)
 
-        self.total_actions = len(policy_env_info.actions.actions())
+        self.total_actions = len(policy_env_info.action_names)
         self.policy.actor = pufferlib.pytorch.layer_init(nn.Linear(hidden_size, self.total_actions), std=0.01)
         self.policy.value = pufferlib.pytorch.layer_init(nn.Linear(hidden_size, 1), std=1)
         self.gtd_aux = pufferlib.pytorch.layer_init(_OptionalLoadLinear(hidden_size, 1), std=1)
@@ -263,7 +263,7 @@ class PufferPolicy(Policy):
 
     @property
     def action_names(self) -> list[str]:
-        return [action.name for action in self.policy_env_info.actions.actions()]
+        return list(self.policy_env_info.action_names)
 
     @property
     def observation_space(self):
