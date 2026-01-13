@@ -93,9 +93,7 @@ class JsToolchainSetup(SetupModule):
             self.run_command(["corepack", "enable"], capture_output=False)
 
         info("Running pnpm setup...")
-        result = self.run_command(["pnpm", "setup"], capture_output=True, check=False)
-        if result.returncode != 0:
-            warning("pnpm setup returned non-zero (profile may already be configured)")
+        self.run_command(["pnpm", "setup"], capture_output=False, check=False)
 
         if not shutil.which("turbo"):
             info("Installing turbo globally...")
