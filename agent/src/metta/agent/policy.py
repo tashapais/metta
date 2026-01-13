@@ -265,6 +265,9 @@ class CheckpointPolicy(Policy):
     def forward(self, td: TensorDict, action: Optional[torch.Tensor] = None) -> TensorDict:
         return self._policy.forward(td, action=action)
 
+    def get_agent_experience_spec(self) -> Composite:
+        return self._policy.get_agent_experience_spec()
+
     @property
     def device(self) -> torch.device:
         return self._policy.device
