@@ -8,6 +8,7 @@ resources
 .envrc
 .env
 .env.*
+.cache/
 .vscode/PythonImportHelper-v2-Completion.json
 .idea/
 .task
@@ -24,6 +25,9 @@ resources
 coverage.xml
 htmlcov/
 .venv/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
 coverage-reports/
 test-results/
 
@@ -41,8 +45,6 @@ build-coverage/
 # Bazel build artifacts
 **/bazel-*
 **/.bazel_output/
-**/bazel-mettagrid/*
-**/.bazel_output/*
 
 # Node.js / Frontend
 node_modules/
@@ -52,11 +54,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 .turbo/
-
-# Project-specific build outputs
-/mettagrid/dist/
-/mettascope/dist/
-/observatory/dist/
 
 # Project directories
 /checkpoints/
@@ -71,6 +68,7 @@ agent/src/metta/ops/
 tmp/
 
 # Test and benchmark
+.benchmarks/
 test_data/
 **/*benchmark_results.json
 .testmondata*
@@ -97,19 +95,11 @@ sweep_id
 
 # Notebooks
 notebooks/.ipynb_checkpoints
-notebooks/utils/eval_finder_widget/eval_finder_widget/static/index.js
-notebooks/utils/scorecard_widget/scorecard_widget/static/index.js
+notebooks/utils/*_widget/*_widget/static/
 recipes/experiment/scratchpad/
 !recipes/experiment/scratchpad/README.md
 !recipes/experiment/scratchpad/template.py
 !recipes/experiment/scratchpad/__init__.py
-packages/cogames/experiments
-
-resources
-LUNARVIM_CHEATSHEET.md
-metta/sweep/experiments/README.md
-metta/sweep/experiments/README_*.md
-identified-figures/
 
 # Cursor MCP configuration (may contain credentials)
 .cursor-mcp/
@@ -144,7 +134,6 @@ packages/cogames/src/cogames/policy/nim_agents/bindings/generated
 # Uncategorized
 .terraform*
 terraform.tfstate
-.cache/torch_ext/
 
 # Python import analysis
 tools/dev/python_imports/*.json
