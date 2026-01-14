@@ -14,6 +14,11 @@ Emit OpenTelemetry metrics on job state transitions. Only modify `job_routes.py`
 - Attributes: `stage` (pending | dispatched | running), `job_type`
 - Record duration spent in the stage that just ended
 
+**`job.running_count`** (Gauge)
+
+- Attributes: `job_type`
+- Record the current count of running jobs on each status change
+
 ## Emit Points
 
 | Endpoint          | Transition           | Duration to record  |
@@ -21,6 +26,7 @@ Emit OpenTelemetry metrics on job state transitions. Only modify `job_routes.py`
 | create_jobs_batch | pending → dispatched | now - created_at    |
 | create_jobs_batch | pending → failed     | now - created_at    |
 | update_job        | dispatched → running | now - dispatched_at |
+| update_job        | dispatched → failed  | now - dispatched_at |
 | update_job        | running → completed  | now - running_at    |
 | update_job        | running → failed     | now - running_at    |
 
