@@ -119,7 +119,7 @@ skypilot = "devops.skypilot.launch:cli_entry"
 skypilot-sandbox = "devops.skypilot.sandbox:cli_entry"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "recipes/tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 python_classes = ["Test*"]
