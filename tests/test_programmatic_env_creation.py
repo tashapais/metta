@@ -113,9 +113,9 @@ class TestProgrammaticEnvironments:
                     ),
                     inventory=InventoryConfig(
                         limits={
-                            "heart": ResourceLimitsConfig(limit=255, resources=["heart"]),
-                            "ore_red": ResourceLimitsConfig(limit=10, resources=["ore_red"]),
-                            "battery_red": ResourceLimitsConfig(limit=5, resources=["battery_red"]),
+                            "heart": ResourceLimitsConfig(min=255, resources=["heart"]),
+                            "ore_red": ResourceLimitsConfig(min=10, resources=["ore_red"]),
+                            "battery_red": ResourceLimitsConfig(min=5, resources=["battery_red"]),
                         },
                     ),
                 ),

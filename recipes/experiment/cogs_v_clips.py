@@ -287,8 +287,8 @@ def make_curriculum(
             if dr_misc:
                 mission_tasks.add_bucket("game.agent.inventory_regen_amounts.energy", [0, 1, 2])
                 mission_tasks.add_bucket("game.actions.move.consumed_resources.energy", [1, 2, 3])
-                mission_tasks.add_bucket("game.agent.resource_limits.cargo.limit", [25, 50, 100])
-                mission_tasks.add_bucket("game.agent.resource_limits.energy.limit", [50, 75, 100])
+                mission_tasks.add_bucket("game.agent.resource_limits.cargo.min", [25, 50, 100])
+                mission_tasks.add_bucket("game.agent.resource_limits.energy.min", [50, 75, 100])
                 mission_tasks.add_bucket("game.clipper.clip_period", [0, 25, 50])
                 mission_tasks.add_bucket("game.inventory_regen_interval", [0, 1, 2])
             all_mission_tasks.append(mission_tasks)
