@@ -48,7 +48,7 @@ env:
 jobs:
   echo-run-id:
     name: Echo run_id
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id != '' }}
     steps:
       - name: Echo run_id
@@ -62,7 +62,7 @@ jobs:
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       should_skip: ${{ steps.graphite_ci.outputs.skip || 'false' }}
     steps:
@@ -91,7 +91,7 @@ jobs:
        github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch' ||
        github.event_name == 'merge_group')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       has_relevant_changes: ${{ steps.check_py_files.outputs.has_relevant_changes }}
       app_backend_has_changes: ${{ steps.check_app_backend_files.outputs.has_relevant_changes }}
@@ -152,7 +152,7 @@ jobs:
     needs: [graphite-ci-optimizer, setup-checks]
     if: |
       (needs.graphite-ci-optimizer.outputs.should_skip == 'false')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -237,7 +237,7 @@ jobs:
     if: |
       (needs.graphite-ci-optimizer.outputs.should_skip == 'false') &&
       (needs.setup-checks.outputs.run_test == 'true')
-    runs-on: ubuntu-8core
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -320,7 +320,7 @@ jobs:
     name: "Tests"
     needs: [python-tests, cpp-tests, recipe-tests]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Check unit tests did not fail
         uses: actions/github-script@v7
