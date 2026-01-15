@@ -33,6 +33,10 @@ class TeacherConfig(Config):
     # Match mainline BC defaults: start at 20% teacher-led, anneal to 0.
     teacher_led_proportion: float = Field(default=0.2, ge=0.0, le=1.0)
     student_led_proportion: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Optional step to begin annealing proportions; defaults to 0 when unset.
+    anneal_start_step: int | None = Field(default=None, ge=0)
+    # Optional step to enable PPO training; rollout gating still avoids double-store with teacher phases.
+    ppo_begin_step: int | None = Field(default=None, ge=0)
     # Optional per-mode overrides applied to the selected teacher loss config.
     #
     # Example CLI usage:
@@ -72,6 +76,7 @@ def apply_teacher_phase(
         return
 
     total_steps = teacher_cfg.steps or default_steps
+    anneal_start_step = 0 if teacher_cfg.anneal_start_step is None else int(teacher_cfg.anneal_start_step)
     losses = trainer_cfg.losses
     loss_cfg = _select_teacher_loss_cfg(losses=losses, mode=teacher_cfg.mode)
     if loss_cfg is not None:
@@ -96,8 +101,23 @@ def apply_teacher_phase(
                     LossRunGate(loss_instance_name="quantile_ppo_critic", phase="rollout", begin_at_step=total_steps)
                 )
 
+    def _gate_ppo_train_from_step(begin_at_step: int) -> None:
+        for loss_name in ("ppo_actor", "ppo_critic"):
+            scheduler_run_gates.append(
+                LossRunGate(loss_instance_name=loss_name, phase="train", begin_at_step=begin_at_step)
+            )
+        if trainer_cfg.losses.quantile_ppo_critic.enabled:
+            scheduler_run_gates.append(
+                LossRunGate(loss_instance_name="quantile_ppo_critic", phase="train", begin_at_step=begin_at_step)
+            )
+
+    def _gate_ppo_after_teacher() -> None:
+        if teacher_cfg.ppo_begin_step is not None:
+            _gate_ppo_train_from_step(int(teacher_cfg.ppo_begin_step))
+        _gate_critic_after_teacher()
+
     def _anneal(loss_name: str, attr_path: str, start_value: float) -> None:
-        if total_steps and start_value > 0.0:
+        if total_steps and start_value > 0.0 and anneal_start_step < total_steps:
             scheduler_rules.append(
                 ScheduleRule(
                     target_path=f"losses.{loss_name}.{attr_path}",
@@ -105,7 +125,7 @@ def apply_teacher_phase(
                     style="linear",
                     start_value=start_value,
                     end_value=0.0,
-                    start_agent_step=0,
+                    start_agent_step=anneal_start_step,
                     end_agent_step=total_steps,
                 )
             )
@@ -121,7 +141,7 @@ def apply_teacher_phase(
         slicer.student_led_proportion = teacher_cfg.student_led_proportion
 
         _gate_loss("sliced_scripted_cloner")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         _anneal(
             "sliced_scripted_cloner", attr_path="teacher_led_proportion", start_value=teacher_cfg.teacher_led_proportion
         )
@@ -140,7 +160,7 @@ def apply_teacher_phase(
         slicer.student_led_proportion = teacher_cfg.student_led_proportion
 
         _gate_loss("sliced_scripted_cloner")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         losses.ppo_critic.vf_coef = 0.0
         losses.ppo_actor.enabled = False
         _anneal(
@@ -157,13 +177,16 @@ def apply_teacher_phase(
         supervisor.enabled = True
         supervisor.teacher_led_proportion = teacher_cfg.teacher_led_proportion
 
-        # Legacy BC behavior: stay in pure-supervisor mode for the whole run.
-        # Do not gate off the supervisor or re-enable PPO later.
-        losses.ppo_actor.enabled = False
-        losses.ppo_critic.enabled = False
-        losses.quantile_ppo_critic.enabled = False
-        scheduler_run_gates.clear()
-        scheduler_rules.clear()
+        _gate_loss("supervisor")
+        _gate_ppo_after_teacher()
+        _anneal("supervisor", attr_path="action_loss_coef", start_value=supervisor.action_loss_coef)
+        _anneal(
+            "supervisor",
+            attr_path="teacher_led_proportion",
+            start_value=supervisor.teacher_led_proportion,
+        )
+        if supervisor.add_action_loss_to_rewards:
+            _anneal("supervisor", attr_path="action_reward_coef", start_value=supervisor.action_reward_coef)
 
     elif teacher_cfg.mode == "sliced_kickstarter":
         _require_policy_uri(teacher_cfg)
@@ -174,7 +197,7 @@ def apply_teacher_phase(
         sliced_kick.student_led_proportion = teacher_cfg.student_led_proportion
 
         _gate_loss("sliced_kickstarter")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         _anneal(
             "sliced_kickstarter", attr_path="teacher_led_proportion", start_value=teacher_cfg.teacher_led_proportion
         )
@@ -191,7 +214,7 @@ def apply_teacher_phase(
         eer_kick.teacher_uri = teacher_cfg.policy_uri
 
         _gate_loss("eer_kickstarter")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         if total_steps:
             scheduler_rules.append(
                 ScheduleRule(
@@ -234,7 +257,7 @@ def apply_teacher_phase(
         ks.teacher_led_proportion = teacher_cfg.teacher_led_proportion
 
         _gate_loss("kickstarter")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         _anneal("kickstarter", attr_path="teacher_led_proportion", start_value=teacher_cfg.teacher_led_proportion)
         if total_steps:
             scheduler_rules.append(
@@ -268,7 +291,7 @@ def apply_teacher_phase(
         logit.teacher_led_proportion = teacher_cfg.teacher_led_proportion
 
         _gate_loss("logit_kickstarter")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         _anneal("logit_kickstarter", attr_path="teacher_led_proportion", start_value=teacher_cfg.teacher_led_proportion)
         if total_steps:
             scheduler_rules.append(
@@ -300,7 +323,7 @@ def apply_teacher_phase(
         eer_cl.enabled = True
 
         _gate_loss("eer_cloner")
-        _gate_critic_after_teacher()
+        _gate_ppo_after_teacher()
         if total_steps:
             scheduler_rules.append(
                 ScheduleRule(

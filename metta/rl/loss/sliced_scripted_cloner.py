@@ -22,7 +22,7 @@ class SlicedScriptedClonerConfig(LossConfig):
     student_led_proportion: float = Field(default=0.0, ge=0, le=1.0)
     teacher_led_proportion: float = Field(default=0.0, ge=0, le=1.0)
     restrict_ppo_to_ppo_mask: bool = Field(
-        default=True,
+        default=False,
         description=(
             "If True (default), restrict downstream PPO losses to the PPO slice only. "
             "If False, downstream losses receive all slices so they can choose their own masking."

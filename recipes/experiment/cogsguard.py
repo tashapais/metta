@@ -10,6 +10,7 @@ from typing import Optional, Sequence
 
 import metta.cogworks.curriculum as cc
 from cogames.cogs_vs_clips.missions import make_cogsguard_mission
+from metta.agent.policy import PolicyArchitecture
 from metta.cogworks.curriculum.curriculum import (
     CurriculumAlgorithmConfig,
     CurriculumConfig,
@@ -17,6 +18,8 @@ from metta.cogworks.curriculum.curriculum import (
 )
 from metta.rl.trainer_config import TrainerConfig
 from metta.rl.training import EvaluatorConfig, TrainingEnvironmentConfig
+from metta.rl.training.scheduler import LossRunGate, SchedulerConfig, ScheduleRule
+from metta.rl.training.teacher import TeacherConfig, apply_teacher_phase
 from metta.sim.simulation_config import SimulationConfig
 from metta.tools.eval import EvaluateTool
 from metta.tools.play import PlayTool
@@ -71,16 +74,49 @@ def simulations(env: Optional[MettaGridConfig] = None) -> list[SimulationConfig]
 
 def train(
     curriculum: Optional[CurriculumConfig] = None,
+    policy_architecture: Optional[PolicyArchitecture] = None,
+    teacher: Optional[TeacherConfig] = None,
 ) -> TrainTool:
+    return train_single_mission(
+        curriculum=curriculum,
+        policy_architecture=policy_architecture,
+        teacher=teacher,
+    )
+
+
+def train_single_mission(
+    curriculum: Optional[CurriculumConfig] = None,
+    policy_architecture: Optional[PolicyArchitecture] = None,
+    teacher: Optional[TeacherConfig] = None,
+) -> TrainTool:
+    from metta.agent.policies.vit import ViTDefaultConfig
+
     resolved_curriculum = curriculum or make_curriculum()
     trainer_cfg = TrainerConfig()
+    training_env_cfg = TrainingEnvironmentConfig(curriculum=resolved_curriculum)
     evaluator_cfg = EvaluatorConfig(simulations=simulations())
+    scheduler = None
 
-    return TrainTool(
+    if teacher and teacher.enabled:
+        scheduler_run_gates: list[LossRunGate] = []
+        scheduler_rules: list[ScheduleRule] = []
+        apply_teacher_phase(
+            trainer_cfg=trainer_cfg,
+            training_env_cfg=training_env_cfg,
+            scheduler_rules=scheduler_rules,
+            scheduler_run_gates=scheduler_run_gates,
+            teacher_cfg=teacher,
+        )
+        scheduler = SchedulerConfig(run_gates=scheduler_run_gates, rules=scheduler_rules)
+
+    tt = TrainTool(
         trainer=trainer_cfg,
-        training_env=TrainingEnvironmentConfig(curriculum=resolved_curriculum),
+        training_env=training_env_cfg,
         evaluator=evaluator_cfg,
+        scheduler=scheduler,
     )
+    tt.policy_architecture = policy_architecture or ViTDefaultConfig()
+    return tt
 
 
 def evaluate(

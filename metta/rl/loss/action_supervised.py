@@ -36,6 +36,8 @@ class ActionSupervisedConfig(LossConfig):
 
 
 class ActionSupervised(Loss):
+    __slots__ = ("rollout_batch_size", "teacher_mask")
+
     def __init__(
         self,
         policy: Policy,
@@ -50,10 +52,12 @@ class ActionSupervised(Loss):
     def get_experience_spec(self) -> Composite:
         scalar_f32 = UnboundedContinuous(shape=torch.Size([]), dtype=torch.float32)
         action_spec = UnboundedDiscrete(shape=torch.Size([]), dtype=torch.int32)
+        boolean = UnboundedDiscrete(shape=torch.Size([]), dtype=torch.bool)
 
         return Composite(
             actions=action_spec,
             teacher_actions=UnboundedDiscrete(shape=torch.Size([]), dtype=torch.long),
+            teacher_mask=boolean,
             rewards=scalar_f32,
             dones=scalar_f32,
             truncateds=scalar_f32,
@@ -61,17 +65,22 @@ class ActionSupervised(Loss):
 
     def run_rollout(self, td: TensorDict, context: ComponentContext) -> None:
         with torch.no_grad():
+            if not hasattr(self, "rollout_batch_size") or self.rollout_batch_size != td.batch_size.numel():
+                self._create_teacher_mask(td.batch_size.numel())
+
             self.policy.forward(td)
+
+            if bool(self.teacher_mask.any()):
+                teacher_actions = td["teacher_actions"].to(dtype=torch.long)
+                td["actions"][self.teacher_mask] = teacher_actions.to(td["actions"].dtype)[self.teacher_mask]
+                if "act_log_prob" in td.keys():
+                    td["act_log_prob"][self.teacher_mask] = 0.0
+
+            td["teacher_mask"] = self.teacher_mask
 
         env_slice = self._training_env_id(context)
         assert self.replay is not None
         self.replay.store(data_td=td, env_id=env_slice)
-
-        if torch.rand(1) < self.cfg.teacher_led_proportion:
-            # Save td["action"] into the td that goes to the replay buffer but then overwrite it with teacher actions
-            # when sending to the environment. After it gets sent to env it is no longer used.
-            # NOTE: teacher-leading means actions reported to wandb are teacher actions, not student actions
-            td["actions"] = td["teacher_actions"].to(td["actions"].dtype)
 
     def policy_output_keys(self, policy_td: Optional[TensorDict] = None) -> set[str]:
         return {"full_log_probs", "act_log_prob"} if self.cfg.add_action_loss_to_rewards else {"full_log_probs"}
@@ -104,3 +113,13 @@ class ActionSupervised(Loss):
             # softplus?
 
         return loss, shared_loss_data, False
+
+    def on_train_phase_end(self, context: ComponentContext | None = None) -> None:
+        if hasattr(self, "rollout_batch_size"):
+            self._create_teacher_mask(self.rollout_batch_size)
+        super().on_train_phase_end(context)
+
+    def _create_teacher_mask(self, batch_size: int) -> None:
+        self.rollout_batch_size = int(batch_size)
+        rand = torch.rand(self.rollout_batch_size, device=self.device)
+        self.teacher_mask = rand < float(self.cfg.teacher_led_proportion)

@@ -16,6 +16,7 @@ def train(
     eval_difficulty: str | None = None,
     policy_architecture: PolicyArchitecture | None = None,
     teacher: TeacherConfig | None = None,
+    use_default_teacher: bool = False,
 ) -> TrainTool:
     """Train on machina_1.open_world with leaderboard-aligned defaults and single-map eval."""
     from metta.agent.policies.vit import ViTDefaultConfig
@@ -29,6 +30,20 @@ def train(
 
     if eval_variants is None:
         eval_variants = variants
+
+    if teacher is None and use_default_teacher:
+        bc_steps = 2_500_000_000
+        anneal_steps = 3_000_000_000
+        teacher = TeacherConfig(
+            policy_uri="metta://policy/dinky:v15",
+            mode="sliced_cloner",
+            steps=bc_steps + anneal_steps,
+            teacher_led_proportion=0.0,
+            student_led_proportion=1.0,
+            anneal_start_step=bc_steps,
+            ppo_begin_step=0,
+            kwargs={"restrict_ppo_to_ppo_mask": False},
+        )
 
     tt = train_single_mission(
         mission="machina_1.open_world",
@@ -44,7 +59,7 @@ def train(
 
     # Explicitly keep full vibe/action definitions so saved checkpoints remain compatible.
     env_cfg = tt.training_env.curriculum.task_generator.env
-    env_cfg.game.max_steps = 1000
+    env_cfg.game.max_steps = 10000
     env_cfg.game.vibe_names = [v.name for v in vibes.VIBES]
     change_vibe = getattr(env_cfg.game.actions, "change_vibe", None)
     if change_vibe is not None:
@@ -61,7 +76,7 @@ def train(
         mission="machina_1.open_world",
         variants=eval_variant_names or None,
     )
-    eval_env.game.max_steps = 1000
+    eval_env.game.max_steps = 10000
     tt.evaluator.simulations = [
         SimulationConfig(
             suite="cogs_vs_clips",
@@ -81,6 +96,7 @@ def train_sweep(
     eval_difficulty: str | None = None,
     policy_architecture: PolicyArchitecture | None = None,
     teacher: TeacherConfig | None = None,
+    use_default_teacher: bool = False,
 ) -> TrainTool:
     """Sweep-friendly train with heart_chorus baked in."""
     from recipes.experiment.cogs_v_clips import _normalize_variant_names
@@ -94,6 +110,7 @@ def train_sweep(
         eval_difficulty=eval_difficulty,
         policy_architecture=policy_architecture,
         teacher=teacher,
+        use_default_teacher=use_default_teacher,
     )
     # Sweep-friendly default (kept consistent with the shared CvC sweep search space).
     tt.trainer.total_timesteps = 1_000_000_000
