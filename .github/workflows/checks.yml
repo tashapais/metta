@@ -110,8 +110,8 @@ jobs:
         id: check_py_files
         uses: ./.github/actions/file-changes
         with:
-          patterns: "**/*.py,**/*.cpp,**/*.hpp,**/*.md,**/*.toml,**/conftest.py,**/pyproject.toml,**/pytest.ini,.github/workflows/*.yml"
-          specific_files: "uv.lock"
+          patterns: "**/*.py,**/*.cpp,**/*.hpp,**/*.toml,**/conftest.py,**/pyproject.toml,**/pytest.ini,.github/workflows/*.yml"
+          specific_files: "uv.lock,README.md"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for app_backend file changes
@@ -129,8 +129,8 @@ jobs:
             # Use workflow dispatch inputs for manual runs
             RUN_TEST="${{ github.event.inputs.run_test }}"
             RUN_BENCHMARK="${{ github.event.inputs.run_benchmark }}"
-          elif [[ "${{ github.event_name }}" == "pull_request" && "${{ steps.check_py_files.outputs.has_relevant_changes }}" == "false" ]]; then
-            # Skip everything for PRs with no relevant changes=
+          elif [[ "${{ steps.check_py_files.outputs.has_relevant_changes }}" == "false" ]]; then
+            # Skip everything when no relevant files changed (PRs, merge queue, pushes)
             RUN_TEST="false"
             RUN_BENCHMARK="false"
             echo "::notice title=Skipping Tasks::Skipping all tasks because no relevant files have changed"
