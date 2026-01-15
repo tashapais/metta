@@ -26,6 +26,8 @@ episodeRunnerImage:
 
 env:
   RUN_MIGRATIONS: "true"
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://$(HOST_IP):4318"
+  OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: "http/protobuf"
 
 secrets:
   machineToken: "machine-token-secret"

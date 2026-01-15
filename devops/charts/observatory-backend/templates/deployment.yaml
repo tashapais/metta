@@ -25,6 +25,10 @@ spec:
             value: "{{ .Values.episodeRunnerImage.registry }}/{{ .Values.episodeRunnerImage.name }}:{{ .Values.episodeRunnerImage.tag }}"
           - name: STATS_SERVER_URI
             value: "https://{{ .Values.host }}"
+          - name: HOST_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
           {{- if .Values.env }}
           {{- range $key, $value := .Values.env }}
           - name: {{ $key }}
