@@ -1,11 +1,11 @@
 """Prioritized regret curriculum algorithm."""
 
-from typing import Any, Dict, List, Optional
+from typing import Dict
 
 import numpy as np
 
-from .curriculum import CurriculumAlgorithm, CurriculumAlgorithmConfig, CurriculumTask
-from .regret_tracker import RegretTracker
+from .curriculum import CurriculumAlgorithmConfig
+from .regret_algorithm_base import RegretAlgorithmBase
 
 
 class PrioritizedRegretConfig(CurriculumAlgorithmConfig):
@@ -29,30 +29,14 @@ class PrioritizedRegretConfig(CurriculumAlgorithmConfig):
         return PrioritizedRegretAlgorithm(num_tasks, self)
 
 
-class PrioritizedRegretAlgorithm(CurriculumAlgorithm):
+class PrioritizedRegretAlgorithm(RegretAlgorithmBase):
     """Select tasks with highest regret."""
 
     def __init__(self, num_tasks: int, hypers: PrioritizedRegretConfig):
         super().__init__(num_tasks, hypers)
-
-        self.num_tasks = num_tasks
         self.hypers: PrioritizedRegretConfig = hypers
 
-        self.regret_tracker = RegretTracker(
-            max_memory_tasks=hypers.max_memory_tasks,
-            optimal_value=hypers.optimal_value,
-            regret_ema_timescale=hypers.regret_ema_timescale,
-        )
-        self._score_cache: Dict[int, float] = {}
-        self._cache_valid_tasks: set[int] = set()
-        self._stats_cache: Dict[str, Any] = {}
-        self._stats_cache_valid = False
-
-    def score_tasks(self, task_ids: List[int]) -> Dict[int, float]:
-        """Score tasks by regret (higher = higher priority)."""
-        return {task_id: self._get_regret_score(task_id) for task_id in task_ids}
-
-    def _get_regret_score(self, task_id: int) -> float:
+    def _score_task(self, task_id: int) -> float:
         """Calculate regret-based score for a task."""
         if task_id in self._cache_valid_tasks and task_id in self._score_cache:
             return self._score_cache[task_id]
@@ -64,108 +48,16 @@ class PrioritizedRegretAlgorithm(CurriculumAlgorithm):
         else:
             regret = task_stats["ema_regret"]
             score = regret / max(self.hypers.temperature, 0.01)
-            if task_stats["completion_count"] < 10:
-                exploration_factor = (10 - task_stats["completion_count"]) / 10
-                score += self.hypers.exploration_bonus * exploration_factor
+            score += self._exploration_boost(task_stats["completion_count"])
 
         self._score_cache[task_id] = score
         self._cache_valid_tasks.add(task_id)
         return score
 
-    def recommend_eviction(self, task_ids: List[int]) -> Optional[int]:
-        """Evict tasks with lowest regret."""
-        if not task_ids:
-            return None
+    def _eviction_fraction(self) -> float:
+        return 0.3
 
-        scores = self.score_tasks(task_ids)
-        min_task_id = min(task_ids, key=lambda tid: scores.get(tid, float("inf")))
-        return min_task_id
-
-    def should_evict_task(self, task_id: int, min_presentations: int = 5) -> bool:
-        """Check if a task should be evicted."""
-        task_stats = self.regret_tracker.get_task_stats(task_id)
-        if task_stats is None:
-            return False
-
-        if task_stats["completion_count"] < min_presentations:
-            return False
-
-        all_task_ids = self.regret_tracker.get_all_tracked_tasks()
-        if len(all_task_ids) <= 1:
-            return False
-
-        scores = self.score_tasks(all_task_ids)
-        task_score = scores.get(task_id, 0.0)
-
-        sorted_scores = sorted(scores.values())
-        threshold_index = max(0, int(len(sorted_scores) * 0.3))
-        threshold_score = sorted_scores[threshold_index] if sorted_scores else 0.0
-
-        return task_score <= threshold_score
-
-    def on_task_evicted(self, task_id: int) -> None:
-        """Clean up when a task is evicted."""
-        self.regret_tracker.remove_task(task_id)
-        self._score_cache.pop(task_id, None)
-        self._cache_valid_tasks.discard(task_id)
-        self.invalidate_cache()
-
-    def update_task_performance(self, task_id: int, score: float) -> None:
-        """Update task regret."""
-        self.regret_tracker.update_task_performance(task_id, score)
-        self._cache_valid_tasks.discard(task_id)
-        self.invalidate_cache()
-
-    def on_task_created(self, task: CurriculumTask) -> None:
-        """Handle task creation."""
-        self.regret_tracker.track_task_creation(task._task_id)
-        slice_values = task.get_slice_values()
-        if slice_values:
-            self.slice_analyzer.update_task_completion(task._task_id, slice_values, 0.5)
-
-        self.invalidate_cache()
-
-    def update_task_with_slice_values(self, task_id: int, score: float, slice_values: Dict[str, Any]) -> None:
-        """Update task performance including slice values."""
-        self.update_task_performance(task_id, score)
-        self.slice_analyzer.update_task_completion(task_id, slice_values, score)
-
-    def get_base_stats(self) -> Dict[str, float]:
-        """Get basic statistics."""
-        base_stats = {"num_tasks": self.num_tasks, **self.slice_analyzer.get_base_stats()}
-
-        regret_stats = self.regret_tracker.get_global_stats()
-        for key, value in regret_stats.items():
-            base_stats[f"regret/{key}"] = value
-
-        return base_stats
-
-    def stats(self, prefix: str = "") -> Dict[str, float]:
-        """Get all statistics with optional prefix."""
-        cache_key = prefix if prefix else "_default"
-
-        if self._stats_cache_valid and cache_key in self._stats_cache:
-            return self._stats_cache[cache_key]
-
-        stats = self.get_base_stats()
-        detailed_regret_stats = self._get_detailed_regret_stats()
-        for key, value in detailed_regret_stats.items():
-            stats[f"regret/{key}"] = value
-
-        if self.enable_detailed_logging:
-            detailed = self.get_detailed_stats()
-            stats.update(detailed)
-
-        if prefix:
-            stats = {f"{prefix}{k}": v for k, v in stats.items()}
-
-        self._stats_cache[cache_key] = stats
-        self._stats_cache_valid = True
-
-        return stats
-
-    def _get_detailed_regret_stats(self) -> Dict[str, float]:
-        """Get detailed regret statistics."""
+    def _get_detailed_stats(self) -> Dict[str, float]:
         all_tasks = self.regret_tracker.get_all_tracked_tasks()
         if not all_tasks:
             return {
@@ -174,12 +66,11 @@ class PrioritizedRegretAlgorithm(CurriculumAlgorithm):
                 "regret_std": 0.0,
             }
 
-        regrets = []
-        for task_id in all_tasks:
-            task_stats = self.regret_tracker.get_task_stats(task_id)
-            if task_stats:
-                regrets.append(task_stats["ema_regret"])
-
+        regrets = [
+            task_stats["ema_regret"]
+            for task_id in all_tasks
+            if (task_stats := self.regret_tracker.get_task_stats(task_id))
+        ]
         if not regrets:
             return {
                 "num_high_regret_tasks": 0.0,
@@ -195,20 +86,3 @@ class PrioritizedRegretAlgorithm(CurriculumAlgorithm):
             "num_low_regret_tasks": float(np.sum(regrets_array <= median_regret)),
             "regret_std": float(np.std(regrets_array)),
         }
-
-    def get_state(self) -> Dict[str, Any]:
-        """Get algorithm state for checkpointing."""
-        return {
-            "type": self.hypers.algorithm_type(),
-            "hypers": self.hypers.model_dump(),
-            "regret_tracker": self.regret_tracker.get_state(),
-            "score_cache": self._score_cache,
-            "cache_valid_tasks": list(self._cache_valid_tasks),
-        }
-
-    def load_state(self, state: Dict[str, Any]) -> None:
-        """Load algorithm state from checkpoint."""
-        self.regret_tracker.load_state(state["regret_tracker"])
-        self._score_cache = state.get("score_cache", {})
-        self._cache_valid_tasks = set(state.get("cache_valid_tasks", []))
-        self._stats_cache_valid = False

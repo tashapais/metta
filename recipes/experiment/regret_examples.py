@@ -173,19 +173,16 @@ def compare_curricula(enable_detailed_slice_logging: bool = False) -> dict[str, 
 
     arena_tasks = _make_arena_tasks(make_arena_env())
 
-    lp_curriculum = arena_tasks.to_curriculum(
-        algorithm_config=LearningProgressConfig(
+    configs = {
+        "learning_progress": LearningProgressConfig(
             use_bidirectional=True,
             ema_timescale=0.001,
             exploration_bonus=0.1,
             max_memory_tasks=1000,
             max_slice_axes=5,
             enable_detailed_slice_logging=enable_detailed_slice_logging,
-        )
-    )
-
-    pr_curriculum = arena_tasks.to_curriculum(
-        algorithm_config=PrioritizedRegretConfig(
+        ),
+        "prioritized_regret": PrioritizedRegretConfig(
             optimal_value=1.0,
             regret_ema_timescale=0.01,
             exploration_bonus=0.1,
@@ -193,11 +190,8 @@ def compare_curricula(enable_detailed_slice_logging: bool = False) -> dict[str, 
             max_memory_tasks=1000,
             max_slice_axes=5,
             enable_detailed_slice_logging=enable_detailed_slice_logging,
-        )
-    )
-
-    rlp_curriculum = arena_tasks.to_curriculum(
-        algorithm_config=RegretLearningProgressConfig(
+        ),
+        "regret_learning_progress": RegretLearningProgressConfig(
             optimal_value=1.0,
             regret_ema_timescale=0.001,
             use_bidirectional=True,
@@ -206,11 +200,8 @@ def compare_curricula(enable_detailed_slice_logging: bool = False) -> dict[str, 
             max_memory_tasks=1000,
             max_slice_axes=5,
             enable_detailed_slice_logging=enable_detailed_slice_logging,
-        )
-    )
-
+        ),
+    }
     return {
-        "learning_progress": _build_train_tool(lp_curriculum),
-        "prioritized_regret": _build_train_tool(pr_curriculum),
-        "regret_learning_progress": _build_train_tool(rlp_curriculum),
+        name: _build_train_tool(arena_tasks.to_curriculum(algorithm_config=config)) for name, config in configs.items()
     }
