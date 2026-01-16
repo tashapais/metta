@@ -4,6 +4,10 @@
 
 set -e
 
+# Wandb configuration
+WANDB_PROJECT="metta"
+WANDB_ENTITY="tashapais"
+
 # All experiments from the paper
 EXPERIMENTS=(
     "baseline_ppo"
@@ -55,7 +59,7 @@ for exp in "${EXPERIMENTS[@]}"; do
     echo "----------------------------------------"
 
     # Construct the command
-    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp run=$exp"
+    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp run=$exp wandb.project=$WANDB_PROJECT wandb.entity=$WANDB_ENTITY"
 
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] $CMD"
