@@ -10,11 +10,12 @@ This file contains all baseline and ablation experiments described in the paper:
 - Ablation 4: Higher contrastive coefficient (0.01)
 - Ablation 5: Fixed temporal offset (Δt = 10) instead of geometric sampling
 
-All experiments use the Tribal Village environment with matched training budgets.
+All experiments use the Arena environment with matched training budgets.
 """
 
 from typing import Optional
 
+import mettagrid.builder.envs as eb
 from metta.rl.loss.contrastive_config import ContrastiveConfig
 from metta.rl.loss.losses import LossesConfig
 from metta.rl.trainer_config import TrainerConfig
@@ -24,22 +25,29 @@ from metta.tools.train import TrainTool
 from mettagrid import MettaGridConfig
 
 
-def make_tribal_village_env(num_agents: int = 24) -> MettaGridConfig:
-    """Create Tribal Village environment configuration."""
-    # Import the tribal village environment builder
-    # You may need to adjust this import based on your environment setup
-    from mettagrid.builder import envs as eb
-
-    env = eb.make_tribal_village(num_agents=num_agents)
+def make_arena_env(num_agents: int = 24) -> MettaGridConfig:
+    """Create Arena environment configuration with shaped rewards."""
+    env = eb.make_arena(num_agents=num_agents)
+    # Add shaped rewards for easier learning
+    env.game.agent.rewards.inventory["heart"] = 1
+    env.game.agent.rewards.inventory_max["heart"] = 100
+    env.game.agent.rewards.inventory.update(
+        {
+            "ore_red": 0.1,
+            "battery_red": 0.8,
+            "laser": 0.3,
+            "armor": 0.3,
+        }
+    )
     return env
 
 
 def simulations(env: Optional[MettaGridConfig] = None) -> list[SimulationConfig]:
     """Create evaluation environments."""
-    basic_env = env or make_tribal_village_env()
+    basic_env = env or make_arena_env()
 
     return [
-        SimulationConfig(suite="contrastive_paper", name="tribal_basic", env=basic_env),
+        SimulationConfig(suite="contrastive_paper", name="arena_shaped", env=basic_env),
     ]
 
 
@@ -53,7 +61,7 @@ def train_baseline_ppo() -> TrainTool:
 
     This is the control condition for measuring the impact of contrastive learning.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=False,  # Disabled for baseline
@@ -86,7 +94,7 @@ def train_ppo_plus_contrastive() -> TrainTool:
     - embedding_dim: 128
     - use_projection_head: True
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=True,
@@ -119,7 +127,7 @@ def train_ablation_no_projection_head() -> TrainTool:
 
     Tests whether the projection head is necessary for good performance.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=True,
@@ -152,7 +160,7 @@ def train_ablation_temperature_low() -> TrainTool:
 
     Lower temperature creates sharper distinctions between positive and negative pairs.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=True,
@@ -185,7 +193,7 @@ def train_ablation_temperature_high() -> TrainTool:
 
     Higher temperature softens the distinctions between positive and negative pairs.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=True,
@@ -219,7 +227,7 @@ def train_ablation_higher_coefficient() -> TrainTool:
     Tests whether increasing the weight of contrastive loss improves or destabilizes training.
     Default coefficient is ~0.00068, so this is about 15x higher.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     contrastive_config = ContrastiveConfig(
         enabled=True,
@@ -257,7 +265,7 @@ def train_ablation_fixed_temporal_offset() -> TrainTool:
     NOTE: This requires modifying the contrastive loss implementation to support
     a fixed offset mode. For now, we approximate with a very low discount factor.
     """
-    env = make_tribal_village_env()
+    env = make_arena_env()
 
     # With discount = 0.1, the expected delta is 1/(1-0.1) = ~1.1 steps
     # We need to modify the implementation to support fixed offsets properly
