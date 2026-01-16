@@ -1,32 +1,8 @@
 #!/bin/bash
 # Script to run all contrastive learning paper experiments
-# Usage: ./scripts/run_contrastive_experiments.sh [experiment_name] [--seeds N] [--dry-run]
+# Usage: ./scripts/run_contrastive_experiments.sh [experiment_name] [--dry-run]
 
 set -e
-
-RECIPE="recipes.experiment.contrastive_paper_experiments"
-NUM_SEEDS=5  # Run 5 seeds per condition as per paper statistical requirements
-
-# Parse command line arguments
-EXPERIMENT=""
-DRY_RUN=false
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --seeds)
-            NUM_SEEDS="$2"
-            shift 2
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        *)
-            EXPERIMENT="$1"
-            shift
-            ;;
-    esac
-done
 
 # All experiments from the paper
 EXPERIMENTS=(
@@ -39,6 +15,23 @@ EXPERIMENTS=(
     "ablation_fixed_offset"
 )
 
+# Parse command line arguments
+EXPERIMENT=""
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        *)
+            EXPERIMENT="$1"
+            shift
+            ;;
+    esac
+done
+
 # If specific experiment provided, run only that one
 if [ -n "$EXPERIMENT" ]; then
     EXPERIMENTS=("$EXPERIMENT")
@@ -47,8 +40,6 @@ fi
 echo "=========================================="
 echo "Contrastive Learning Paper Experiments"
 echo "=========================================="
-echo "Recipe: $RECIPE"
-echo "Seeds per experiment: $NUM_SEEDS"
 echo "Experiments to run: ${EXPERIMENTS[*]}"
 echo ""
 
@@ -57,35 +48,21 @@ if [ "$DRY_RUN" = true ]; then
     echo ""
 fi
 
-# Run each experiment with multiple seeds
+# Run each experiment
 for exp in "${EXPERIMENTS[@]}"; do
     echo "----------------------------------------"
     echo "Running experiment: $exp"
     echo "----------------------------------------"
 
-    for seed in $(seq 1 $NUM_SEEDS); do
-        echo ""
-        echo "  Seed $seed/$NUM_SEEDS"
+    # Construct the command
+    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp run=$exp"
 
-        # Construct wandb run name
-        RUN_NAME="${exp}_seed${seed}"
-
-        # Construct the command
-        CMD="python -m metta.tools.train \
-            --recipe $RECIPE \
-            --train-fn train \
-            --experiment-name $exp \
-            --seed $seed \
-            --wandb-run-name $RUN_NAME \
-            --wandb-tags contrastive_paper,${exp},seed_${seed}"
-
-        if [ "$DRY_RUN" = true ]; then
-            echo "  [DRY RUN] $CMD"
-        else
-            echo "  Running: $CMD"
-            eval $CMD
-        fi
-    done
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] $CMD"
+    else
+        echo "  Running: $CMD"
+        $CMD
+    fi
 
     echo ""
     echo "Completed experiment: $exp"
@@ -98,6 +75,5 @@ echo "=========================================="
 echo ""
 echo "Next steps:"
 echo "1. Check wandb for logged metrics"
-echo "2. Analyze results using notebooks/contrastive_paper_analysis.ipynb"
-echo "3. Generate figures for the paper"
+echo "2. Compare learning curves between baseline and ablations"
 echo ""
