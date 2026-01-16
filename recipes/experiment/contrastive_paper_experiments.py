@@ -68,14 +68,14 @@ def train_baseline_ppo() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),  # 1B timesteps as per paper
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -106,14 +106,14 @@ def train_ppo_plus_contrastive() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),  # 1B timesteps
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -139,14 +139,14 @@ def train_ablation_no_projection_head() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -172,14 +172,14 @@ def train_ablation_temperature_low() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -205,14 +205,14 @@ def train_ablation_temperature_high() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -239,14 +239,14 @@ def train_ablation_higher_coefficient() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
@@ -280,14 +280,14 @@ def train_ablation_fixed_temporal_offset() -> TrainTool:
     )
 
     trainer_config = TrainerConfig(
-        total_timesteps=int(1e9),
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
         losses=LossesConfig(contrastive=contrastive_config),
     )
 
     return TrainTool(
         trainer=trainer_config,
         training_env=TrainingEnvironmentConfig(),
-        evaluator=EvaluatorConfig(simulations=simulations(env)),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
     )
 
 
