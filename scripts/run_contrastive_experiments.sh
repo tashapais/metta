@@ -58,8 +58,9 @@ for exp in "${EXPERIMENTS[@]}"; do
     echo "Running experiment: $exp"
     echo "----------------------------------------"
 
-    # Construct the command
-    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp run=$exp wandb.project=$WANDB_PROJECT wandb.entity=$WANDB_ENTITY"
+    # Construct the command with unique run_id for each experiment
+    RUN_ID="${exp}.$(date +%m_%d_%y)"
+    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp wandb.enabled=True wandb.project=$WANDB_PROJECT wandb.entity=$WANDB_ENTITY wandb.run_id=$RUN_ID"
 
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] $CMD"
