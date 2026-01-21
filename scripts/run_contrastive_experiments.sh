@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script to run all contrastive learning paper experiments
-# Usage: ./scripts/run_contrastive_experiments.sh [experiment_name] [--dry-run]
+# Usage: ./scripts/run_contrastive_experiments.sh [--seed N] [--dry-run] [experiment_name]
 
 set -e
 
@@ -31,12 +31,17 @@ EXPERIMENTS=(
 # Parse command line arguments
 EXPERIMENT=""
 DRY_RUN=false
+SEED=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run)
             DRY_RUN=true
             shift
+            ;;
+        --seed)
+            SEED="$2"
+            shift 2
             ;;
         *)
             EXPERIMENT="$1"
@@ -55,6 +60,7 @@ echo "Contrastive Learning Paper Experiments"
 echo "=========================================="
 echo "Experiments to run: ${EXPERIMENTS[*]}"
 echo "Number of GPUs: $NUM_GPUS"
+echo "Seed: $SEED"
 echo ""
 
 if [ "$DRY_RUN" = true ]; then
@@ -63,7 +69,7 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 # Create log directory
-LOG_DIR="logs/contrastive_experiments_$(date +%Y%m%d_%H%M%S)"
+LOG_DIR="logs/contrastive_experiments_seed${SEED}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 echo "Logs will be saved to: $LOG_DIR"
 echo ""
@@ -76,12 +82,12 @@ declare -a PID_EXPERIMENTS=()
 run_experiment() {
     local exp=$1
     local gpu_id=$2
-    local log_file="$LOG_DIR/${exp}.log"
+    local log_file="$LOG_DIR/${exp}_seed${SEED}.log"
 
-    RUN_ID="${exp}.$(date +%m_%d_%y)"
-    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp training_env.num_workers=30 training_env.auto_workers=false evaluator.epoch_interval=0 wandb.enabled=True wandb.project=$WANDB_PROJECT wandb.entity=$WANDB_ENTITY wandb.run_id=$RUN_ID"
+    RUN_ID="${exp}.seed${SEED}.$(date +%m_%d_%y)"
+    CMD="uv run ./tools/run.py train contrastive_paper_experiments experiment_name=$exp training_env.num_workers=30 training_env.auto_workers=false evaluator.epoch_interval=0 system.seed=$SEED wandb.enabled=True wandb.project=$WANDB_PROJECT wandb.entity=$WANDB_ENTITY wandb.run_id=$RUN_ID"
 
-    echo "  [GPU $gpu_id] Starting: $exp (log: $log_file)"
+    echo "  [GPU $gpu_id] Starting: $exp seed=$SEED (log: $log_file)"
 
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] CUDA_VISIBLE_DEVICES=$gpu_id $CMD"
