@@ -251,7 +251,41 @@ def train_ablation_higher_coefficient() -> TrainTool:
 
 
 # ============================================================================
-# Ablation 5: Fixed temporal offset (Δt = 10)
+# Ablation 5: Smaller embedding dimension (64)
+# ============================================================================
+
+def train_ablation_embedding_dim_64() -> TrainTool:
+    """
+    Ablation: Smaller embedding dimension (64 instead of 128).
+
+    Tests whether a smaller representation capacity is sufficient for
+    learning useful temporal coherence.
+    """
+    env = make_arena_env()
+
+    contrastive_config = ContrastiveConfig(
+        enabled=True,
+        temperature=0.1902943104505539,
+        contrastive_coef=0.0006806607125326991,
+        discount=0.977,
+        embedding_dim=64,  # ABLATION: Smaller embedding dimension
+        use_projection_head=True,
+    )
+
+    trainer_config = TrainerConfig(
+        total_timesteps=int(1e8),  # 100M timesteps - enough to see learning differences
+        losses=LossesConfig(contrastive=contrastive_config),
+    )
+
+    return TrainTool(
+        trainer=trainer_config,
+        training_env=TrainingEnvironmentConfig(),
+        evaluator=EvaluatorConfig(simulations=simulations(env), epoch_interval=20),
+    )
+
+
+# ============================================================================
+# Ablation 6: Fixed temporal offset (Δt = 10)
 # ============================================================================
 
 def train_ablation_fixed_temporal_offset() -> TrainTool:
@@ -303,6 +337,7 @@ EXPERIMENTS = {
     "ablation_temp_0.05": train_ablation_temperature_low,
     "ablation_temp_0.5": train_ablation_temperature_high,
     "ablation_coef_0.01": train_ablation_higher_coefficient,
+    "ablation_embed_64": train_ablation_embedding_dim_64,
     "ablation_fixed_offset": train_ablation_fixed_temporal_offset,
 }
 
@@ -321,6 +356,7 @@ def train(experiment_name: str = "ppo_plus_contrastive") -> TrainTool:
         - ablation_temp_0.05: Temperature = 0.05
         - ablation_temp_0.5: Temperature = 0.5
         - ablation_coef_0.01: Higher contrastive coefficient
+        - ablation_embed_64: Smaller embedding dimension (64)
         - ablation_fixed_offset: Fixed temporal offset
     """
     if experiment_name not in EXPERIMENTS:
