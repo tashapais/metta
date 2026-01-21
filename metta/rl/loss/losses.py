@@ -6,6 +6,7 @@ from pydantic import Field
 from metta.agent.policy import Policy
 from metta.rl.loss import contrastive_config
 from metta.rl.loss.action_supervised import ActionSupervisedConfig
+from metta.rl.loss.goal_conditioned_crl_config import GoalConditionedCRLConfig
 from metta.rl.loss.cmpo import CMPOConfig
 from metta.rl.loss.eer_cloner import EERClonerConfig
 from metta.rl.loss.eer_kickstarter import EERKickstarterConfig
@@ -42,6 +43,7 @@ class LossesConfig(Config):
         "cmpo",
         "vit_reconstruction",
         "contrastive",
+        "goal_conditioned_crl",
         "stable_latent",
         "future_latent_ema",
         "grpo",
@@ -61,6 +63,9 @@ class LossesConfig(Config):
     # other aux losses below
     contrastive: contrastive_config.ContrastiveConfig = Field(
         default_factory=lambda: contrastive_config.ContrastiveConfig(enabled=False)
+    )
+    goal_conditioned_crl: GoalConditionedCRLConfig = Field(
+        default_factory=lambda: GoalConditionedCRLConfig(enabled=False)
     )
     stable_latent: StableLatentStateConfig = Field(default_factory=lambda: StableLatentStateConfig(enabled=False))
     future_latent_ema: FutureLatentEMALossConfig = Field(
