@@ -91,3 +91,7 @@ build:ci --experimental_repository_downloader_retries=5
 build:ci --http_timeout_scaling=2.0
 # Add delays between retries (exponential backoff)
 build:ci --experimental_scale_timeouts=2.0
+build --spawn_strategy=local
+build --action_env=PATH
+build --host_action_env=PATH
+build --linkopt=-L/usr/lib/gcc/x86_64-linux-gnu/11
