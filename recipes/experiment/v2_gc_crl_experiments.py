@@ -193,6 +193,78 @@ def train_arena_gc_crl() -> TrainTool:
 
 
 # =============================================================================
+# Negative Sampling Ablation (Question 1: Coordination vs Regularization)
+# =============================================================================
+
+
+def train_arena_contrastive_same_agent() -> TrainTool:
+    """PPO + Contrastive with same-agent (intra-trajectory) negatives only.
+
+    Tests whether contrastive learning works with only temporal negatives
+    from the same agent's trajectory. If this performs similarly to default
+    (cross-agent negatives), contrastive is just a regularizer.
+    """
+    env = make_arena_env()
+
+    contrastive_config = ContrastiveConfig(
+        enabled=True,
+        temperature=0.1902943104505539,
+        contrastive_coef=0.0006806607125326991,
+        discount=0.977,
+        embedding_dim=128,
+        use_projection_head=True,
+        negative_source="intra_trajectory",
+    )
+
+    trainer_config = TrainerConfig(
+        total_timesteps=int(1e8),
+        losses=LossesConfig(
+            contrastive=contrastive_config,
+            goal_conditioned_crl=GoalConditionedCRLConfig(enabled=False),
+        ),
+    )
+
+    return TrainTool(
+        trainer=trainer_config,
+        training_env=TrainingEnvironmentConfig(curriculum=cc.env_curriculum(env)),
+        evaluator=EvaluatorConfig(simulations=arena_simulations(env), epoch_interval=0),
+    )
+
+
+def train_arena_contrastive_other_agent() -> TrainTool:
+    """PPO + Contrastive with cross-agent (inter-trajectory) negatives (default behavior).
+
+    Identical to default PPO+C but with eval disabled for consistency with ablation.
+    Uses all off-diagonal pairs as negatives, which are predominantly from other agents.
+    """
+    env = make_arena_env()
+
+    contrastive_config = ContrastiveConfig(
+        enabled=True,
+        temperature=0.1902943104505539,
+        contrastive_coef=0.0006806607125326991,
+        discount=0.977,
+        embedding_dim=128,
+        use_projection_head=True,
+        negative_source="all",
+    )
+
+    trainer_config = TrainerConfig(
+        total_timesteps=int(1e8),
+        losses=LossesConfig(
+            contrastive=contrastive_config,
+            goal_conditioned_crl=GoalConditionedCRLConfig(enabled=False),
+        ),
+    )
+
+    return TrainTool(
+        trainer=trainer_config,
+        training_env=TrainingEnvironmentConfig(curriculum=cc.env_curriculum(env)),
+        evaluator=EvaluatorConfig(simulations=arena_simulations(env), epoch_interval=0),
+    )
+
+
+# =============================================================================
 # Navigation Experiments (Simpler, goal-reaching focused)
 # =============================================================================
 
@@ -282,6 +354,9 @@ EXPERIMENTS = {
     "arena_aux_contrastive": train_arena_aux_contrastive,
     "arena_aux_contrastive_high": train_arena_aux_contrastive_high_coef,
     "arena_gc_crl": train_arena_gc_crl,
+    # Negative sampling ablation (Q1)
+    "arena_contrastive_same_agent": train_arena_contrastive_same_agent,
+    "arena_contrastive_other_agent": train_arena_contrastive_other_agent,
     # Navigation experiments
     "navigation_baseline": train_navigation_baseline,
     "navigation_aux_contrastive": train_navigation_aux_contrastive,

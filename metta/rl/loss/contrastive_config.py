@@ -24,6 +24,10 @@ class ContrastiveConfig(LossConfig):
         default=False, description="Whether to log positive/negative similarities to console"
     )
     log_frequency: int = Field(default=100, gt=0, description="Log similarities every N training steps")
+    negative_source: str = Field(
+        default="all",
+        description="Source of negative samples: 'all' (cross-trajectory, default), 'intra_trajectory' (same-agent only)",
+    )
 
     def create(
         self,

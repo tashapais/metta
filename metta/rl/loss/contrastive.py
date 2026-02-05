@@ -112,7 +112,11 @@ class ContrastiveLoss(Loss):
             embeddings = self.projection_head(embeddings)
 
         # Compute InfoNCE contrastive loss
-        contrastive_loss, metrics = self._compute_contrastive_loss(embeddings, minibatch)
+        negative_source = getattr(self.cfg, "negative_source", "all")
+        if negative_source == "intra_trajectory":
+            contrastive_loss, metrics = self._compute_intra_trajectory_loss(embeddings, minibatch)
+        else:
+            contrastive_loss, metrics = self._compute_contrastive_loss(embeddings, minibatch)
 
         # Track metrics
         self.loss_tracker["contrastive_loss"].append(float(contrastive_loss.item()))
@@ -282,3 +286,133 @@ class ContrastiveLoss(Loss):
         }
 
         return infonce_loss * self.contrastive_coef, metrics
+
+    def _compute_intra_trajectory_loss(self, embeddings: Tensor, minibatch: TensorDict) -> tuple[Tensor, dict]:
+        """Compute InfoNCE loss using only intra-trajectory (same-agent) negatives.
+
+        For each segment, samples multiple anchor-positive pairs and computes InfoNCE
+        using only pairs from that segment as negatives. Since each segment is one agent's
+        trajectory chunk, this restricts negatives to same-agent data only.
+        """
+        batch_shape = minibatch.batch_size
+        segments, horizon = batch_shape
+
+        embedding_dim = embeddings.shape[-1]
+        if embedding_dim == 0:
+            return torch.tensor(0.0, device=self.device), {
+                "positive_sim_mean": 0.0, "negative_sim_mean": 0.0,
+                "positive_sim_std": 0.0, "negative_sim_std": 0.0,
+                "num_pairs": 0, "delta_mean": 0.0,
+            }
+
+        dones = minibatch.get("dones")
+        if dones is None:
+            raise KeyError("Contrastive loss requires 'dones' in minibatch for trajectory boundaries.")
+        dones = dones.squeeze(-1) if dones.dim() == 3 else dones
+        done_mask = dones.to(dtype=torch.bool)
+
+        truncateds = minibatch.get("truncateds")
+        if truncateds is not None:
+            truncateds = truncateds.squeeze(-1) if truncateds.dim() == 3 else truncateds
+            done_mask = torch.logical_or(done_mask, truncateds.to(dtype=torch.bool))
+
+        done_mask_cpu = done_mask.detach().to("cpu")
+        prob = max(1.0 - float(self.discount), 1e-8)
+        geom_dist = torch.distributions.Geometric(
+            probs=torch.tensor(prob, device=self.device, dtype=embeddings.dtype)
+        )
+
+        max_pairs_per_segment = min(8, horizon // 2)
+        total_loss = torch.tensor(0.0, device=self.device)
+        num_segments_with_loss = 0
+        all_pos_sims: list[float] = []
+        all_neg_sims: list[float] = []
+        all_deltas: list[float] = []
+        total_pairs = 0
+
+        for batch_idx in range(segments):
+            done_row = done_mask_cpu[batch_idx].view(-1)
+
+            # Find episode boundaries within this segment
+            episode_bounds: list[tuple[int, int]] = []
+            start = 0
+            for step, done in enumerate(done_row.tolist()):
+                if done:
+                    episode_bounds.append((start, step))
+                    start = step + 1
+            if start < horizon:
+                episode_bounds.append((start, horizon - 1))
+
+            # Collect all valid (anchor, positive) candidates
+            candidates: list[tuple[int, int]] = []
+            for ep_start, ep_end in episode_bounds:
+                if ep_end - ep_start < 1:
+                    continue
+                for anchor in range(ep_start, ep_end):
+                    candidates.append((anchor, ep_end))
+
+            if len(candidates) < 2:
+                continue
+
+            # Sample pairs within this segment
+            segment_pairs: list[tuple[int, int, float]] = []
+            for _ in range(max_pairs_per_segment):
+                choice = int(torch.randint(len(candidates), (1,), device=self.device).item())
+                anchor_step, ep_end = candidates[choice]
+                max_future = ep_end - anchor_step
+                if max_future < 1:
+                    continue
+                delta = int(geom_dist.sample().item())
+                attempts = 0
+                while delta > max_future and attempts < 10:
+                    delta = int(geom_dist.sample().item())
+                    attempts += 1
+                if delta > max_future:
+                    delta = max_future
+                segment_pairs.append((anchor_step, anchor_step + delta, float(delta)))
+
+            if len(segment_pairs) < 2:
+                continue
+
+            K = len(segment_pairs)
+            anchor_idxs = torch.tensor([p[0] for p in segment_pairs], device=self.device, dtype=torch.long)
+            positive_idxs = torch.tensor([p[1] for p in segment_pairs], device=self.device, dtype=torch.long)
+
+            anchor_embs = embeddings[batch_idx, anchor_idxs]
+            positive_embs = embeddings[batch_idx, positive_idxs]
+
+            sims = anchor_embs @ positive_embs.T
+            pos_logits = sims.diagonal().unsqueeze(1)
+            eye_mask = torch.eye(K, device=self.device, dtype=torch.bool)
+            neg_logits = sims[~eye_mask].view(K, K - 1)
+
+            logits = torch.cat([pos_logits, neg_logits], dim=1) / self.temperature
+            labels = torch.zeros(K, dtype=torch.long, device=self.device)
+            loss = torch.nn.functional.cross_entropy(logits, labels, reduction="mean")
+
+            total_loss = total_loss + loss
+            num_segments_with_loss += 1
+            total_pairs += K
+            all_pos_sims.append(pos_logits.mean().item())
+            all_neg_sims.append(neg_logits.mean().item())
+            all_deltas.extend([p[2] for p in segment_pairs])
+
+        if num_segments_with_loss == 0:
+            return torch.tensor(0.0, device=self.device), {
+                "positive_sim_mean": 0.0, "negative_sim_mean": 0.0,
+                "positive_sim_std": 0.0, "negative_sim_std": 0.0,
+                "num_pairs": 0, "delta_mean": 0.0,
+            }
+
+        avg_loss = total_loss / num_segments_with_loss
+
+        metrics = {
+            "positive_sim_mean": sum(all_pos_sims) / len(all_pos_sims),
+            "negative_sim_mean": sum(all_neg_sims) / len(all_neg_sims),
+            "positive_sim_std": 0.0,
+            "negative_sim_std": 0.0,
+            "num_pairs": total_pairs,
+            "delta_mean": sum(all_deltas) / len(all_deltas) if all_deltas else 0.0,
+        }
+
+        return avg_loss * self.contrastive_coef, metrics

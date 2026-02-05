@@ -14,8 +14,12 @@ from functools import partial
 import time
 import argparse
 
+import wandb
+
 # Craftax imports
 from craftax.craftax_env import make_craftax_env_from_name
+from craftax.craftax.renderer import render_craftax_pixels
+from craftax.craftax.constants import BLOCK_PIXEL_SIZE_IMG
 
 
 class ActorCritic(nn.Module):
@@ -506,6 +510,40 @@ def make_train(config):
     return train
 
 
+def record_craftax_video(params, network, config, seed=0, max_steps=500):
+    """Record a video of the trained policy in Craftax."""
+    env = make_craftax_env_from_name("Craftax-Symbolic-v1", auto_reset=False)
+    env_params = env.default_params
+
+    rng = jax.random.PRNGKey(seed + 1000)
+    rng, reset_rng = jax.random.split(rng)
+    obs, env_state = env.reset(reset_rng, env_params)
+
+    frames = []
+    for _ in range(max_steps):
+        # Render current state
+        pixels = render_craftax_pixels(env_state, block_pixel_size=BLOCK_PIXEL_SIZE_IMG)
+        frame = np.array(pixels).astype(np.uint8)
+        frames.append(frame)
+
+        # Get action from policy
+        rng, action_rng = jax.random.split(rng)
+        obs_batch = obs[None, ...]  # add batch dim
+        logits, _, _ = network.apply(params, obs_batch)
+        action = jax.random.categorical(action_rng, logits[0])
+
+        # Step environment
+        rng, step_rng = jax.random.split(rng)
+        obs, env_state, reward, done, info = env.step(step_rng, env_state, action, env_params)
+        if done:
+            break
+
+    # Stack frames: (T, H, W, C) -> (T, C, H, W) for wandb
+    video = np.stack(frames)
+    video = video.transpose(0, 3, 1, 2)
+    return video
+
+
 def run_experiment(config, seed=0):
     """Run a single experiment."""
     rng = jax.random.PRNGKey(seed)
@@ -539,6 +577,7 @@ def run_experiment(config, seed=0):
         "mean_metrics": mean_metrics,
         "elapsed_time": elapsed,
         "all_metrics": out["metrics"],
+        "runner_state": out["runner_state"],
     }
 
 
@@ -615,8 +654,49 @@ def main():
     all_results = []
     for seed in range(args.num_seeds):
         print(f"\n--- Seed {seed} ---", flush=True)
+
+        # Initialize wandb for this seed
+        run_name = f"craftax_{args.method}.seed{seed}"
+        wandb.init(
+            project="metta",
+            entity="tashapais",
+            name=run_name,
+            config=config,
+            reinit="finish_previous",
+        )
+
         result = run_experiment(config, seed=seed)
         all_results.append(result)
+
+        # Log per-update metrics to wandb
+        all_metrics = result["all_metrics"]
+        num_updates = len(jax.tree_util.tree_leaves(all_metrics)[0])
+        batch_size = config["num_envs"] * config["num_steps"]
+        for step_idx in range(num_updates):
+            step_metrics = jax.tree_util.tree_map(lambda x: float(x[step_idx]), all_metrics)
+            step_metrics["timestep"] = (step_idx + 1) * batch_size
+            wandb.log(step_metrics, step=(step_idx + 1) * batch_size)
+
+        # Record and log video
+        try:
+            print("Recording video...", flush=True)
+            runner_state = result["runner_state"]
+            train_state = runner_state[0]  # first element is always train_state
+            video_env = make_craftax_env_from_name("Craftax-Symbolic-v1", auto_reset=False)
+            action_dim = video_env.action_space(video_env.default_params).n
+            network = ActorCritic(
+                action_dim=action_dim,
+                hidden_dim=config["hidden_dim"],
+                embedding_dim=config["embedding_dim"],
+            )
+            video = record_craftax_video(train_state.params, network, config, seed=seed)
+            if video is not None:
+                wandb.log({"video/episode": wandb.Video(video, fps=15, format="mp4")})
+                print("Video logged to wandb", flush=True)
+        except Exception as e:
+            print(f"Failed to record video: {e}", flush=True)
+
+        wandb.finish()
 
     # Aggregate results
     mean_rewards = [r["mean_metrics"]["mean_reward"] for r in all_results]

@@ -1,0 +1,46 @@
+program: v3_experiments/run_navigation.py
+method: bayes
+metric:
+  name: overview/episode_return
+  goal: maximize
+name: navigation_contrastive_sweep
+project: metta
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+
+parameters:
+  method:
+    values:
+      - baseline
+      - contrastive
+
+  contrastive_coef:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.01
+
+  temperature:
+    distribution: uniform
+    min: 0.05
+    max: 0.5
+
+  embedding_dim:
+    values: [32, 64, 128, 256]
+
+  num_envs:
+    value: 16
+
+  num_agents:
+    value: 12
+
+  total_timesteps:
+    value: 10000000
+
+early_terminate:
+  type: hyperband
+  min_iter: 1000000
+  eta: 3

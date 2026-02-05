@@ -1,0 +1,51 @@
+# Navigation Contrastive Sweep for Q2: GC-CRL vs Auxiliary Contrastive
+#
+# Usage:
+#   wandb sweep recipes/experiment/navigation_sweep.yaml
+#   wandb agent <sweep_id>
+#
+# Or run individual experiments:
+#   uv run ./tools/run.py train navigation_contrastive_sweep run=train_sweep method=baseline
+#   uv run ./tools/run.py train navigation_contrastive_sweep run=train_sweep method=contrastive
+#   uv run ./tools/run.py train navigation_contrastive_sweep run=train_sweep method=gccrl
+
+program: tools/run.py
+method: grid
+name: navigation_contrastive_sweep
+project: metta
+
+command:
+  - ${env}
+  - uv
+  - run
+  - ${program}
+  - train
+  - navigation_contrastive_sweep
+  - run=train_sweep
+  - method=${method}
+  - temperature=${temperature}
+  - contrastive_coef=${contrastive_coef}
+  - embedding_dim=${embedding_dim}
+  - gc_crl_coef=${gc_crl_coef}
+
+parameters:
+  # Core comparison: baseline vs contrastive vs gccrl
+  method:
+    values:
+      - baseline
+      - contrastive
+      - gccrl
+
+  # Key contrastive hyperparameters (use reasonable defaults)
+  temperature:
+    values: [0.1, 0.19]
+
+  contrastive_coef:
+    values: [0.0005, 0.001]
+
+  embedding_dim:
+    values: [64, 128]
+
+  # GC-CRL coefficient
+  gc_crl_coef:
+    values: [0.5, 1.0]
