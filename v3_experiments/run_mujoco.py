@@ -354,6 +354,191 @@ class ContrastiveLoss:
         return infonce_loss * self.contrastive_coef, metrics
 
 
+class MujocoSAEncoder(nn.Module):
+    """State-Action encoder for GC-CRL. 4-layer MLP with LayerNorm + SiLU."""
+
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int = 1024, embed_dim: int = 64):
+        super().__init__()
+        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.ln1 = nn.LayerNorm(hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln2 = nn.LayerNorm(hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln3 = nn.LayerNorm(hidden_dim)
+        self.fc4 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln4 = nn.LayerNorm(hidden_dim)
+        self.fc_out = nn.Linear(hidden_dim, embed_dim)
+
+        for layer in [self.fc1, self.fc2, self.fc3, self.fc4, self.fc_out]:
+            nn.init.kaiming_uniform_(layer.weight, mode='fan_in', nonlinearity='linear')
+            nn.init.zeros_(layer.bias)
+
+    def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        x = torch.cat([state, action], dim=-1)
+        x = F.silu(self.ln1(self.fc1(x)))
+        x = F.silu(self.ln2(self.fc2(x)))
+        x = F.silu(self.ln3(self.fc3(x)))
+        x = F.silu(self.ln4(self.fc4(x)))
+        return self.fc_out(x)
+
+
+class MujocoGEncoder(nn.Module):
+    """Goal encoder for GC-CRL. 4-layer MLP with LayerNorm + SiLU."""
+
+    def __init__(self, goal_dim: int, hidden_dim: int = 1024, embed_dim: int = 64):
+        super().__init__()
+        self.fc1 = nn.Linear(goal_dim, hidden_dim)
+        self.ln1 = nn.LayerNorm(hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln2 = nn.LayerNorm(hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln3 = nn.LayerNorm(hidden_dim)
+        self.fc4 = nn.Linear(hidden_dim, hidden_dim)
+        self.ln4 = nn.LayerNorm(hidden_dim)
+        self.fc_out = nn.Linear(hidden_dim, embed_dim)
+
+        for layer in [self.fc1, self.fc2, self.fc3, self.fc4, self.fc_out]:
+            nn.init.kaiming_uniform_(layer.weight, mode='fan_in', nonlinearity='linear')
+            nn.init.zeros_(layer.bias)
+
+    def forward(self, goal: torch.Tensor) -> torch.Tensor:
+        x = F.silu(self.ln1(self.fc1(goal)))
+        x = F.silu(self.ln2(self.fc2(x)))
+        x = F.silu(self.ln3(self.fc3(x)))
+        x = F.silu(self.ln4(self.fc4(x)))
+        return self.fc_out(x)
+
+
+class GCCRLLoss:
+    """Goal-Conditioned Contrastive RL loss for MuJoCo.
+
+    Uses dual encoders (SA + G) with Euclidean distance Q-values,
+    InfoNCE loss, and logsumexp regularization.
+    """
+
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        hidden_dim: int = 1024,
+        embed_dim: int = 64,
+        contrastive_coef: float = 0.1,
+        logsumexp_coef: float = 0.1,
+        discount: float = 0.99,
+        device: torch.device = torch.device("cpu"),
+    ):
+        self.contrastive_coef = contrastive_coef
+        self.logsumexp_coef = logsumexp_coef
+        self.discount = discount
+        self.device = device
+
+        self.sa_encoder = MujocoSAEncoder(state_dim, action_dim, hidden_dim, embed_dim).to(device)
+        self.g_encoder = MujocoGEncoder(state_dim, hidden_dim, embed_dim).to(device)
+
+    def parameters(self):
+        return list(self.sa_encoder.parameters()) + list(self.g_encoder.parameters())
+
+    def compute_loss(
+        self,
+        obs_buf: torch.Tensor,
+        actions_buf: torch.Tensor,
+        dones_buf: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """Compute GC-CRL loss over rollout buffer.
+
+        Args:
+            obs_buf: (num_steps, batch_size, obs_dim)
+            actions_buf: (num_steps, batch_size, action_dim)
+            dones_buf: (num_steps, batch_size)
+        """
+        num_steps, batch_size, obs_dim = obs_buf.shape
+
+        # Sample (state, action, goal) triples
+        prob = max(1.0 - self.discount, 1e-8)
+        num_samples_per_traj = min(8, num_steps // 4)
+
+        all_states = []
+        all_actions = []
+        all_goals = []
+
+        for traj_idx in range(batch_size):
+            for _ in range(num_samples_per_traj):
+                max_anchor = int(num_steps * 0.75)
+                anchor_step = int(torch.randint(0, max(1, max_anchor), (1,)).item())
+                max_future = num_steps - anchor_step - 1
+                if max_future < 1:
+                    continue
+
+                delta = int(np.random.geometric(prob))
+                delta = min(delta, max_future)
+                delta = max(delta, 1)
+
+                goal_step = anchor_step + delta
+
+                # Check episode boundary
+                episode_boundary = False
+                for t in range(anchor_step, goal_step):
+                    if dones_buf[t, traj_idx] > 0.5:
+                        episode_boundary = True
+                        break
+                if episode_boundary:
+                    continue
+
+                all_states.append(obs_buf[anchor_step, traj_idx])
+                all_actions.append(actions_buf[anchor_step, traj_idx])
+                all_goals.append(obs_buf[goal_step, traj_idx])
+
+        if len(all_states) < 2:
+            return torch.tensor(0.0, device=self.device, requires_grad=True), {
+                "gc_categorical_accuracy": 0.0,
+                "gc_logits_pos": 0.0,
+                "gc_logits_neg": 0.0,
+                "gc_infonce_loss": 0.0,
+                "gc_logsumexp_reg": 0.0,
+            }
+
+        states = torch.stack(all_states)
+        actions = torch.stack(all_actions)
+        goals = torch.stack(all_goals)
+        n = states.shape[0]
+
+        # Encode
+        sa_repr = self.sa_encoder(states, actions)
+        g_repr = self.g_encoder(goals)
+
+        # Pairwise negative Euclidean distance logits
+        diff = sa_repr[:, None, :] - g_repr[None, :, :]  # [N, N, embed_dim]
+        logits = -torch.sqrt(torch.sum(diff ** 2, dim=-1) + 1e-8)  # [N, N]
+
+        # InfoNCE
+        diag_logits = torch.diag(logits)
+        logsumexp = torch.logsumexp(logits, dim=1)
+        infonce_loss = -torch.mean(diag_logits - logsumexp)
+
+        # Logsumexp regularization
+        logsumexp_reg = self.logsumexp_coef * torch.mean(logsumexp ** 2)
+
+        total_loss = (infonce_loss + logsumexp_reg) * self.contrastive_coef
+
+        # Metrics
+        with torch.no_grad():
+            I = torch.eye(n, device=self.device)
+            correct = (torch.argmax(logits, dim=1) == torch.arange(n, device=self.device)).float()
+            categorical_accuracy = correct.mean().item()
+            logits_pos = torch.sum(logits * I) / torch.sum(I)
+            logits_neg = torch.sum(logits * (1 - I)) / torch.sum(1 - I)
+
+        metrics = {
+            "gc_categorical_accuracy": categorical_accuracy,
+            "gc_logits_pos": logits_pos.item(),
+            "gc_logits_neg": logits_neg.item(),
+            "gc_infonce_loss": infonce_loss.item(),
+            "gc_logsumexp_reg": logsumexp_reg.item(),
+        }
+
+        return total_loss, metrics
+
+
 def compute_gae(
     rewards: torch.Tensor,
     values: torch.Tensor,
@@ -425,6 +610,22 @@ def train(config: dict, seed: int = 0):
     ).to(device)
 
     optimizer = torch.optim.Adam(policy.parameters(), lr=config["lr"], eps=1e-5)
+
+    # GC-CRL loss
+    gc_crl_loss_fn = None
+    gc_crl_optimizer = None
+    if config["method"] == "gc_crl":
+        gc_crl_loss_fn = GCCRLLoss(
+            state_dim=obs_dim,
+            action_dim=action_dim,
+            hidden_dim=config["gc_hidden_dim"],
+            embed_dim=config["gc_embed_dim"],
+            contrastive_coef=config["gc_contrastive_coef"],
+            logsumexp_coef=config["gc_logsumexp_coef"],
+            discount=config["gc_discount"],
+            device=device,
+        )
+        gc_crl_optimizer = torch.optim.Adam(gc_crl_loss_fn.parameters(), lr=config["gc_lr"], eps=1e-5)
 
     # Contrastive loss
     contrastive_loss_fn = None
@@ -570,6 +771,18 @@ def train(config: dict, seed: int = 0):
                 nn.utils.clip_grad_norm_(policy.parameters(), config["max_grad_norm"])
                 optimizer.step()
 
+        # GC-CRL loss (separate optimizer)
+        gc_crl_metrics = {}
+        if gc_crl_loss_fn is not None:
+            gc_loss, gc_crl_metrics = gc_crl_loss_fn.compute_loss(
+                obs_buf, actions_buf, dones_buf
+            )
+            if gc_loss.requires_grad:
+                gc_crl_optimizer.zero_grad()
+                gc_loss.backward()
+                nn.utils.clip_grad_norm_(gc_crl_loss_fn.parameters(), config["max_grad_norm"])
+                gc_crl_optimizer.step()
+
         num_updates += 1
 
         # Logging
@@ -598,6 +811,15 @@ def train(config: dict, seed: int = 0):
                     "losses/negative_sim_std": contrastive_metrics.get("negative_sim_std", 0),
                     "losses/num_pairs": contrastive_metrics.get("num_pairs", 0),
                     "losses/delta_mean": contrastive_metrics.get("delta_mean", 0),
+                })
+
+            if gc_crl_metrics:
+                log_dict.update({
+                    "losses/gc_categorical_accuracy": gc_crl_metrics.get("gc_categorical_accuracy", 0),
+                    "losses/gc_logits_pos": gc_crl_metrics.get("gc_logits_pos", 0),
+                    "losses/gc_logits_neg": gc_crl_metrics.get("gc_logits_neg", 0),
+                    "losses/gc_infonce_loss": gc_crl_metrics.get("gc_infonce_loss", 0),
+                    "losses/gc_logsumexp_reg": gc_crl_metrics.get("gc_logsumexp_reg", 0),
                 })
 
             wandb.log(log_dict, step=total_timesteps)
@@ -635,7 +857,7 @@ def train(config: dict, seed: int = 0):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="ant", choices=["ant", "swimmer"])
-    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive"])
+    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive", "gc_crl"])
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--num_envs", type=int, default=32, help="Number of parallel environments")
     parser.add_argument("--total_timesteps", type=int, default=10_000_000)
@@ -645,6 +867,13 @@ def main():
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--embedding_dim", type=int, default=64)
     parser.add_argument("--video_interval", type=int, default=50, help="Record video every N updates")
+    # GC-CRL hyperparameters
+    parser.add_argument("--gc_hidden_dim", type=int, default=1024, help="GC-CRL encoder hidden dim")
+    parser.add_argument("--gc_embed_dim", type=int, default=64, help="GC-CRL embedding dim")
+    parser.add_argument("--gc_contrastive_coef", type=float, default=0.1, help="GC-CRL loss coefficient")
+    parser.add_argument("--gc_logsumexp_coef", type=float, default=0.1, help="GC-CRL logsumexp regularization")
+    parser.add_argument("--gc_discount", type=float, default=0.99, help="GC-CRL geometric goal sampling discount")
+    parser.add_argument("--gc_lr", type=float, default=3e-4, help="GC-CRL encoder learning rate")
     args = parser.parse_args()
 
     config = {
@@ -669,6 +898,13 @@ def main():
         "temperature": 0.19,
         "discount": 0.977,
         "use_projection_head": True,
+        # GC-CRL config
+        "gc_hidden_dim": args.gc_hidden_dim,
+        "gc_embed_dim": args.gc_embed_dim,
+        "gc_contrastive_coef": args.gc_contrastive_coef,
+        "gc_logsumexp_coef": args.gc_logsumexp_coef,
+        "gc_discount": args.gc_discount,
+        "gc_lr": args.gc_lr,
     }
 
     print("=" * 60)
@@ -679,6 +915,7 @@ def main():
     print(f"Samples/update: {args.num_envs * 2 * args.num_steps:,}")  # 2 agents per env
     print(f"Total timesteps: {args.total_timesteps:,}")
     print(f"Contrastive: {config['contrastive_coef'] > 0}")
+    print(f"GC-CRL: {args.method == 'gc_crl'}")
     print("=" * 60)
 
     results = []
