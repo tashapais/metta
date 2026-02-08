@@ -7,6 +7,8 @@ from metta.agent.policy import Policy
 from metta.rl.loss import contrastive_config
 from metta.rl.loss.action_supervised import ActionSupervisedConfig
 from metta.rl.loss.goal_conditioned_crl_config import GoalConditionedCRLConfig
+from metta.rl.loss.l2_regularizer_config import L2RegularizerConfig
+from metta.rl.loss.matched_capacity_config import MatchedCapacityConfig
 from metta.rl.loss.cmpo import CMPOConfig
 from metta.rl.loss.eer_cloner import EERClonerConfig
 from metta.rl.loss.eer_kickstarter import EERKickstarterConfig
@@ -44,6 +46,8 @@ class LossesConfig(Config):
         "vit_reconstruction",
         "contrastive",
         "goal_conditioned_crl",
+        "l2_regularizer",
+        "matched_capacity",
         "stable_latent",
         "future_latent_ema",
         "grpo",
@@ -66,6 +70,12 @@ class LossesConfig(Config):
     )
     goal_conditioned_crl: GoalConditionedCRLConfig = Field(
         default_factory=lambda: GoalConditionedCRLConfig(enabled=False)
+    )
+    l2_regularizer: L2RegularizerConfig = Field(
+        default_factory=lambda: L2RegularizerConfig(enabled=False)
+    )
+    matched_capacity: MatchedCapacityConfig = Field(
+        default_factory=lambda: MatchedCapacityConfig(enabled=False)
     )
     stable_latent: StableLatentStateConfig = Field(default_factory=lambda: StableLatentStateConfig(enabled=False))
     future_latent_ema: FutureLatentEMALossConfig = Field(

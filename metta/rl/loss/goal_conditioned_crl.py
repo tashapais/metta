@@ -157,6 +157,11 @@ class GoalConditionedCRLLoss(Loss):
             embed_dim=self.embed_dim,
         ).to(self.device)
 
+        # Register encoder parameters with the optimizer so they actually get updated
+        context = self._require_context()
+        encoder_params = list(self.sa_encoder.parameters()) + list(self.g_encoder.parameters())
+        context.optimizer.add_param_group({"params": encoder_params})
+
         self._initialized = True
 
     def get_experience_spec(self) -> Composite:

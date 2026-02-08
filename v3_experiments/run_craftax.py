@@ -201,27 +201,49 @@ def gc_crl_loss_fn(sa_apply, g_apply, sa_params, g_params, obs, actions, action_
     return total_loss, metrics
 
 
+def mc_loss_fn(sa_apply, g_apply, sa_params, g_params, random_proj_params, obs, actions, action_dim, config):
+    """Matched-capacity loss: same architecture as GC-CRL, random-target MSE."""
+    actions_onehot = jax.nn.one_hot(actions, action_dim).astype(jnp.float32)
+    obs_flat = obs.reshape(obs.shape[0], -1).astype(jnp.float32)
+
+    sa_repr = sa_apply(sa_params, obs_flat, actions_onehot)
+    g_repr = g_apply(g_params, obs_flat)
+
+    # Fixed random projection target (stop gradient)
+    target = jax.lax.stop_gradient(obs_flat @ random_proj_params)
+
+    sa_loss = jnp.mean((sa_repr - target) ** 2)
+    g_loss = jnp.mean((g_repr - target) ** 2)
+    total_loss = config["mc_coef"] * (sa_loss + g_loss)
+
+    return total_loss, {"mc_sa_mse": sa_loss, "mc_g_mse": g_loss}
+
+
 def make_train(config):
     """Create training function."""
 
     env = make_craftax_env_from_name("Craftax-Symbolic-v1", auto_reset=True)
     env_params = env.default_params
     use_gc_crl = config.get("method") == "gc_crl"
+    use_matched_capacity = config.get("method") == "matched_capacity"
+    use_dual_encoder = use_gc_crl or use_matched_capacity
     action_dim = env.action_space(env_params).n
 
     def linear_schedule(count):
         frac = 1.0 - (count // (config["num_minibatches"] * config["update_epochs"])) / config["num_updates"]
         return config["lr"] * frac
 
-    # Create GC-CRL encoder modules at Python level (before JIT)
-    if use_gc_crl:
+    # Create dual-encoder modules at Python level (before JIT) - used by GC-CRL and matched-capacity
+    if use_dual_encoder:
+        enc_hidden = config["gc_hidden_dim"] if use_gc_crl else config["mc_hidden_dim"]
+        enc_embed = config["gc_embed_dim"] if use_gc_crl else config["mc_embed_dim"]
         sa_encoder = FlaxSAEncoder(
-            hidden_dim=config["gc_hidden_dim"],
-            embed_dim=config["gc_embed_dim"],
+            hidden_dim=enc_hidden,
+            embed_dim=enc_embed,
         )
         g_encoder = FlaxGEncoder(
-            hidden_dim=config["gc_hidden_dim"],
-            embed_dim=config["gc_embed_dim"],
+            hidden_dim=enc_hidden,
+            embed_dim=enc_embed,
         )
 
     def train(rng):
@@ -258,8 +280,8 @@ def make_train(config):
             geometric_p=1.0 - config["contrastive_gamma"],
         )
 
-        # Initialize GC-CRL encoders and train state
-        if use_gc_crl:
+        # Initialize dual encoders and train state (GC-CRL or matched-capacity)
+        if use_dual_encoder:
             rng, sa_init_rng, g_init_rng = jax.random.split(rng, 3)
             obs_flat_dim = int(np.prod(env.observation_space(env_params).shape))
             dummy_state = jnp.zeros((1, obs_flat_dim))
@@ -279,6 +301,11 @@ def make_train(config):
                 tx=gc_tx,
             )
 
+            # Fixed random projection for matched-capacity
+            if use_matched_capacity:
+                rng, proj_rng = jax.random.split(rng)
+                random_proj_matrix = jax.random.normal(proj_rng, (obs_flat_dim, enc_embed)) * 0.01
+
         # Initialize environment
         rng, env_rng = jax.random.split(rng)
         reset_rng = jax.random.split(env_rng, config["num_envs"])
@@ -286,7 +313,7 @@ def make_train(config):
 
         # Training loop
         def _update_step(runner_state, unused):
-            if use_gc_crl:
+            if use_dual_encoder:
                 train_state, gc_train_state, env_state, last_obs, rng = runner_state
             else:
                 train_state, env_state, last_obs, rng = runner_state
@@ -335,8 +362,8 @@ def make_train(config):
             )
             returns = advantages + traj_batch.value
 
-            if use_gc_crl:
-                # GC-CRL path: separate optimizers for policy and GC encoders
+            if use_dual_encoder:
+                # Dual-encoder path: separate optimizers for policy and encoders (GC-CRL or matched-capacity)
                 def _update_epoch(carry, unused):
                     train_state, gc_train_state, rng = carry
                     rng, perm_rng, gc_rng = jax.random.split(rng, 3)
@@ -376,14 +403,23 @@ def make_train(config):
                         (ppo_loss, ppo_aux), ppo_grads = ppo_grad_fn(train_state.params)
                         train_state = train_state.apply_gradients(grads=ppo_grads)
 
-                        # GC-CRL loss
+                        # Encoder loss (GC-CRL or matched-capacity)
                         def gc_loss_wrapper(gc_params):
-                            return gc_crl_loss_fn(
-                                sa_encoder.apply, g_encoder.apply,
-                                gc_params["sa"], gc_params["g"],
-                                mb_batch.obs, mb_batch.action, action_dim,
-                                config, gc_rng,
-                            )
+                            if use_matched_capacity:
+                                return mc_loss_fn(
+                                    sa_encoder.apply, g_encoder.apply,
+                                    gc_params["sa"], gc_params["g"],
+                                    random_proj_matrix,
+                                    mb_batch.obs, mb_batch.action, action_dim,
+                                    config,
+                                )
+                            else:
+                                return gc_crl_loss_fn(
+                                    sa_encoder.apply, g_encoder.apply,
+                                    gc_params["sa"], gc_params["g"],
+                                    mb_batch.obs, mb_batch.action, action_dim,
+                                    config, gc_rng,
+                                )
 
                         gc_grad_fn = jax.value_and_grad(gc_loss_wrapper, has_aux=True)
                         (gc_loss, gc_metrics), gc_grads = gc_grad_fn(gc_train_state.params)
@@ -412,14 +448,13 @@ def make_train(config):
                     "pg_loss": losses[1][0].mean(),
                     "value_loss": losses[1][1].mean(),
                     "entropy": losses[1][2].mean(),
-                    "gc_crl_loss": losses[1][3].mean(),
-                    "gc_categorical_accuracy": losses[1][4]["gc_categorical_accuracy"].mean(),
-                    "gc_logits_pos": losses[1][4]["gc_logits_pos"].mean(),
-                    "gc_logits_neg": losses[1][4]["gc_logits_neg"].mean(),
-                    "gc_infonce_loss": losses[1][4]["gc_infonce_loss"].mean(),
-                    "gc_logsumexp_reg": losses[1][4]["gc_logsumexp_reg"].mean(),
+                    "encoder_loss": losses[1][3].mean(),
                     "mean_reward": traj_batch.reward.mean(),
                 }
+                # Add method-specific metrics
+                enc_metrics = losses[1][4]
+                for k in enc_metrics:
+                    metrics[k] = enc_metrics[k].mean()
                 return (train_state, gc_train_state, env_state, last_obs, rng), metrics
 
             else:
@@ -461,9 +496,13 @@ def make_train(config):
                             else:
                                 c_loss = 0.0
 
+                            # L2 activation regularization
+                            l2_loss = config["l2_coef"] * jnp.mean(embedding ** 2) if config["l2_coef"] > 0 else 0.0
+
                             total_loss = (
                                 pg_loss + config["vf_coef"] * value_loss
                                 - config["ent_coef"] * entropy + config["contrastive_coef"] * c_loss
+                                + l2_loss
                             )
                             return total_loss, (pg_loss, value_loss, entropy, c_loss)
 
@@ -499,7 +538,7 @@ def make_train(config):
 
         # Run training
         rng, train_rng = jax.random.split(rng)
-        if use_gc_crl:
+        if use_dual_encoder:
             runner_state = (train_state, gc_train_state, env_state, obsv, train_rng)
         else:
             runner_state = (train_state, env_state, obsv, train_rng)
@@ -587,7 +626,7 @@ def main():
     parser.add_argument("--num_steps", type=int, default=128)
     parser.add_argument("--total_timesteps", type=int, default=1_000_000)
     parser.add_argument("--num_seeds", type=int, default=3)
-    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive", "gc_crl"])
+    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive", "gc_crl", "l2", "matched_capacity"])
     parser.add_argument("--contrastive", action="store_true", help="Enable contrastive learning (legacy flag)")
     parser.add_argument("--contrastive_coef", type=float, default=0.001)
     # GC-CRL hyperparameters
@@ -597,6 +636,12 @@ def main():
     parser.add_argument("--gc_logsumexp_coef", type=float, default=0.1, help="GC-CRL logsumexp regularization")
     parser.add_argument("--gc_discount", type=float, default=0.99, help="GC-CRL geometric goal sampling discount")
     parser.add_argument("--gc_lr", type=float, default=3e-4, help="GC-CRL encoder learning rate")
+    # L2 regularizer
+    parser.add_argument("--l2_coef", type=float, default=0.00068, help="L2 activation regularization coefficient")
+    # Matched capacity
+    parser.add_argument("--mc_hidden_dim", type=int, default=1024, help="Matched-capacity encoder hidden dim")
+    parser.add_argument("--mc_embed_dim", type=int, default=64, help="Matched-capacity embedding dim")
+    parser.add_argument("--mc_coef", type=float, default=0.1, help="Matched-capacity loss coefficient")
     args = parser.parse_args()
 
     # Backward compat: --contrastive flag sets method
@@ -621,6 +666,10 @@ def main():
         "embedding_dim": 64,
         "method": args.method,
         "contrastive_coef": args.contrastive_coef if args.method == "contrastive" else 0.0,
+        "l2_coef": args.l2_coef if args.method == "l2" else 0.0,
+        "mc_hidden_dim": args.mc_hidden_dim,
+        "mc_embed_dim": args.mc_embed_dim,
+        "mc_coef": args.mc_coef,
         "contrastive_temperature": 0.1,
         "contrastive_gamma": 0.977,
         # GC-CRL config
@@ -636,7 +685,7 @@ def main():
     batch_size = config["num_envs"] * config["num_steps"]
     config["num_updates"] = args.total_timesteps // batch_size
 
-    method_label = {"baseline": "Baseline", "contrastive": "+ Contrastive", "gc_crl": "+ GC-CRL"}[args.method]
+    method_label = {"baseline": "Baseline", "contrastive": "+ Contrastive", "gc_crl": "+ GC-CRL", "l2": "+ L2 Reg", "matched_capacity": "+ Matched Capacity"}[args.method]
     print("=" * 60, flush=True)
     print(f"Craftax PPO {method_label}", flush=True)
     print("=" * 60, flush=True)

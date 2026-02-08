@@ -350,7 +350,8 @@ class CoreTrainingLoop:
                             actual_max_grad_norm = loss_obj.cfg.max_grad_norm
                             break
 
-                    torch.nn.utils.clip_grad_norm_(self.policy.parameters(), actual_max_grad_norm)
+                    all_params = [p for group in self.optimizer.param_groups for p in group["params"]]
+                    torch.nn.utils.clip_grad_norm_(all_params, actual_max_grad_norm)
                     self.optimizer.step()
 
                     if self.device.type == "cuda":

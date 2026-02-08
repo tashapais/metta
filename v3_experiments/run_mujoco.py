@@ -103,7 +103,11 @@ class VectorizedMAMuJoCo:
             all_dones.append(dones)
             all_infos.append(info)
 
-            # Auto-reset if any agent is done (PettingZoo does this internally)
+            # Auto-reset if any agent is done (PettingZoo doesn't do this)
+            if dones.any():
+                reset_obs, _ = env.reset()
+                # Replace obs with reset obs so next step starts fresh
+                all_obs[-1] = np.stack([reset_obs[agent] for agent in self.agents])
 
         return (
             np.stack(all_obs),
@@ -539,6 +543,57 @@ class GCCRLLoss:
         return total_loss, metrics
 
 
+class MujocoMatchedCapacityLoss:
+    """Matched-capacity control: same dual-encoder architecture as GC-CRL, random-target MSE."""
+
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        hidden_dim: int = 1024,
+        embed_dim: int = 64,
+        capacity_coef: float = 0.1,
+        device: torch.device = torch.device("cpu"),
+    ):
+        self.capacity_coef = capacity_coef
+        self.device = device
+
+        self.sa_encoder = MujocoSAEncoder(state_dim, action_dim, hidden_dim, embed_dim).to(device)
+        self.g_encoder = MujocoGEncoder(state_dim, hidden_dim, embed_dim).to(device)
+        # Fixed random projection (not trained)
+        self.random_projection = nn.Linear(state_dim, embed_dim, bias=False).to(device)
+        self.random_projection.requires_grad_(False)
+
+    def parameters(self):
+        return list(self.sa_encoder.parameters()) + list(self.g_encoder.parameters())
+
+    def compute_loss(
+        self,
+        obs_buf: torch.Tensor,
+        actions_buf: torch.Tensor,
+        dones_buf: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        num_steps, batch_size, obs_dim = obs_buf.shape
+        obs_flat = obs_buf.reshape(-1, obs_dim)
+        actions_flat = actions_buf.reshape(-1, actions_buf.shape[-1])
+
+        sa_repr = self.sa_encoder(obs_flat, actions_flat)
+        g_repr = self.g_encoder(obs_flat)
+
+        with torch.no_grad():
+            target = self.random_projection(obs_flat)
+
+        sa_loss = F.mse_loss(sa_repr, target)
+        g_loss = F.mse_loss(g_repr, target)
+        total_loss = self.capacity_coef * (sa_loss + g_loss)
+
+        return total_loss, {
+            "mc_sa_mse": sa_loss.item(),
+            "mc_g_mse": g_loss.item(),
+            "mc_total_loss": total_loss.item(),
+        }
+
+
 def compute_gae(
     rewards: torch.Tensor,
     values: torch.Tensor,
@@ -638,6 +693,20 @@ def train(config: dict, seed: int = 0):
             use_projection_head=config["use_projection_head"],
             device=device,
         )
+
+    # Matched-capacity loss
+    mc_loss_fn = None
+    mc_optimizer = None
+    if config["method"] == "matched_capacity":
+        mc_loss_fn = MujocoMatchedCapacityLoss(
+            state_dim=obs_dim,
+            action_dim=action_dim,
+            hidden_dim=config["mc_hidden_dim"],
+            embed_dim=config["mc_embed_dim"],
+            capacity_coef=config["mc_coef"],
+            device=device,
+        )
+        mc_optimizer = torch.optim.Adam(mc_loss_fn.parameters(), lr=config["lr"], eps=1e-5)
 
     # Storage
     obs_buf = torch.zeros((config["num_steps"], agents_per_step, obs_dim), device=device)
@@ -759,17 +828,46 @@ def train(config: dict, seed: int = 0):
                 nn.utils.clip_grad_norm_(policy.parameters(), config["max_grad_norm"])
                 optimizer.step()
 
-        # Contrastive loss
+        # Contrastive loss (recompute embeddings with grad so gradients flow to encoder)
         contrastive_metrics = {}
         if contrastive_loss_fn is not None:
+            # Recompute embeddings for full rollout buffer with grad
+            # obs_buf: (num_steps, agents_per_step, obs_dim)
+            c_obs_flat = obs_buf.reshape(-1, obs_dim)  # (num_steps * agents_per_step, obs_dim)
+            _, _, _, _, c_embeddings_flat = policy.get_action_and_value(c_obs_flat)
+            c_embeddings = c_embeddings_flat.reshape(config["num_steps"], agents_per_step, -1)
             c_loss, contrastive_metrics = contrastive_loss_fn.compute_loss(
-                embeddings_buf, dones_buf
+                c_embeddings, dones_buf
             )
             if c_loss.item() > 0:
                 optimizer.zero_grad()
                 c_loss.backward()
                 nn.utils.clip_grad_norm_(policy.parameters(), config["max_grad_norm"])
                 optimizer.step()
+
+        # L2 activation regularization (recompute embeddings with grad)
+        l2_metrics = {}
+        if config["l2_coef"] > 0:
+            # Sample a minibatch of obs and recompute embeddings with grad
+            l2_indices = torch.randperm(batch_size, device=device)[:config["minibatch_size"]]
+            l2_obs = b_obs[l2_indices]
+            _, _, _, _, l2_embeddings = policy.get_action_and_value(l2_obs)
+            l2_loss = config["l2_coef"] * torch.mean(l2_embeddings ** 2)
+            optimizer.zero_grad()
+            l2_loss.backward()
+            nn.utils.clip_grad_norm_(policy.parameters(), config["max_grad_norm"])
+            optimizer.step()
+            l2_metrics = {"l2_loss": l2_loss.item()}
+
+        # Matched-capacity loss (separate optimizer)
+        mc_metrics = {}
+        if mc_loss_fn is not None:
+            mc_loss, mc_metrics = mc_loss_fn.compute_loss(obs_buf, actions_buf, dones_buf)
+            if mc_loss.requires_grad:
+                mc_optimizer.zero_grad()
+                mc_loss.backward()
+                nn.utils.clip_grad_norm_(mc_loss_fn.parameters(), config["max_grad_norm"])
+                mc_optimizer.step()
 
         # GC-CRL loss (separate optimizer)
         gc_crl_metrics = {}
@@ -812,6 +910,12 @@ def train(config: dict, seed: int = 0):
                     "losses/num_pairs": contrastive_metrics.get("num_pairs", 0),
                     "losses/delta_mean": contrastive_metrics.get("delta_mean", 0),
                 })
+
+            if l2_metrics:
+                log_dict.update({"losses/" + k: v for k, v in l2_metrics.items()})
+
+            if mc_metrics:
+                log_dict.update({"losses/" + k: v for k, v in mc_metrics.items()})
 
             if gc_crl_metrics:
                 log_dict.update({
@@ -857,8 +961,9 @@ def train(config: dict, seed: int = 0):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="ant", choices=["ant", "swimmer"])
-    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive", "gc_crl"])
+    parser.add_argument("--method", type=str, default="baseline", choices=["baseline", "contrastive", "gc_crl", "l2", "matched_capacity"])
     parser.add_argument("--num_seeds", type=int, default=1)
+    parser.add_argument("--seed_offset", type=int, default=0, help="Starting seed (seeds run from offset to offset+num_seeds-1)")
     parser.add_argument("--num_envs", type=int, default=32, help="Number of parallel environments")
     parser.add_argument("--total_timesteps", type=int, default=10_000_000)
     parser.add_argument("--num_steps", type=int, default=256, help="Steps per rollout per env")
@@ -874,6 +979,14 @@ def main():
     parser.add_argument("--gc_logsumexp_coef", type=float, default=0.1, help="GC-CRL logsumexp regularization")
     parser.add_argument("--gc_discount", type=float, default=0.99, help="GC-CRL geometric goal sampling discount")
     parser.add_argument("--gc_lr", type=float, default=3e-4, help="GC-CRL encoder learning rate")
+    # Contrastive coefficient override (for therapeutic window experiments)
+    parser.add_argument("--contrastive_coef", type=float, default=None, help="Override contrastive coefficient (default: 0.00068 for contrastive method)")
+    # L2 regularizer
+    parser.add_argument("--l2_coef", type=float, default=0.00068, help="L2 activation regularization coefficient")
+    # Matched capacity
+    parser.add_argument("--mc_hidden_dim", type=int, default=1024, help="Matched-capacity encoder hidden dim")
+    parser.add_argument("--mc_embed_dim", type=int, default=64, help="Matched-capacity embedding dim")
+    parser.add_argument("--mc_coef", type=float, default=0.1, help="Matched-capacity loss coefficient")
     args = parser.parse_args()
 
     config = {
@@ -894,7 +1007,7 @@ def main():
         "hidden_dim": args.hidden_dim,
         "embedding_dim": args.embedding_dim,
         "video_interval": args.video_interval,
-        "contrastive_coef": 0.00068 if args.method == "contrastive" else 0.0,
+        "contrastive_coef": (args.contrastive_coef if args.contrastive_coef is not None else 0.00068) if args.method == "contrastive" else 0.0,
         "temperature": 0.19,
         "discount": 0.977,
         "use_projection_head": True,
@@ -905,6 +1018,12 @@ def main():
         "gc_logsumexp_coef": args.gc_logsumexp_coef,
         "gc_discount": args.gc_discount,
         "gc_lr": args.gc_lr,
+        # L2 regularizer
+        "l2_coef": args.l2_coef if args.method == "l2" else 0.0,
+        # Matched capacity
+        "mc_hidden_dim": args.mc_hidden_dim,
+        "mc_embed_dim": args.mc_embed_dim,
+        "mc_coef": args.mc_coef,
     }
 
     print("=" * 60)
@@ -915,11 +1034,13 @@ def main():
     print(f"Samples/update: {args.num_envs * 2 * args.num_steps:,}")  # 2 agents per env
     print(f"Total timesteps: {args.total_timesteps:,}")
     print(f"Contrastive: {config['contrastive_coef'] > 0}")
+    print(f"L2 Regularizer: {config['l2_coef'] > 0} (coef={config['l2_coef']})")
+    print(f"Matched Capacity: {args.method == 'matched_capacity'}")
     print(f"GC-CRL: {args.method == 'gc_crl'}")
     print("=" * 60)
 
     results = []
-    for seed in range(args.num_seeds):
+    for seed in range(args.seed_offset, args.seed_offset + args.num_seeds):
         print(f"\n--- Seed {seed} ---")
         result = train(config, seed=seed)
         results.append(result)
