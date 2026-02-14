@@ -1,0 +1,244 @@
+[
+  {
+    "map_name": "3s5z",
+    "n_agents": 8,
+    "lead_time_steps": 157696.0,
+    "lead_time_steps_std": 290469.653,
+    "lead_time_steps_seeds": [
+      737280.0,
+      0.0,
+      0.0,
+      51200.0,
+      0.0
+    ],
+    "lead_time_multiplier": 2.04,
+    "lead_time_multiplier_std": 2.03,
+    "lead_time_multiplier_seeds": [
+      6.1,
+      1.0,
+      1.0,
+      1.1,
+      1.0
+    ],
+    "final_eff_rank": 9.92,
+    "final_eff_rank_std": 1.795,
+    "final_eff_rank_seeds": [
+      9.0,
+      9.0,
+      13.3,
+      10.1,
+      8.2
+    ],
+    "final_value_rank": 10.72,
+    "final_value_rank_std": 2.035,
+    "final_value_rank_seeds": [
+      10.1,
+      9.8,
+      14.4,
+      11.0,
+      8.3
+    ],
+    "expansion_ratio_success": 0.482,
+    "expansion_ratio_success_std": 0.43,
+    "expansion_ratio_success_seeds": [
+      0.27,
+      0.04,
+      1.0,
+      1.0,
+      0.1
+    ],
+    "expansion_ratio_failure": 0.088,
+    "expansion_ratio_failure_std": 0.026,
+    "expansion_ratio_failure_seeds": [
+      0.11,
+      0.07,
+      0.09,
+      0.05,
+      0.12
+    ],
+    "expansion_ratio_diff": 0.392,
+    "expansion_ratio_diff_std": 0.444,
+    "expansion_ratio_diff_seeds": [
+      0.15,
+      -0.03,
+      0.91,
+      0.95,
+      -0.02
+    ],
+    "svd_ratio": 25.78,
+    "svd_ratio_std": 4.613,
+    "svd_ratio_seeds": [
+      25.0,
+      32.9,
+      18.4,
+      26.5,
+      26.1
+    ],
+    "final_win_rate": 0.0,
+    "final_win_rate_std": 0.0,
+    "final_win_rate_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_reward": 7.962,
+    "final_reward_std": 0.593,
+    "final_reward_seeds": [
+      8.54,
+      8.06,
+      6.94,
+      7.74,
+      8.53
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 1.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "map_name": "5m_vs_6m",
+    "n_agents": 5,
+    "lead_time_steps": 0.0,
+    "lead_time_steps_std": 0.0,
+    "lead_time_steps_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "lead_time_multiplier": 1.0,
+    "lead_time_multiplier_std": 0.0,
+    "lead_time_multiplier_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "final_eff_rank": 12.56,
+    "final_eff_rank_std": 0.9,
+    "final_eff_rank_seeds": [
+      13.4,
+      13.7,
+      11.6,
+      12.6,
+      11.5
+    ],
+    "final_value_rank": 14.0,
+    "final_value_rank_std": 0.678,
+    "final_value_rank_seeds": [
+      15.0,
+      13.8,
+      12.9,
+      14.2,
+      14.1
+    ],
+    "expansion_ratio_success": 0.034,
+    "expansion_ratio_success_std": 0.005,
+    "expansion_ratio_success_seeds": [
+      0.04,
+      0.04,
+      0.03,
+      0.03,
+      0.03
+    ],
+    "expansion_ratio_failure": 0.064,
+    "expansion_ratio_failure_std": 0.029,
+    "expansion_ratio_failure_seeds": [
+      0.08,
+      0.11,
+      0.06,
+      0.03,
+      0.04
+    ],
+    "expansion_ratio_diff": -0.03,
+    "expansion_ratio_diff_std": 0.024,
+    "expansion_ratio_diff_seeds": [
+      -0.04,
+      -0.07,
+      -0.03,
+      0.0,
+      -0.01
+    ],
+    "svd_ratio": 22.86,
+    "svd_ratio_std": 3.215,
+    "svd_ratio_seeds": [
+      21.7,
+      18.4,
+      28.3,
+      22.3,
+      23.6
+    ],
+    "final_win_rate": 0.0,
+    "final_win_rate_std": 0.0,
+    "final_win_rate_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_reward": 6.918,
+    "final_reward_std": 0.278,
+    "final_reward_seeds": [
+      7.14,
+      6.65,
+      7.35,
+      6.77,
+      6.68
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 1.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+]

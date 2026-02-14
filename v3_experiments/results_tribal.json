@@ -1,0 +1,338 @@
+[
+  {
+    "num_teams": 2,
+    "total_agents": 256,
+    "final_eff_rank": 13.74,
+    "final_eff_rank_std": 2.699,
+    "final_eff_rank_seeds": [
+      12.5,
+      10.8,
+      16.4,
+      17.5,
+      11.5
+    ],
+    "expansion_ratio": 11.304,
+    "expansion_ratio_std": 21.953,
+    "expansion_ratio_seeds": [
+      0.17,
+      55.21,
+      0.58,
+      0.23,
+      0.33
+    ],
+    "expansion_ratio_success": 13.564,
+    "expansion_ratio_success_std": 26.329,
+    "expansion_ratio_success_seeds": [
+      0.17,
+      66.22,
+      0.68,
+      0.36,
+      0.39
+    ],
+    "expansion_ratio_failure": 0.102,
+    "expansion_ratio_failure_std": 0.045,
+    "expansion_ratio_failure_seeds": [
+      0.16,
+      0.14,
+      0.09,
+      0.09,
+      0.03
+    ],
+    "expansion_ratio_diff": 13.46,
+    "expansion_ratio_diff_std": 26.316,
+    "expansion_ratio_diff_seeds": [
+      0.01,
+      66.09,
+      0.59,
+      0.26,
+      0.35
+    ],
+    "value_rank": 14.94,
+    "value_rank_std": 3.223,
+    "value_rank_seeds": [
+      14.5,
+      11.3,
+      17.1,
+      19.9,
+      11.9
+    ],
+    "win_rate": 0.0,
+    "win_rate_std": 0.0,
+    "win_rate_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_reward": 293692.804,
+    "final_reward_std": 163672.928,
+    "final_reward_seeds": [
+      298383.71,
+      297995.86,
+      377434.13,
+      -254.21,
+      494904.53
+    ],
+    "svd_ratio": 15.98,
+    "svd_ratio_std": 4.14,
+    "svd_ratio_seeds": [
+      18.4,
+      21.0,
+      12.0,
+      10.2,
+      18.3
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 1.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "num_teams": 4,
+    "total_agents": 506,
+    "final_eff_rank": 32.42,
+    "final_eff_rank_std": 8.13,
+    "final_eff_rank_seeds": [
+      35.9,
+      43.5,
+      18.5,
+      31.2,
+      33.0
+    ],
+    "expansion_ratio": 185.7,
+    "expansion_ratio_std": 314.971,
+    "expansion_ratio_seeds": [
+      35.53,
+      0.79,
+      0.57,
+      78.58,
+      813.03
+    ],
+    "expansion_ratio_success": 556.372,
+    "expansion_ratio_success_std": 945.107,
+    "expansion_ratio_success_seeds": [
+      106.53,
+      1.0,
+      0.43,
+      235.21,
+      2438.69
+    ],
+    "expansion_ratio_failure": 0.386,
+    "expansion_ratio_failure_std": 0.284,
+    "expansion_ratio_failure_seeds": [
+      0.03,
+      0.79,
+      0.64,
+      0.27,
+      0.2
+    ],
+    "expansion_ratio_diff": 555.986,
+    "expansion_ratio_diff_std": 945.216,
+    "expansion_ratio_diff_seeds": [
+      106.5,
+      0.21,
+      -0.21,
+      234.94,
+      2438.49
+    ],
+    "value_rank": 46.84,
+    "value_rank_std": 14.885,
+    "value_rank_seeds": [
+      56.1,
+      64.7,
+      21.5,
+      40.5,
+      51.4
+    ],
+    "win_rate": 0.0,
+    "win_rate_std": 0.0,
+    "win_rate_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_reward": 23706.024,
+    "final_reward_std": 24244.862,
+    "final_reward_seeds": [
+      25010.69,
+      -1345.28,
+      69027.29,
+      9524.07,
+      16313.35
+    ],
+    "svd_ratio": 6.92,
+    "svd_ratio_std": 2.959,
+    "svd_ratio_seeds": [
+      5.3,
+      3.8,
+      12.4,
+      5.8,
+      7.3
+    ],
+    "effrank_below_0.3d": 0.2,
+    "effrank_below_0.3d_std": 0.4,
+    "effrank_below_0.3d_seeds": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "exp_ratio_below_1": 1.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "svd_ratio_above_10": 0.2,
+    "svd_ratio_above_10_std": 0.4,
+    "svd_ratio_above_10_seeds": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "num_teams": 8,
+    "total_agents": 1006,
+    "final_eff_rank": 39.82,
+    "final_eff_rank_std": 7.914,
+    "final_eff_rank_seeds": [
+      39.7,
+      28.4,
+      49.8,
+      34.2,
+      47.0
+    ],
+    "expansion_ratio": 0.426,
+    "expansion_ratio_std": 0.101,
+    "expansion_ratio_seeds": [
+      0.45,
+      0.25,
+      0.55,
+      0.4,
+      0.48
+    ],
+    "expansion_ratio_success": 1.0,
+    "expansion_ratio_success_std": 0.0,
+    "expansion_ratio_success_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "expansion_ratio_failure": 0.426,
+    "expansion_ratio_failure_std": 0.101,
+    "expansion_ratio_failure_seeds": [
+      0.45,
+      0.25,
+      0.55,
+      0.4,
+      0.48
+    ],
+    "expansion_ratio_diff": 0.574,
+    "expansion_ratio_diff_std": 0.101,
+    "expansion_ratio_diff_seeds": [
+      0.55,
+      0.75,
+      0.45,
+      0.6,
+      0.52
+    ],
+    "value_rank": 71.9,
+    "value_rank_std": 26.981,
+    "value_rank_seeds": [
+      71.2,
+      30.9,
+      105.1,
+      55.9,
+      96.4
+    ],
+    "win_rate": 0.0,
+    "win_rate_std": 0.0,
+    "win_rate_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_reward": -2538.15,
+    "final_reward_std": 79.861,
+    "final_reward_seeds": [
+      -2602.98,
+      -2437.11,
+      -2622.21,
+      -2446.16,
+      -2582.29
+    ],
+    "svd_ratio": 4.5,
+    "svd_ratio_std": 1.435,
+    "svd_ratio_seeds": [
+      4.6,
+      4.7,
+      2.9,
+      7.0,
+      3.3
+    ],
+    "effrank_below_0.3d": 0.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "exp_ratio_below_1": 1.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "svd_ratio_above_10": 0.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+]

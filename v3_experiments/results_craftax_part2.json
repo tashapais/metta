@@ -1,0 +1,1106 @@
+[
+  {
+    "horizon": 500.0,
+    "horizon_std": 0.0,
+    "horizon_seeds": [
+      500.0,
+      500.0,
+      500.0,
+      500.0,
+      500.0
+    ],
+    "gae_lambda": 0.99,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.99,
+      0.99,
+      0.99,
+      0.99,
+      0.99
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 19.02,
+    "eff_rank_at_1m_std": 1.752,
+    "eff_rank_at_1m_seeds": [
+      18.7,
+      18.1,
+      20.2,
+      21.6,
+      16.5
+    ],
+    "final_eff_rank": 19.28,
+    "final_eff_rank_std": 1.747,
+    "final_eff_rank_seeds": [
+      19.9,
+      18.4,
+      19.2,
+      22.1,
+      16.8
+    ],
+    "final_svd_ratio": 20.06,
+    "final_svd_ratio_std": 3.526,
+    "final_svd_ratio_seeds": [
+      20.3,
+      20.3,
+      19.4,
+      14.6,
+      25.7
+    ],
+    "expansion_ratio": 3.616,
+    "expansion_ratio_std": 2.957,
+    "expansion_ratio_seeds": [
+      1.22,
+      8.64,
+      1.69,
+      5.36,
+      1.17
+    ],
+    "value_loss": 0.093,
+    "value_loss_std": 0.005,
+    "value_loss_seeds": [
+      0.088,
+      0.102,
+      0.096,
+      0.089,
+      0.091
+    ],
+    "final_reward": 0.015,
+    "final_reward_std": 0.001,
+    "final_reward_seeds": [
+      0.014,
+      0.017,
+      0.017,
+      0.013,
+      0.015
+    ],
+    "elapsed_time": 299.58,
+    "elapsed_time_std": 6.417,
+    "elapsed_time_seeds": [
+      312.4,
+      296.4,
+      296.1,
+      296.1,
+      296.9
+    ],
+    "effrank_below_0.3d": 0.6,
+    "effrank_below_0.3d_std": 0.49,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": 2000.0,
+    "horizon_std": 0.0,
+    "horizon_seeds": [
+      2000.0,
+      2000.0,
+      2000.0,
+      2000.0,
+      2000.0
+    ],
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 16.58,
+    "eff_rank_at_1m_std": 1.065,
+    "eff_rank_at_1m_seeds": [
+      17.5,
+      16.8,
+      15.9,
+      17.8,
+      14.9
+    ],
+    "final_eff_rank": 17.6,
+    "final_eff_rank_std": 1.105,
+    "final_eff_rank_seeds": [
+      19.1,
+      17.4,
+      17.8,
+      18.0,
+      15.7
+    ],
+    "final_svd_ratio": 22.46,
+    "final_svd_ratio_std": 2.247,
+    "final_svd_ratio_seeds": [
+      19.0,
+      22.4,
+      21.3,
+      24.1,
+      25.5
+    ],
+    "expansion_ratio": 54.082,
+    "expansion_ratio_std": 103.881,
+    "expansion_ratio_seeds": [
+      2.91,
+      1.36,
+      261.84,
+      1.6,
+      2.7
+    ],
+    "value_loss": 0.053,
+    "value_loss_std": 0.008,
+    "value_loss_seeds": [
+      0.045,
+      0.048,
+      0.065,
+      0.048,
+      0.059
+    ],
+    "final_reward": 0.018,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.016,
+      0.017,
+      0.021,
+      0.017,
+      0.018
+    ],
+    "elapsed_time": 298.22,
+    "elapsed_time_std": 1.081,
+    "elapsed_time_seeds": [
+      296.4,
+      299.2,
+      299.2,
+      298.7,
+      297.6
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": 2000.0,
+    "horizon_std": 0.0,
+    "horizon_seeds": [
+      2000.0,
+      2000.0,
+      2000.0,
+      2000.0,
+      2000.0
+    ],
+    "gae_lambda": 0.99,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.99,
+      0.99,
+      0.99,
+      0.99,
+      0.99
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 19.08,
+    "eff_rank_at_1m_std": 1.702,
+    "eff_rank_at_1m_seeds": [
+      18.7,
+      18.2,
+      20.1,
+      21.7,
+      16.7
+    ],
+    "final_eff_rank": 19.26,
+    "final_eff_rank_std": 1.734,
+    "final_eff_rank_seeds": [
+      19.8,
+      18.3,
+      19.0,
+      22.2,
+      17.0
+    ],
+    "final_svd_ratio": 19.84,
+    "final_svd_ratio_std": 3.217,
+    "final_svd_ratio_seeds": [
+      20.5,
+      20.0,
+      19.4,
+      14.6,
+      24.7
+    ],
+    "expansion_ratio": 3.616,
+    "expansion_ratio_std": 2.957,
+    "expansion_ratio_seeds": [
+      1.22,
+      8.64,
+      1.69,
+      5.36,
+      1.17
+    ],
+    "value_loss": 0.093,
+    "value_loss_std": 0.005,
+    "value_loss_seeds": [
+      0.088,
+      0.102,
+      0.096,
+      0.089,
+      0.091
+    ],
+    "final_reward": 0.015,
+    "final_reward_std": 0.001,
+    "final_reward_seeds": [
+      0.014,
+      0.017,
+      0.017,
+      0.013,
+      0.015
+    ],
+    "elapsed_time": 298.78,
+    "elapsed_time_std": 2.081,
+    "elapsed_time_seeds": [
+      300.2,
+      296.2,
+      299.3,
+      301.6,
+      296.6
+    ],
+    "effrank_below_0.3d": 0.6,
+    "effrank_below_0.3d_std": 0.49,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 16.48,
+    "eff_rank_at_1m_std": 1.157,
+    "eff_rank_at_1m_seeds": [
+      17.4,
+      16.7,
+      15.7,
+      17.9,
+      14.7
+    ],
+    "final_eff_rank": 17.56,
+    "final_eff_rank_std": 1.095,
+    "final_eff_rank_seeds": [
+      19.1,
+      17.4,
+      17.7,
+      17.9,
+      15.7
+    ],
+    "final_svd_ratio": 22.94,
+    "final_svd_ratio_std": 2.719,
+    "final_svd_ratio_seeds": [
+      19.5,
+      21.4,
+      21.6,
+      25.4,
+      26.8
+    ],
+    "expansion_ratio": 54.082,
+    "expansion_ratio_std": 103.881,
+    "expansion_ratio_seeds": [
+      2.91,
+      1.36,
+      261.84,
+      1.6,
+      2.7
+    ],
+    "value_loss": 0.053,
+    "value_loss_std": 0.008,
+    "value_loss_seeds": [
+      0.045,
+      0.048,
+      0.065,
+      0.048,
+      0.059
+    ],
+    "final_reward": 0.018,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.016,
+      0.017,
+      0.021,
+      0.017,
+      0.018
+    ],
+    "elapsed_time": 296.82,
+    "elapsed_time_std": 2.604,
+    "elapsed_time_seeds": [
+      298.2,
+      296.5,
+      299.1,
+      291.9,
+      298.4
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 4.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      4.0,
+      4.0,
+      4.0,
+      4.0,
+      4.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 12.02,
+    "eff_rank_at_1m_std": 1.605,
+    "eff_rank_at_1m_seeds": [
+      10.0,
+      14.0,
+      10.6,
+      13.7,
+      11.8
+    ],
+    "final_eff_rank": 12.38,
+    "final_eff_rank_std": 0.655,
+    "final_eff_rank_seeds": [
+      11.7,
+      13.4,
+      11.7,
+      12.8,
+      12.3
+    ],
+    "final_svd_ratio": 34.76,
+    "final_svd_ratio_std": 2.328,
+    "final_svd_ratio_seeds": [
+      37.2,
+      31.8,
+      36.0,
+      32.1,
+      36.7
+    ],
+    "expansion_ratio": 7.88,
+    "expansion_ratio_std": 7.766,
+    "expansion_ratio_seeds": [
+      22.84,
+      2.96,
+      1.63,
+      7.9,
+      4.07
+    ],
+    "value_loss": 0.052,
+    "value_loss_std": 0.005,
+    "value_loss_seeds": [
+      0.059,
+      0.051,
+      0.047,
+      0.046,
+      0.055
+    ],
+    "final_reward": 0.017,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.018,
+      0.019,
+      0.016,
+      0.014,
+      0.019
+    ],
+    "elapsed_time": 296.24,
+    "elapsed_time_std": 0.977,
+    "elapsed_time_seeds": [
+      295.1,
+      296.8,
+      297.8,
+      296.1,
+      295.4
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 8.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 6.04,
+    "eff_rank_at_1m_std": 0.531,
+    "eff_rank_at_1m_seeds": [
+      6.2,
+      5.7,
+      5.2,
+      6.4,
+      6.7
+    ],
+    "final_eff_rank": 7.7,
+    "final_eff_rank_std": 0.424,
+    "final_eff_rank_seeds": [
+      8.1,
+      7.8,
+      6.9,
+      8.0,
+      7.7
+    ],
+    "final_svd_ratio": 53.08,
+    "final_svd_ratio_std": 4.129,
+    "final_svd_ratio_seeds": [
+      46.8,
+      52.4,
+      56.7,
+      51.1,
+      58.4
+    ],
+    "expansion_ratio": 15.994,
+    "expansion_ratio_std": 7.446,
+    "expansion_ratio_seeds": [
+      20.8,
+      4.72,
+      26.72,
+      12.66,
+      15.07
+    ],
+    "value_loss": 0.048,
+    "value_loss_std": 0.003,
+    "value_loss_seeds": [
+      0.053,
+      0.048,
+      0.047,
+      0.051,
+      0.043
+    ],
+    "final_reward": 0.016,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.015,
+      0.016,
+      0.017,
+      0.02,
+      0.013
+    ],
+    "elapsed_time": 303.9,
+    "elapsed_time_std": 4.629,
+    "elapsed_time_seeds": [
+      301.8,
+      307.1,
+      298.3,
+      301.1,
+      311.2
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 2048.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      2048.0,
+      2048.0,
+      2048.0,
+      2048.0,
+      2048.0
+    ],
+    "eff_rank_at_1m": 18.38,
+    "eff_rank_at_1m_std": 0.909,
+    "eff_rank_at_1m_seeds": [
+      18.8,
+      17.8,
+      16.9,
+      19.0,
+      19.4
+    ],
+    "final_eff_rank": 18.48,
+    "final_eff_rank_std": 0.776,
+    "final_eff_rank_seeds": [
+      18.7,
+      19.5,
+      17.1,
+      18.6,
+      18.5
+    ],
+    "final_svd_ratio": 18.68,
+    "final_svd_ratio_std": 1.229,
+    "final_svd_ratio_seeds": [
+      18.6,
+      17.6,
+      19.8,
+      17.1,
+      20.3
+    ],
+    "expansion_ratio": 6.382,
+    "expansion_ratio_std": 7.357,
+    "expansion_ratio_seeds": [
+      1.71,
+      5.11,
+      20.89,
+      2.0,
+      2.2
+    ],
+    "value_loss": 0.058,
+    "value_loss_std": 0.007,
+    "value_loss_seeds": [
+      0.053,
+      0.048,
+      0.06,
+      0.064,
+      0.065
+    ],
+    "final_reward": 0.016,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.016,
+      0.014,
+      0.017,
+      0.016,
+      0.019
+    ],
+    "elapsed_time": 455.98,
+    "elapsed_time_std": 7.83,
+    "elapsed_time_seeds": [
+      471.0,
+      451.7,
+      455.6,
+      452.9,
+      448.7
+    ],
+    "effrank_below_0.3d": 0.8,
+    "effrank_below_0.3d_std": 0.4,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 8192.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0,
+      8192.0
+    ],
+    "eff_rank_at_1m": 16.54,
+    "eff_rank_at_1m_std": 1.113,
+    "eff_rank_at_1m_seeds": [
+      17.2,
+      16.6,
+      16.0,
+      18.1,
+      14.8
+    ],
+    "final_eff_rank": 17.64,
+    "final_eff_rank_std": 1.089,
+    "final_eff_rank_seeds": [
+      19.2,
+      17.5,
+      17.9,
+      17.8,
+      15.8
+    ],
+    "final_svd_ratio": 22.16,
+    "final_svd_ratio_std": 2.312,
+    "final_svd_ratio_seeds": [
+      18.8,
+      21.5,
+      21.0,
+      24.4,
+      25.1
+    ],
+    "expansion_ratio": 54.082,
+    "expansion_ratio_std": 103.881,
+    "expansion_ratio_seeds": [
+      2.91,
+      1.36,
+      261.84,
+      1.6,
+      2.7
+    ],
+    "value_loss": 0.053,
+    "value_loss_std": 0.008,
+    "value_loss_seeds": [
+      0.045,
+      0.048,
+      0.065,
+      0.048,
+      0.059
+    ],
+    "final_reward": 0.018,
+    "final_reward_std": 0.002,
+    "final_reward_seeds": [
+      0.016,
+      0.017,
+      0.021,
+      0.017,
+      0.018
+    ],
+    "elapsed_time": 293.7,
+    "elapsed_time_std": 2.982,
+    "elapsed_time_seeds": [
+      298.3,
+      294.9,
+      294.4,
+      290.8,
+      290.1
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  {
+    "horizon": "default",
+    "gae_lambda": 0.95,
+    "gae_lambda_std": 0.0,
+    "gae_lambda_seeds": [
+      0.95,
+      0.95,
+      0.95,
+      0.95,
+      0.95
+    ],
+    "num_encoder_layers": 2.0,
+    "num_encoder_layers_std": 0.0,
+    "num_encoder_layers_seeds": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "batch_size_actual": 32768.0,
+    "batch_size_actual_std": 0.0,
+    "batch_size_actual_seeds": [
+      32768.0,
+      32768.0,
+      32768.0,
+      32768.0,
+      32768.0
+    ],
+    "eff_rank_at_1m": 10.24,
+    "eff_rank_at_1m_std": 1.282,
+    "eff_rank_at_1m_seeds": [
+      10.7,
+      8.4,
+      9.2,
+      12.0,
+      10.9
+    ],
+    "final_eff_rank": 11.24,
+    "final_eff_rank_std": 1.277,
+    "final_eff_rank_seeds": [
+      11.7,
+      9.4,
+      10.3,
+      13.1,
+      11.7
+    ],
+    "final_svd_ratio": 45.42,
+    "final_svd_ratio_std": 6.894,
+    "final_svd_ratio_seeds": [
+      42.7,
+      55.1,
+      51.5,
+      36.2,
+      41.6
+    ],
+    "expansion_ratio": 9.294,
+    "expansion_ratio_std": 11.326,
+    "expansion_ratio_seeds": [
+      3.08,
+      31.84,
+      4.0,
+      5.44,
+      2.11
+    ],
+    "value_loss": 0.049,
+    "value_loss_std": 0.002,
+    "value_loss_seeds": [
+      0.049,
+      0.049,
+      0.048,
+      0.053,
+      0.045
+    ],
+    "final_reward": 0.015,
+    "final_reward_std": 0.001,
+    "final_reward_seeds": [
+      0.016,
+      0.014,
+      0.015,
+      0.016,
+      0.014
+    ],
+    "elapsed_time": 180.98,
+    "elapsed_time_std": 14.745,
+    "elapsed_time_seeds": [
+      209.0,
+      168.1,
+      176.3,
+      170.3,
+      181.2
+    ],
+    "effrank_below_0.3d": 1.0,
+    "effrank_below_0.3d_std": 0.0,
+    "effrank_below_0.3d_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "exp_ratio_below_1": 0.0,
+    "exp_ratio_below_1_std": 0.0,
+    "exp_ratio_below_1_seeds": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "svd_ratio_above_10": 1.0,
+    "svd_ratio_above_10_std": 0.0,
+    "svd_ratio_above_10_seeds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+]
