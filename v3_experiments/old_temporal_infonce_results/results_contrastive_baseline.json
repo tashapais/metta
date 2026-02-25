@@ -1,0 +1,14 @@
+[
+  {
+    "method": "baseline",
+    "seed": 0,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_seed0",
+    "final_eff_rank": 4.104,
+    "effrank_per_agent": 0.228,
+    "final_exp_ratio": 1.744,
+    "final_svd_ratio": 139.252,
+    "final_return": 0.0,
+    "win_rate": 0.0
+  }
+]

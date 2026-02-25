@@ -1,0 +1,67 @@
+[
+  {
+    "method": "baseline",
+    "seed": 0,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_18agents_seed0",
+    "final_eff_rank": 6.266,
+    "effrank_per_agent": 0.348,
+    "final_exp_ratio": 13.079,
+    "final_svd_ratio": 66.099,
+    "final_act_div": 0.3128,
+    "final_return": 0.6296,
+    "win_rate": 0.324
+  },
+  {
+    "method": "baseline",
+    "seed": 1,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_18agents_seed1",
+    "final_eff_rank": 8.162,
+    "effrank_per_agent": 0.453,
+    "final_exp_ratio": 14.918,
+    "final_svd_ratio": 41.971,
+    "final_act_div": 0.2988,
+    "final_return": 0.6019,
+    "win_rate": 0.315
+  },
+  {
+    "method": "baseline",
+    "seed": 2,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_18agents_seed2",
+    "final_eff_rank": 6.061,
+    "effrank_per_agent": 0.337,
+    "final_exp_ratio": 3.757,
+    "final_svd_ratio": 84.428,
+    "final_act_div": 0.1359,
+    "final_return": 1.037,
+    "win_rate": 0.417
+  },
+  {
+    "method": "baseline",
+    "seed": 3,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_18agents_seed3",
+    "final_eff_rank": 6.913,
+    "effrank_per_agent": 0.384,
+    "final_exp_ratio": 2.228,
+    "final_svd_ratio": 52.115,
+    "final_act_div": 0.2444,
+    "final_return": 1.3056,
+    "win_rate": 0.528
+  },
+  {
+    "method": "baseline",
+    "seed": 4,
+    "num_agents": 18,
+    "run_name": "paper_contrastive_baseline_18agents_seed4",
+    "final_eff_rank": 5.628,
+    "effrank_per_agent": 0.313,
+    "final_exp_ratio": 460871.671,
+    "final_svd_ratio": 81.151,
+    "final_act_div": 0.1292,
+    "final_return": 1.213,
+    "win_rate": 0.537
+  }
+]
