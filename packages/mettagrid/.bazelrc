@@ -95,3 +95,8 @@ build --spawn_strategy=local
 build --action_env=PATH
 build --host_action_env=PATH
 build --linkopt=-L/usr/lib/gcc/x86_64-linux-gnu/11
+# Fix for absolute path includes on this system
+build --features=-use_module_maps
+build --features=-layering_check
+build --incompatible_strict_action_env=false
+build --sandbox_debug=false
