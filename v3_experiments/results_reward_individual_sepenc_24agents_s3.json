@@ -1,0 +1,22 @@
+[
+  {
+    "reward_type": "individual",
+    "contrastive": false,
+    "reward_cl": false,
+    "condition": "individual_sepenc",
+    "seed": 3,
+    "num_agents": 24,
+    "run_name": "paper_reward_individual_sepenc_24agents_seed3",
+    "final_eff_rank": 35.704,
+    "effrank_per_agent": 1.488,
+    "final_exp_ratio": 25625886.77,
+    "final_svd_ratio": 3.377,
+    "final_act_div": 0.5021,
+    "final_return": 1.37,
+    "win_rate": 0.67,
+    "probe_accuracy": 0.6987,
+    "probe_chance": 0.5,
+    "probe_lift": 0.1987,
+    "probe_accuracy_std": 0.0317
+  }
+]

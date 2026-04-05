@@ -1,0 +1,22 @@
+[
+  {
+    "reward_type": "shared",
+    "contrastive": false,
+    "reward_cl": false,
+    "condition": "shared",
+    "seed": 3,
+    "num_agents": 18,
+    "run_name": "paper_reward_shared_18agents_seed3",
+    "final_eff_rank": 9.123,
+    "effrank_per_agent": 0.507,
+    "final_exp_ratio": 133150.8,
+    "final_svd_ratio": 38.73,
+    "final_act_div": 0.9726,
+    "final_return": 0.825,
+    "win_rate": 0.385,
+    "probe_accuracy": 0.5006,
+    "probe_chance": 0.5,
+    "probe_lift": 0.0006,
+    "probe_accuracy_std": 0.0089
+  }
+]

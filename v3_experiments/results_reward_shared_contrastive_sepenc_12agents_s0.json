@@ -1,0 +1,22 @@
+[
+  {
+    "reward_type": "shared",
+    "contrastive": true,
+    "reward_cl": false,
+    "condition": "shared_contrastive_sepenc",
+    "seed": 0,
+    "num_agents": 12,
+    "run_name": "paper_reward_shared_contrastive_sepenc_12agents_seed0",
+    "final_eff_rank": 24.377,
+    "effrank_per_agent": 2.031,
+    "final_exp_ratio": 96406397.548,
+    "final_svd_ratio": 4.555,
+    "final_act_div": 1.6335,
+    "final_return": 0.345,
+    "win_rate": 0.275,
+    "probe_accuracy": 0.6436,
+    "probe_chance": 0.5,
+    "probe_lift": 0.1436,
+    "probe_accuracy_std": 0.0025
+  }
+]

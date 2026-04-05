@@ -1,0 +1,22 @@
+[
+  {
+    "reward_type": "individual",
+    "contrastive": false,
+    "reward_cl": false,
+    "condition": "individual",
+    "seed": 3,
+    "num_agents": 6,
+    "run_name": "paper_reward_individual_6agents_seed3",
+    "final_eff_rank": 7.142,
+    "effrank_per_agent": 1.19,
+    "final_exp_ratio": 17879790.54,
+    "final_svd_ratio": 58.622,
+    "final_act_div": 0.4439,
+    "final_return": 0.06,
+    "win_rate": 0.055,
+    "probe_accuracy": 0.5043,
+    "probe_chance": 0.5,
+    "probe_lift": 0.0043,
+    "probe_accuracy_std": 0.0002
+  }
+]

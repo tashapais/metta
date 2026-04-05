@@ -1,0 +1,22 @@
+[
+  {
+    "reward_type": "individual",
+    "contrastive": true,
+    "reward_cl": false,
+    "condition": "individual_contrastive_sepenc",
+    "seed": 2,
+    "num_agents": 12,
+    "run_name": "paper_reward_individual_contrastive_sepenc_12agents_seed2",
+    "final_eff_rank": 25.965,
+    "effrank_per_agent": 2.164,
+    "final_exp_ratio": 1420169.625,
+    "final_svd_ratio": 3.203,
+    "final_act_div": 0.8596,
+    "final_return": 0.385,
+    "win_rate": 0.275,
+    "probe_accuracy": 0.7182,
+    "probe_chance": 0.5,
+    "probe_lift": 0.2182,
+    "probe_accuracy_std": 0.0017
+  }
+]

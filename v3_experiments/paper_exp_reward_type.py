@@ -303,22 +303,49 @@ class MettaGridVecEnv:
 
 class ActorCritic(nn.Module):
     def __init__(self, obs_dim: int, n_actions: int,
-                 hidden_dim: int = 128, emb_dim: int = 64):
+                 hidden_dim: int = 128, emb_dim: int = 64,
+                 n_agents: int = 1, separate_encoders: bool = False):
         super().__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
-        )
+        self.separate_encoders = separate_encoders
+        self.n_agents = n_agents
+        self.hidden_dim = hidden_dim
+        if separate_encoders:
+            # One encoder per agent — no shared gradient across agents
+            self.encoders = nn.ModuleList([
+                nn.Sequential(
+                    nn.Linear(obs_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
+                    nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
+                ) for _ in range(n_agents)
+            ])
+        else:
+            self.encoder = nn.Sequential(
+                nn.Linear(obs_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.ReLU(),
+            )
         self.emb_head = nn.Linear(hidden_dim, emb_dim)
         self.actor    = nn.Linear(hidden_dim, n_actions)
         self.critic   = nn.Linear(hidden_dim, 1)
 
-    def forward(self, obs: torch.Tensor):
-        h = self.encoder(obs)
+    def encode(self, obs: torch.Tensor, agent_ids: torch.Tensor = None) -> torch.Tensor:
+        """Encode observations. If separate_encoders, agent_ids must be provided."""
+        if self.separate_encoders:
+            assert agent_ids is not None, "agent_ids required for separate_encoders"
+            h = torch.zeros(len(obs), self.hidden_dim, device=obs.device)
+            for a in range(self.n_agents):
+                mask = (agent_ids == a)
+                if mask.any():
+                    h[mask] = self.encoders[a](obs[mask])
+            return h
+        else:
+            return self.encoder(obs)
+
+    def forward(self, obs: torch.Tensor, agent_ids: torch.Tensor = None):
+        h = self.encode(obs, agent_ids)
         return self.actor(h), self.critic(h).squeeze(-1), self.emb_head(h)
 
-    def get_action_and_value(self, obs: torch.Tensor, action=None):
-        logits, value, emb = self.forward(obs)
+    def get_action_and_value(self, obs: torch.Tensor, action=None,
+                             agent_ids: torch.Tensor = None):
+        logits, value, emb = self.forward(obs, agent_ids)
         dist = Categorical(logits=logits)
         if action is None:
             action = dist.sample()
@@ -349,16 +376,18 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    reward_type   = cfg["reward_type"]
-    use_cl        = cfg["contrastive"]
-    use_reward_cl = cfg["reward_cl"]
-    n_agents      = cfg["num_agents"]
-    device        = torch.device(f"cuda:{cfg['gpu']}" if torch.cuda.is_available() else "cpu")
+    reward_type      = cfg["reward_type"]
+    use_cl           = cfg["contrastive"]
+    use_reward_cl    = cfg["reward_cl"]
+    use_sep_enc      = cfg.get("separate_encoders", False)
+    n_agents         = cfg["num_agents"]
+    device           = torch.device(f"cuda:{cfg['gpu']}" if torch.cuda.is_available() else "cpu")
 
     # Condition label for wandb / file names
     cond = reward_type
     if use_cl:        cond += "_contrastive"
     if use_reward_cl: cond += "_rewardCL"
+    if use_sep_enc:   cond += "_sepenc"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -379,7 +408,9 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     obs_dim, n_actions = env.obs_dim, env.n_actions
     print(f"[{run_name}] obs_dim={obs_dim}  n_actions={n_actions}")
 
-    policy    = ActorCritic(obs_dim, n_actions, cfg["hidden_dim"], cfg["emb_dim"]).to(device)
+    policy    = ActorCritic(obs_dim, n_actions, cfg["hidden_dim"], cfg["emb_dim"],
+                            n_agents=n_agents,
+                            separate_encoders=cfg.get("separate_encoders", False)).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg["lr"], eps=1e-5)
 
     T          = cfg["num_steps"]
@@ -422,8 +453,13 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             obs_t = torch.tensor(
                 obs.reshape(E * n_agents, obs_dim), dtype=torch.float32, device=device
             )
+            # agent_ids: for separate_encoders, tells each obs which encoder to use
+            agent_ids_t = torch.tensor(
+                np.tile(np.arange(n_agents), E), dtype=torch.long, device=device
+            ) if policy.separate_encoders else None
             with torch.no_grad():
-                acts, logps, _, vals, embs, lgts = policy.get_action_and_value(obs_t)
+                acts, logps, _, vals, embs, lgts = policy.get_action_and_value(
+                    obs_t, agent_ids=agent_ids_t)
 
             acts_np = acts.cpu().numpy().reshape(E, n_agents)
             obs, rews, dones, ep_rets = env.step(
@@ -469,8 +505,11 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         obs_t = torch.tensor(
             obs.reshape(E * n_agents, obs_dim), dtype=torch.float32, device=device
         )
+        agent_ids_t = torch.tensor(
+            np.tile(np.arange(n_agents), E), dtype=torch.long, device=device
+        ) if policy.separate_encoders else None
         with torch.no_grad():
-            _, _, _, next_vals, _, _ = policy.get_action_and_value(obs_t)
+            _, _, _, next_vals, _, _ = policy.get_action_and_value(obs_t, agent_ids=agent_ids_t)
         next_vals_np = next_vals.cpu().numpy().reshape(E, n_agents)
 
         # ---- GAE per agent ----
@@ -490,6 +529,8 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         flat_obs  = obs_buf.reshape(n_total, obs_dim)
         flat_acts = act_buf.reshape(n_total)
         flat_logp = logp_buf.reshape(n_total)
+        # Agent IDs for separate encoders: position k in flat buffer belongs to agent k % n_agents
+        flat_agent_ids = np.tile(np.arange(n_agents), T * E)  # (n_total,)
         flat_adv  = adv_buf.reshape(n_total)
         flat_ret  = ret_buf.reshape(n_total)
 
@@ -510,7 +551,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
 
                 mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
-                _, new_logp, ent, new_val, _, _ = policy.get_action_and_value(mb_obs, mb_acts)
+                mb_agent_ids = torch.tensor(flat_agent_ids[mb], dtype=torch.long, device=device) \
+                    if policy.separate_encoders else None
+                _, new_logp, ent, new_val, _, _ = policy.get_action_and_value(
+                    mb_obs, mb_acts, agent_ids=mb_agent_ids)
                 ratio = torch.exp(new_logp - mb_logp)
                 pg = torch.max(
                     -mb_adv * ratio,
@@ -553,7 +597,11 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             ep_labs = np.concatenate([l for _, l in episode_buffer], axis=0)   # (N*n,)
             ep_obs_t  = torch.tensor(ep_obs,  dtype=torch.float32, device=device)
             ep_labs_t = torch.tensor(ep_labs, dtype=torch.long,    device=device)
-            h         = policy.encoder(ep_obs_t)
+            # ep_obs is (N*n_agents, obs_dim); agent i within episode k is at k*n_agents+i
+            ep_agent_ids_t = torch.tensor(
+                np.tile(np.arange(n_agents), len(ep_obs) // n_agents), dtype=torch.long, device=device
+            ) if policy.separate_encoders else None
+            h         = policy.encode(ep_obs_t, ep_agent_ids_t)
             ep_embs   = policy.emb_head(h)
             rcl_val   = supcon_rank_loss(ep_embs, ep_labs_t,
                                          cfg["reward_cl_temperature"], device)
@@ -712,9 +760,13 @@ def main():
                         help="Add inter-agent InfoNCE contrastive loss")
     parser.add_argument("--reward_cl",  action="store_true",
                         help="Add reward-conditioned SupCon loss (rank labels from env returns)")
+    parser.add_argument("--separate_encoders", action="store_true",
+                        help="Give each agent its own encoder (no shared gradients across agents)")
     parser.add_argument("--gpu",              type=int, default=0)
     parser.add_argument("--num_agents",       type=int, default=18)
     parser.add_argument("--num_seeds",        type=int, default=5)
+    parser.add_argument("--seed_start",       type=int, default=0,
+                        help="First seed index (allows parallel per-seed GPU runs)")
     parser.add_argument("--total_timesteps",  type=int, default=5_000_000)
     parser.add_argument("--probe_episodes",   type=int, default=200)
     args = parser.parse_args()
@@ -723,6 +775,7 @@ def main():
         reward_type          = args.reward_type,
         contrastive          = args.contrastive,
         reward_cl            = args.reward_cl,
+        separate_encoders    = args.separate_encoders,
         num_agents           = args.num_agents,
         gpu                  = args.gpu,
         num_envs             = 4,
@@ -745,21 +798,25 @@ def main():
     )
 
     cond = args.reward_type
-    if args.contrastive: cond += "_contrastive"
-    if args.reward_cl:   cond += "_rewardCL"
+    if args.contrastive:       cond += "_contrastive"
+    if args.reward_cl:         cond += "_rewardCL"
+    if args.separate_encoders: cond += "_sepenc"
     all_results = []
 
-    for seed in range(args.num_seeds):
+    seed_end = args.seed_start + args.num_seeds
+    for seed in range(args.seed_start, seed_end):
         print(f"\n{'='*70}")
         print(f"  reward_type={args.reward_type}  contrastive={args.contrastive}  "
-              f"agents={args.num_agents}  seed={seed}/{args.num_seeds-1}")
+              f"agents={args.num_agents}  seed={seed}/{seed_end-1}")
         print(f"{'='*70}")
         result = train_one_seed(cfg, seed)
         all_results.append(result)
 
+    # Each per-seed process writes a seed-specific file; merge script combines them.
+    seed_tag = f"s{args.seed_start}" if args.num_seeds == 1 else f"s{args.seed_start}-{seed_end-1}"
     out_path = (
         f"/home/ubuntu/metta/v3_experiments/"
-        f"results_reward_{cond}_{args.num_agents}agents.json"
+        f"results_reward_{cond}_{args.num_agents}agents_{seed_tag}.json"
     )
     with open(out_path, "w") as f:
         json.dump(all_results, f, indent=2)
