@@ -21,6 +21,7 @@ from v3_experiments.train_canonical_reward_geometry import (  # noqa: E402
     ActorCritic,
     MockCanonicalTribalEnv,
     TribalVillageAdapter,
+    _action_mask_array_from_flags,
     _agent_ids,
     _env_metadata,
     _git_sha,
@@ -69,6 +70,7 @@ class LoadedCheckpointPolicy:
     policy: ActorCritic
     separate_encoders: bool
     use_action_mask: bool
+    chain_affordance_action_mask: bool
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -437,6 +439,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
 
     separate_encoders = bool(config.get("separate_encoders", False))
     use_action_mask = bool(config.get("use_action_mask", False))
+    chain_affordance_action_mask = bool(config.get("chain_affordance_action_mask", False))
     policy = ActorCritic(
         env.obs_shape,
         env.action_space_size,
@@ -447,7 +450,12 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
     ).to(args.device)
     policy.load_state_dict(checkpoint["model_state_dict"])
     policy.eval()
-    return LoadedCheckpointPolicy(policy=policy, separate_encoders=separate_encoders, use_action_mask=use_action_mask)
+    return LoadedCheckpointPolicy(
+        policy=policy,
+        separate_encoders=separate_encoders,
+        use_action_mask=use_action_mask,
+        chain_affordance_action_mask=chain_affordance_action_mask,
+    )
 
 
 def _checkpoint_action_mask(
@@ -456,16 +464,21 @@ def _checkpoint_action_mask(
     device: torch.device,
 ) -> torch.Tensor | None:
     if not checkpoint_policy.use_action_mask:
+        if checkpoint_policy.chain_affordance_action_mask:
+            mask_arr = _action_mask_array_from_flags(
+                env,
+                use_action_mask=False,
+                chain_affordance_action_mask=True,
+            )
+            return None if mask_arr is None else torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
         return None
-    get_mask = getattr(env, "get_action_mask", None)
-    if get_mask is None:
-        raise RuntimeError("checkpoint was trained with action masks but rollout environment does not expose masks")
-    mask = get_mask()
-    if mask is None:
+    mask_arr = _action_mask_array_from_flags(
+        env,
+        use_action_mask=True,
+        chain_affordance_action_mask=checkpoint_policy.chain_affordance_action_mask,
+    )
+    if mask_arr is None:
         raise RuntimeError("checkpoint was trained with action masks but rollout environment returned no mask")
-    mask_arr = np.asarray(mask, dtype=bool)
-    if mask_arr.shape != (env.num_agents, env.action_space_size):
-        raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
     return torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
 
 

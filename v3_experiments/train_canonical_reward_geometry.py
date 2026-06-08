@@ -48,6 +48,7 @@ from v3_experiments.canonical_reward_geometry import (  # noqa: E402
     role_shaping_bonuses,
 )
 from v3_experiments.tribal_event_rewards import (  # noqa: E402
+    ACTION_ARGUMENT_COUNT,
     EVENT_V1_COMMON_COEFFICIENTS,
     EVENT_V1_ROLE_COEFFICIENTS,
     EVENT_V1_ROLE_NAMES,
@@ -88,8 +89,13 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
     EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
     EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
+    EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES,
+    MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
+    NAV_DIST_HOME_ASSEMBLER,
+    NAV_DIST_NEAREST_CONVERTER,
+    NAV_DIST_NEAREST_MINE,
     NAV_HOME_ASSEMBLER_X,
     NAV_HOME_ASSEMBLER_Y,
     NAV_INVENTORY_BATTERY,
@@ -99,6 +105,9 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     NAV_NEAREST_MINE_X,
     NAV_NEAREST_MINE_Y,
     NAVIGATION_SNAPSHOT_COLUMNS,
+    ORIENTATION_BY_DELTA,
+    ORIENTATION_DELTAS,
+    USE_VERB,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
@@ -116,6 +125,7 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v8_clean_chain_compass_role_shaping_bonuses,
     event_v9_potential_chain_compass_reward_design_details,
     event_v9_potential_chain_compass_role_shaping_bonuses,
+    event_v10_chain_affordance_compass_reward_design_details,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -186,6 +196,7 @@ class RunnerConfig:
     disable_role_shaping: bool
     separate_encoders: bool
     use_action_mask: bool
+    chain_affordance_action_mask: bool
     chain_compass_observation: bool
     env_backend: str
     allow_noncanonical_env: bool
@@ -538,6 +549,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v7_chain_compass_breadcrumbs",
             "event_v8_clean_chain_compass_breadcrumbs",
             "event_v9_potential_chain_compass_breadcrumbs",
+            "event_v10_chain_affordance_compass_breadcrumbs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -545,6 +557,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--disable-role-shaping", action="store_true")
     parser.add_argument("--separate-encoders", action="store_true")
     parser.add_argument("--use-action-mask", action="store_true")
+    parser.add_argument(
+        "--chain-affordance-action-mask",
+        action="store_true",
+        help=(
+            "Restrict policy actions to movement plus the current chain-target "
+            "use action. Auto-enabled by event_v10_chain_affordance_compass_breadcrumbs."
+        ),
+    )
     parser.add_argument(
         "--chain-compass-observation",
         action="store_true",
@@ -999,6 +1019,7 @@ def _result_record(
         "role_shaping_layers": {"gold_layer": config.gold_layer, "altar_layer": config.altar_layer},
         "separate_encoders": config.separate_encoders,
         "use_action_mask": config.use_action_mask,
+        "chain_affordance_action_mask": _uses_chain_affordance_action_mask(config),
         "chain_compass_observation": _uses_chain_compass_observation(config),
         "total_agent_steps": config.total_agent_steps,
         "eval_trials": config.eval_trials,
@@ -1196,6 +1217,17 @@ def _role_shaping_bonuses_for_design(
             gamma=config.gamma,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
+        return event_v9_potential_chain_compass_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            gamma=config.gamma,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1216,6 +1248,13 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
         "event_v7_chain_compass_breadcrumbs",
         "event_v8_clean_chain_compass_breadcrumbs",
         "event_v9_potential_chain_compass_breadcrumbs",
+        "event_v10_chain_affordance_compass_breadcrumbs",
+    )
+
+
+def _uses_chain_affordance_action_mask(config: RunnerConfig) -> bool:
+    return (
+        config.chain_affordance_action_mask or config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs"
     )
 
 
@@ -1358,6 +1397,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES)
     if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
         return list(EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES)
+    if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
+        return list(EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1454,6 +1495,28 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "negative_reward_coefficients": {},
             "roles": {role: {} for role in EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES},
         }
+    if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
+        return {
+            "common": {},
+            "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi(s') - Phi(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "run_gamma": config.gamma,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES),
+            },
+            "oracle_actions": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+            "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+            "negative_reward_coefficients": {},
+            "chain_affordance_action_mask": {
+                "enabled": True,
+                "allowed_verbs": ["move", "use_current_chain_target"],
+                "reward_penalties_added": False,
+            },
+            "roles": {role: {} for role in EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES},
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1476,6 +1539,10 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v8_clean_chain_compass_reward_design_details()
     if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
         details = event_v9_potential_chain_compass_reward_design_details()
+        details["potential_shaping"]["run_gamma"] = config.gamma
+        return details
+    if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
+        details = event_v10_chain_affordance_compass_reward_design_details()
         details["potential_shaping"]["run_gamma"] = config.gamma
         return details
     return {
@@ -1513,15 +1580,123 @@ def _masked_logits(logits: torch.Tensor, action_mask: torch.Tensor | None) -> to
 
 
 def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.device) -> torch.Tensor | None:
-    if not config.use_action_mask:
+    mask_arr = _action_mask_array_from_flags(
+        env,
+        use_action_mask=config.use_action_mask,
+        chain_affordance_action_mask=_uses_chain_affordance_action_mask(config),
+    )
+    if mask_arr is None:
         return None
+    return torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
+
+
+def _action_mask_array_from_flags(
+    env: CanonicalEnv,
+    *,
+    use_action_mask: bool,
+    chain_affordance_action_mask: bool,
+) -> np.ndarray | None:
+    if not use_action_mask and not chain_affordance_action_mask:
+        return None
+
     mask = env.get_action_mask()
     if mask is None:
-        raise RuntimeError("--use-action-mask was passed but the environment does not expose masks")
-    mask_arr = np.asarray(mask, dtype=bool)
+        if use_action_mask:
+            raise RuntimeError("--use-action-mask was passed but the environment does not expose masks")
+        mask_arr = np.ones((env.num_agents, env.action_space_size), dtype=bool)
+    else:
+        mask_arr = np.asarray(mask, dtype=bool)
     if mask_arr.shape != (env.num_agents, env.action_space_size):
         raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
-    return torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
+    if chain_affordance_action_mask:
+        mask_arr = _chain_affordance_action_mask(env, mask_arr)
+    return mask_arr
+
+
+def _chain_affordance_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> np.ndarray:
+    navigation = env.get_navigation_snapshot()
+    if navigation is None:
+        return base_mask
+    navigation_arr = np.asarray(navigation, dtype=np.float64)
+    if navigation_arr.ndim != 2 or navigation_arr.shape != (env.num_agents, len(NAVIGATION_SNAPSHOT_COLUMNS)):
+        raise ValueError(
+            "navigation snapshot shape does not match action-mask batch: "
+            f"navigation={navigation_arr.shape}, expected={(env.num_agents, len(NAVIGATION_SNAPSHOT_COLUMNS))}"
+        )
+
+    chain_mask = np.zeros_like(base_mask, dtype=bool)
+    move_actions = [_encode_action(MOVE_VERB, orientation) for orientation in range(len(ORIENTATION_DELTAS))]
+    valid_move_actions = [action for action in move_actions if action < env.action_space_size]
+    if valid_move_actions:
+        chain_mask[:, valid_move_actions] = base_mask[:, valid_move_actions]
+
+    for agent_id, row in enumerate(navigation_arr):
+        use_action = _chain_affordance_use_action(row, env.action_space_size)
+        if use_action is not None and base_mask[agent_id, use_action]:
+            chain_mask[agent_id, use_action] = True
+        if not chain_mask[agent_id].any():
+            chain_mask[agent_id] = base_mask[agent_id]
+
+    return chain_mask
+
+
+def _chain_affordance_use_action(navigation_row: np.ndarray, action_space_size: int) -> int | None:
+    target = _chain_affordance_target(navigation_row)
+    if target is None:
+        return None
+    agent_x = int(navigation_row[NAV_AGENT_X])
+    agent_y = int(navigation_row[NAV_AGENT_Y])
+    target_x, target_y = target
+    dx_raw = target_x - agent_x
+    dy_raw = target_y - agent_y
+    if max(abs(dx_raw), abs(dy_raw)) != 1:
+        return None
+    dx = _sign(dx_raw)
+    dy = _sign(dy_raw)
+    if dx == 0 and dy == 0:
+        return None
+    action = _encode_action(USE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+    return action if action < action_space_size else None
+
+
+def _chain_affordance_target(navigation_row: np.ndarray) -> tuple[int, int] | None:
+    if int(navigation_row[NAV_INVENTORY_BATTERY]) > 0:
+        return _target_if_valid(navigation_row, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER)
+    if int(navigation_row[NAV_INVENTORY_ORE]) > 0:
+        return _target_if_valid(
+            navigation_row,
+            NAV_NEAREST_CONVERTER_X,
+            NAV_NEAREST_CONVERTER_Y,
+            NAV_DIST_NEAREST_CONVERTER,
+        )
+    return _target_if_valid(navigation_row, NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE)
+
+
+def _target_if_valid(
+    navigation_row: np.ndarray,
+    x_index: int,
+    y_index: int,
+    distance_index: int | None = None,
+) -> tuple[int, int] | None:
+    target_x = int(navigation_row[x_index])
+    target_y = int(navigation_row[y_index])
+    if target_x < 0 or target_y < 0:
+        return None
+    if distance_index is not None and int(navigation_row[distance_index]) < 0:
+        return None
+    return target_x, target_y
+
+
+def _encode_action(verb: int, argument: int) -> int:
+    return int(verb * ACTION_ARGUMENT_COUNT + argument)
+
+
+def _sign(value: int) -> int:
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
 
 
 def _seed_everything(seed: int) -> None:

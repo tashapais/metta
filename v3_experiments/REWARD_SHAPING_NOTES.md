@@ -108,3 +108,25 @@ Decision:
   curriculum, affordance mask, chain-only start distribution, or short oracle
   warm start that makes the heart chain cleaner without punishing exploratory
   off-chain successes.
+
+## Current V10 Cleanup Ramp
+
+`event_v10_chain_affordance_compass_breadcrumbs` keeps the v9 reward exactly in
+spirit:
+
+- no explicit negative reward coefficients;
+- positive ore, battery, and heart events;
+- bounded potential-difference chain progress;
+- chain-compass observation.
+
+The new intervention is not reward shaping. It is a curriculum/affordance mask
+that lets the policy move freely but only use the current chain target. In
+practice that disables off-chain successful `use`, `put`, `attack`, `plant`,
+and `swap` actions during this cleanup ramp. Checkpoint rollouts preserve the
+same mask from the checkpoint config, so v10 should be read as a constrained
+affordance/curriculum condition, not as an unconstrained final paper condition.
+
+Promotion question:
+
+- Does masking off-chain affordances keep v9's seed-1/seed-2 deposit signal
+  while rescuing seed 0 and reducing off-chain resource/craft/combat counts?

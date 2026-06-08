@@ -2005,6 +2005,72 @@ V9 Stage-1 outcome:
   - do not rerun representation analyses until the behavior gate is cleaner and
     stable across all seeds.
 
+### Reward-Debug Continuation: `event_v10_chain_affordance_compass_breadcrumbs`
+
+Purpose:
+
+- Continue the v9 cleanup path without adding negative rewards.
+- Test whether the remaining off-chain behavior is mostly an affordance problem:
+  PPO can currently press successful `use`, `put`, `attack`, and `plant`
+  actions on many distractor objects while learning the heart chain.
+
+Design:
+
+- Keep the v9 reward design:
+  - positive chain events: `resource_ore`, `craft_battery`, `deposit_heart`;
+  - bounded potential-based chain progress;
+  - positive chain-oracle action breadcrumbs;
+  - no noop, invalid-action, or off-chain successful-event penalties.
+- Keep the v7/v9 chain-compass observation.
+- Add a chain-affordance action mask during this debug/curriculum condition:
+  - movement actions remain available when valid;
+  - `use` is available only for the current chain target when the target is
+    adjacent;
+  - off-chain `use`, `put`, `attack`, `plant`, and `swap` affordances are not
+    available to the policy in v10;
+  - if navigation is missing, the mask falls back to the normal environment
+    action mask.
+- Checkpoint behavior rollouts preserve `chain_affordance_action_mask` from the
+  checkpoint config. This keeps evaluation consistent with the v10 curriculum
+  interface.
+
+Interpretation:
+
+- V10 is a cleanup/curriculum condition, not a final unconstrained Tribal
+  Village paper condition.
+- If v10 succeeds, it tells us that chain behavior can be made clean by
+  removing distractor affordances. The next research step would be to anneal or
+  relax the mask, or to transfer from the v10 checkpoint into the full action
+  surface.
+- If v10 fails, the next intervention should be a short `chain_oracle` warm
+  start or a chain-only start-state curriculum.
+
+V10 Stage-1 ramp:
+
+- Reward design: `event_v10_chain_affordance_compass_breadcrumbs`.
+- Shared fraction: `0.0`.
+- Seeds: `0,1,2`.
+- Budget: `1,000,000` agent steps per seed.
+- Use `--use-action-mask`; the reward design auto-enables
+  `chain_affordance_action_mask`.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage1_v10_chain_affordance_compass_1m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v10_chain_affordance_compass_<sha>`.
+
+V10 promotion criteria:
+
+- Every seed should have deterministic or stochastic heart deposits, ideally
+  near the v9 seed-1/seed-2 range.
+- Seed 0 should improve materially over v9's `0` deterministic and `2`
+  stochastic deposits.
+- Off-chain resource pickups, non-battery crafts, handoffs, and combat should
+  drop sharply relative to v9 because the off-chain affordances are unavailable.
+- Raw reward should not collapse relative to v9.
+- Do not promote v10 directly to paper representation analysis unless we also
+  decide that constrained affordance training is the experimental condition we
+  want to claim.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2095,6 +2161,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Compare behavior metrics.
 - [ ] Inspect replays.
 - [ ] Iterate on rewards until behavior passes.
+- [ ] Run v10 chain-affordance cleanup ramp.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.

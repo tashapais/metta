@@ -24,6 +24,7 @@ from v3_experiments.train_canonical_reward_geometry import (
     CHAIN_COMPASS_STAGE_BATTERY_VALUE,
     CHAIN_COMPASS_STAGE_EMPTY_VALUE,
     CHAIN_COMPASS_STAGE_ORE_VALUE,
+    _action_mask_array_from_flags,
     _augment_chain_compass_observation,
 )
 from v3_experiments.train_canonical_reward_geometry import (
@@ -31,6 +32,7 @@ from v3_experiments.train_canonical_reward_geometry import (
 )
 from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
 from v3_experiments.tribal_event_rewards import (
+    ACTION_ARGUMENT_COUNT,
     EVENT_V1_ROLE_NAMES,
     EVENT_V2_BREADCRUMB_ROLE_NAMES,
     EVENT_V3_NAVIGATION_ROLE_NAMES,
@@ -44,6 +46,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES,
     EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
     EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
+    EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES,
+    MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_DIST_HOME_ASSEMBLER,
@@ -58,6 +62,7 @@ from v3_experiments.tribal_event_rewards import (
     NAV_NEAREST_MINE_X,
     NAV_NEAREST_MINE_Y,
     NAVIGATION_SNAPSHOT_COLUMNS,
+    USE_VERB,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
@@ -75,6 +80,7 @@ from v3_experiments.tribal_event_rewards import (
     event_v8_clean_chain_compass_role_shaping_bonuses,
     event_v9_potential_chain_compass_reward_design_details,
     event_v9_potential_chain_compass_role_shaping_bonuses,
+    event_v10_chain_affordance_compass_reward_design_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -538,6 +544,16 @@ def test_event_v9_potential_chain_compass_reward_design_details_are_serializable
     assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
 
 
+def test_event_v10_chain_affordance_compass_reward_design_details_are_serializable():
+    details = event_v10_chain_affordance_compass_reward_design_details()
+
+    assert details["name"] == "event_v10_chain_affordance_compass_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES)
+    assert details["negative_reward_coefficients"] == {}
+    assert details["action_affordance_curriculum"]["enabled"] is True
+    assert details["action_affordance_curriculum"]["reward_penalties_added"] is False
+
+
 def test_chain_compass_observation_tracks_inventory_conditioned_target():
     obs = np.zeros((3, 21, 11, 11), dtype=np.uint8)
     navigation = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
@@ -572,6 +588,48 @@ def test_chain_compass_observation_tracks_inventory_conditioned_target():
     assert np.all(extra[2, dy] == CHAIN_COMPASS_POSITIVE_VALUE)
     assert np.all(extra[2, stage] == CHAIN_COMPASS_STAGE_BATTERY_VALUE)
     assert np.all(extra[2, adjacent] == CHAIN_COMPASS_POSITIVE_VALUE)
+
+
+def test_chain_affordance_action_mask_allows_moves_and_current_target_use_only():
+    navigation = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    navigation[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    navigation[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = [4, 4, 4]
+
+    navigation[0, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE]] = [6, 5, 1]
+
+    navigation[1, [NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y, NAV_DIST_NEAREST_CONVERTER]] = [7, 5, 2]
+    navigation[1, NAV_INVENTORY_ORE] = 1
+
+    navigation[2, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [4, 6, 1]
+    navigation[2, NAV_INVENTORY_BATTERY] = 1
+
+    base_mask = np.ones((3, 56), dtype=bool)
+    env = _MaskEnv(base_mask, navigation)
+    mask = _action_mask_array_from_flags(env, use_action_mask=True, chain_affordance_action_mask=True)
+    assert mask is not None
+
+    move_actions = [MOVE_VERB * ACTION_ARGUMENT_COUNT + orientation for orientation in range(8)]
+    use_east = USE_VERB * ACTION_ARGUMENT_COUNT + 3
+    use_southwest = USE_VERB * ACTION_ARGUMENT_COUNT + 6
+    attack_north = 2 * ACTION_ARGUMENT_COUNT
+
+    assert mask[0, move_actions].all()
+    assert mask[0, use_east]
+    assert not mask[0, attack_north]
+    assert mask[0].sum() == 9
+
+    assert mask[1, move_actions].all()
+    assert mask[1].sum() == 8
+
+    assert mask[2, move_actions].all()
+    assert mask[2, use_southwest]
+    assert mask[2].sum() == 9
+
+    base_mask[0, use_east] = False
+    mask_without_use = _action_mask_array_from_flags(env, use_action_mask=True, chain_affordance_action_mask=True)
+    assert mask_without_use is not None
+    assert not mask_without_use[0, use_east]
+    assert mask_without_use[0].sum() == 8
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -1187,11 +1245,83 @@ def test_train_canonical_reward_geometry_event_v9_potential_chain_compass_mock_s
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 
 
+def test_train_canonical_reward_geometry_event_v10_chain_affordance_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v10_result.json"
+    checkpoint_path = tmp_path / "event_v10_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v10_chain_affordance_compass_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v10_chain_affordance_compass_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES)
+    assert record["chain_compass_observation"] is True
+    assert record["chain_affordance_action_mask"] is True
+    assert record["obs_shape"] == [26, 11, 11]
+    assert record["reward_design_details"]["action_affordance_curriculum"]["enabled"] is True
+    assert record["role_shaping_coefficients"]["chain_affordance_action_mask"]["reward_penalties_added"] is False
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
 def _test_v9_potential(stage_name: str, distance: float) -> float:
     closeness = 80.0 - min(80.0, max(0.0, distance))
     return EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS[stage_name] + (
         EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES[stage_name] * closeness
     )
+
+
+class _MaskEnv:
+    num_agents = 3
+    action_space_size = 56
+
+    def __init__(self, action_mask: np.ndarray, navigation: np.ndarray | None) -> None:
+        self._action_mask = action_mask
+        self._navigation = navigation
+
+    def get_action_mask(self) -> np.ndarray:
+        return self._action_mask
+
+    def get_navigation_snapshot(self) -> np.ndarray | None:
+        return self._navigation
 
 
 def _valid_record(checkpoint_path):

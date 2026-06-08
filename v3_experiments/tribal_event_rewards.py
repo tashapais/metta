@@ -18,6 +18,7 @@ EVENT_V6_ORACLE_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V7_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -933,6 +934,40 @@ def event_v9_potential_chain_compass_reward_design_details() -> dict[str, Any]:
         "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
         "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
     }
+
+
+def event_v10_chain_affordance_compass_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v10 affordance curriculum."""
+
+    details = event_v9_potential_chain_compass_reward_design_details()
+    details.update(
+        {
+            "name": "event_v10_chain_affordance_compass_breadcrumbs",
+            "summary": (
+                "Debug curriculum that keeps the v9 potential-chain reward and "
+                "chain-compass observation, then applies a chain-affordance "
+                "action mask so PPO can move freely but can only use the current "
+                "ore -> battery -> heart target."
+            ),
+            "role_names": list(EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES),
+            "action_affordance_curriculum": {
+                "enabled": True,
+                "allowed_verbs": ["move", "use_current_chain_target"],
+                "blocked_successes": [
+                    "off-chain resource use",
+                    "put handoffs",
+                    "attack combat",
+                    "plant lantern",
+                    "swap",
+                ],
+                "reward_penalties_added": False,
+                "purpose": (
+                    "Remove off-chain affordances during the cleanup ramp without adding negative reward terms."
+                ),
+            },
+        }
+    )
+    return details
 
 
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
