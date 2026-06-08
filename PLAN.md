@@ -2030,9 +2030,10 @@ Design:
     available to the policy in v10;
   - if navigation is missing, the mask falls back to the normal environment
     action mask.
-- Checkpoint behavior rollouts preserve `chain_affordance_action_mask` from the
-  checkpoint config. This keeps evaluation consistent with the v10 curriculum
-  interface.
+- Checkpoint behavior rollouts use the effective
+  `chain_affordance_action_mask`. New checkpoints save the effective flag in
+  their config; legacy v10 checkpoints also infer it from `reward_design`. This
+  keeps evaluation consistent with the v10 curriculum interface.
 
 Interpretation:
 
@@ -2108,6 +2109,58 @@ V10 first ramp outcome, commit `6b2442b2b4`:
   full-mask before rerunning Stage 1.
 - Next action: rerun the v10 Stage-1 ramp after the strict fallback fix, using a
   fresh result root that includes the new commit SHA.
+
+V10 strict-mask rerun outcome, training commit `f9b78f1937`, loader fix commit
+`76fbf21da6`:
+
+- Result validation passed for seeds `0`, `1`, and `2`.
+- Behavior-output validation passed for 11 corrected masked rollout files split
+  across `relh-sandbox-1` and `relh-sandbox-2`.
+- Stage-1 result root:
+  `/workspace/tribal_event_mask_runs/stage1_v10_chain_affordance_compass_1m`.
+- Corrected behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v10_chain_affordance_compass_masked_76fbf21da6`.
+- The strict fallback fix worked, but it exposed a second provenance bug:
+  checkpoints saved the raw CLI `chain_affordance_action_mask=false` even though
+  v10 auto-enabled the effective mask. The behavior loader now infers the mask
+  for legacy v10 checkpoints and new checkpoints save the effective mask and
+  chain-compass flags.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-3.351` | `79.441` | `0.418` | `0.251` | `0.347` |
+| `1` | `-11.275` | `108.642` | `0.502` | `0.285` | `0.361` |
+| `2` | `-0.548` | `147.130` | `0.472` | `0.246` | `0.366` |
+
+Corrected masked behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Battery crafts | Heart deposits | Invalid frac. | Joint actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-3.433` | `59.0` | `76` | `62` | `39` | `0.1949` | `179.3` |
+| `random` | `-45.103` | `33.0` | `87` | `0` | `0` | `0.7386` | `223.7` |
+| `seed0_det` | `12.533` | `75.0` | `88` | `81` | `56` | `0.1890` | `221.0` |
+| `seed0_stoch` | `-5.190` | `67.0` | `89` | `67` | `45` | `0.1311` | `201.3` |
+| `seed1_det` | `6.300` | `71.3` | `87` | `74` | `53` | `0.1910` | `203.0` |
+| `seed1_stoch` | `-3.600` | `81.3` | `102` | `82` | `60` | `0.1536` | `240.0` |
+| `seed2_det` | `5.933` | `74.0` | `90` | `82` | `50` | `0.1569` | `209.7` |
+| `seed2_stoch` | `-25.957` | `49.0` | `74` | `46` | `27` | `0.0454` | `176.3` |
+
+Decision:
+
+- V10 is the first clean behavior-valid ramp by the constrained-mask gate: all
+  three seeds now execute the ore -> battery -> heart chain, deterministic
+  rollouts for all seeds beat no-op and random on raw reward, and checkpoint
+  attempts contain no `put`, `attack`, `plant`, or `swap`.
+- This is not yet a final paper condition because it is a constrained
+  affordance curriculum. It is strong evidence that the chain behavior is
+  learnable when distractor affordances are removed.
+- Next research step: run a short transfer/annealing ramp from these v10
+  checkpoints into a less constrained action surface before launching a
+  representation sweep. A reasonable sequence is strict mask -> allow native
+  `use` after stable chain progress -> allow `put`/`attack`/`plant` only after
+  behavior remains deposit-positive.
 
 ## Candidate Commands
 
@@ -2200,7 +2253,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [ ] Inspect replays.
 - [ ] Iterate on rewards until behavior passes.
 - [x] Run first v10 chain-affordance cleanup ramp.
-- [ ] Rerun v10 after strict action-mask fallback fix.
+- [x] Rerun v10 after strict action-mask fallback fix.
+- [x] Fix v10 checkpoint metadata so behavior rollouts use the effective mask.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.

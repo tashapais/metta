@@ -122,8 +122,9 @@ spirit:
 The new intervention is not reward shaping. It is a curriculum/affordance mask
 that lets the policy move freely but only use the current chain target. In
 practice that disables off-chain successful `use`, `put`, `attack`, `plant`,
-and `swap` actions during this cleanup ramp. Checkpoint rollouts preserve the
-same mask from the checkpoint config, so v10 should be read as a constrained
+and `swap` actions during this cleanup ramp. Checkpoint rollouts use the
+effective mask from the checkpoint config or, for legacy v10 checkpoints, infer
+it from `reward_design`. V10 should be read as a constrained
 affordance/curriculum condition, not as an unconstrained final paper condition.
 
 Promotion question:
@@ -178,3 +179,51 @@ Decision:
   back to noop-only, not to the full native action surface. Then rerun Stage 1
   before deciding whether to anneal the mask, add oracle warm starts, or move to
   a reward-machine/curriculum setup.
+
+## V10 Strict-Mask Outcome
+
+Run date: 2026-06-08.
+
+- Training commit: `f9b78f1937`.
+- Checkpoint metadata / behavior-loader fix commit: `76fbf21da6`.
+- Stage-1 root:
+  `/workspace/tribal_event_mask_runs/stage1_v10_chain_affordance_compass_1m`.
+- Corrected behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v10_chain_affordance_compass_masked_76fbf21da6`.
+- Result JSON validation passed for all three seeds.
+- Corrected behavior-output validation passed for 11 rollout files split across
+  `relh-sandbox-1` and `relh-sandbox-2`.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-3.351` | `79.441` | `0.418` | `0.251` | `0.347` |
+| `1` | `-11.275` | `108.642` | `0.502` | `0.285` | `0.361` |
+| `2` | `-0.548` | `147.130` | `0.472` | `0.246` | `0.366` |
+
+Corrected masked behavior over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Battery crafts | Heart deposits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-3.433` | `59.0` | `76` | `62` | `39` |
+| `random` | `-45.103` | `33.0` | `87` | `0` | `0` |
+| `seed0_det` | `12.533` | `75.0` | `88` | `81` | `56` |
+| `seed0_stoch` | `-5.190` | `67.0` | `89` | `67` | `45` |
+| `seed1_det` | `6.300` | `71.3` | `87` | `74` | `53` |
+| `seed1_stoch` | `-3.600` | `81.3` | `102` | `82` | `60` |
+| `seed2_det` | `5.933` | `74.0` | `90` | `82` | `50` |
+| `seed2_stoch` | `-25.957` | `49.0` | `74` | `46` | `27` |
+
+Decision:
+
+- The strict v10 curriculum passes the constrained behavior gate. All three
+  seeds complete the ore -> battery -> heart chain, deterministic rollouts beat
+  no-op and random on raw reward, and corrected checkpoint attempts contain no
+  `put`, `attack`, `plant`, or `swap`.
+- The paper should not yet treat this as an unconstrained Tribal Village
+  representation result. It is a strong cleanup/curriculum result showing that
+  meaningful behavior is learnable when the distractor affordance surface is
+  controlled.
+- The next experiment should anneal or transfer from strict v10 into a less
+  constrained action surface before any representation sweep.
