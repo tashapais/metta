@@ -65,6 +65,8 @@ class CanonicalEnv(Protocol):
 
     def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, bool]: ...
 
+    def get_action_stats(self) -> np.ndarray | None: ...
+
     def close(self) -> None: ...
 
 
@@ -192,6 +194,9 @@ class MockCanonicalTribalEnv:
     def close(self) -> None:
         return None
 
+    def get_action_stats(self) -> np.ndarray | None:
+        return None
+
     def _observations(self) -> np.ndarray:
         obs = self._rng.integers(0, 3, size=(self.num_agents, *self.obs_shape), dtype=np.uint8)
         labels = role_labels(self.num_agents)
@@ -237,6 +242,12 @@ class TribalVillageAdapter:
 
     def close(self) -> None:
         self._env.close()
+
+    def get_action_stats(self) -> np.ndarray | None:
+        get_stats = getattr(self._env, "get_action_stats", None)
+        if get_stats is None:
+            return None
+        return get_stats()
 
 
 def main(argv: list[str] | None = None) -> int:

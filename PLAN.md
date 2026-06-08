@@ -634,15 +634,17 @@ uv run python v3_experiments/validate_tribal_behavior_outputs.py \
 
 ## Implementation Checklist
 
-- [ ] Write the Tribal version audit script.
-- [ ] Add or expose environment event counters.
-- [ ] Add rollout metrics JSON output.
-- [ ] Add no-op, random, and scripted baseline policies.
-- [ ] Add replay generation to the rollout harness.
+- [x] Write the Tribal version audit script.
+- [x] Add or expose initial action-level environment event counters.
+- [ ] Add richer resource, crafting, tumor, and inventory event counters.
+- [x] Add rollout metrics JSON output.
+- [x] Add no-op, random, and simple scripted baseline policies.
+- [x] Add replay generation to the rollout harness.
 - [ ] Implement event-based reward components.
 - [ ] Add reward component logging.
-- [ ] Add output validation.
-- [ ] Run no-op/random/scripted baselines.
+- [x] Add output validation.
+- [x] Run tiny native no-op/random/scripted baseline smoke.
+- [ ] Run full no-op/random/scripted baseline gate.
 - [ ] Run short `shared_frac=0.0` training gate.
 - [ ] Inspect replays and compare behavior metrics.
 - [ ] Iterate on rewards until behavior passes.

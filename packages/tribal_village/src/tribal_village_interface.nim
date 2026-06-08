@@ -84,6 +84,37 @@ proc tribal_village_step_with_pointers(
   except:
     return 0
 
+proc tribal_village_get_action_stats(
+  env: pointer,
+  stats_buffer: ptr UncheckedArray[int32]  # [MapAgents, 8]
+): int32 {.exportc, dynlib.} =
+  ## Copy cumulative action stats to a flat buffer.
+  ##
+  ## Columns:
+  ## 0 invalid, 1 noop, 2 move, 3 attack, 4 use, 5 swap, 6 put, 7 plant.
+  if globalEnv == nil or stats_buffer.isNil:
+    return 0
+
+  try:
+    for i in 0..<MapAgents:
+      let offset = i * 8
+      if i < globalEnv.stats.len:
+        let stats = globalEnv.stats[i]
+        stats_buffer[offset + 0] = stats.actionInvalid.int32
+        stats_buffer[offset + 1] = stats.actionNoop.int32
+        stats_buffer[offset + 2] = stats.actionMove.int32
+        stats_buffer[offset + 3] = stats.actionAttack.int32
+        stats_buffer[offset + 4] = stats.actionUse.int32
+        stats_buffer[offset + 5] = stats.actionSwap.int32
+        stats_buffer[offset + 6] = stats.actionPut.int32
+        stats_buffer[offset + 7] = stats.actionPlant.int32
+      else:
+        for col in 0..<8:
+          stats_buffer[offset + col] = 0
+    return 1
+  except:
+    return 0
+
 proc tribal_village_get_num_agents(): int32 {.exportc, dynlib.} =
   return MapAgents.int32
 

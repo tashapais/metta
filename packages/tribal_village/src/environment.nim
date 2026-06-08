@@ -283,7 +283,7 @@ type
     ]
     terminated*: array[MapAgents, float32]
     truncated*: array[MapAgents, float32]
-    stats: seq[Stats]
+    stats*: seq[Stats]
 
 var
   env*: Environment  # Global environment instance

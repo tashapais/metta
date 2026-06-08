@@ -107,6 +107,7 @@ class TribalVillageEnv(pufferlib.PufferEnv):
 
         # Only allocate actions buffer (input to environment)
         self.actions_buffer = np.zeros(self.total_agents, dtype=np.uint8)
+        self.action_stats_buffer = np.zeros((self.total_agents, 8), dtype=np.int32)
 
         # Initialize environment
         self.env_ptr = self.lib.tribal_village_create()
@@ -192,6 +193,15 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         # tribal_village_destroy(env) -> void
         self.lib.tribal_village_destroy.argtypes = [ctypes.c_void_p]
         self.lib.tribal_village_destroy.restype = None
+
+        try:
+            self.lib.tribal_village_get_action_stats.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_action_stats.restype = ctypes.c_int32
+        except AttributeError:
+            pass
 
         # Map dimensions and RGB render
         try:
@@ -295,6 +305,19 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         infos = {f"agent_{i}": {} for i in range(self.num_agents)}
 
         return observations, rewards, terminated, truncated, infos
+
+    def get_action_stats(self) -> Optional[np.ndarray]:
+        """Return cumulative per-agent simulator action stats if available."""
+        try:
+            fn = self.lib.tribal_village_get_action_stats
+        except AttributeError:
+            return None
+
+        stats_ptr = self.action_stats_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, stats_ptr)
+        if not success:
+            return None
+        return self.action_stats_buffer.copy()
 
     def close(self):
         """Clean up the environment."""
