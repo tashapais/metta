@@ -1011,6 +1011,97 @@ Decision:
   baselines on task events while dropping the invalid fraction materially below
   random.
 
+### Reward-Debug Continuation: Action-Masked `event_v3_navigation_breadcrumbs`
+
+Action masking was implemented and pushed at
+`7635f01b78ef0a54aac695669a844a9228baef7e`.
+
+What changed:
+
+- The Tribal Village Nim runtime now exposes a per-agent action-validity mask.
+- The canonical reward-geometry trainer can run with `--use-action-mask`.
+- PPO samples, evaluates, and updates log-probabilities under the same mask.
+- Checkpoint behavior rollouts reload `use_action_mask` from the checkpoint and
+  apply the mask during deterministic or stochastic replay.
+
+Local and sandbox smoke status:
+
+- Local native masked smoke passed with `event_v3_navigation_breadcrumbs`.
+- Sandbox native CUDA smokes passed on `relh-sandbox-1` and `relh-sandbox-2`.
+- Short checkpoint rollout smoke showed the replay path can load masked
+  checkpoints on CPU and apply the mask.
+- The first CUDA replay smoke failed only because it requested `--device cuda`
+  without a GPU-reserved Sky task; rerunning with `--device cpu` fixed it.
+
+Masked Stage-1 training:
+
+| Seed | Sandbox | Path | Agent steps | Status |
+| --- | --- | --- | ---: | --- |
+| `0` | `relh-sandbox-1` | `/workspace/tribal_event_mask_runs/stage1/seed0` | `1,000,008` | complete |
+| `1` | `relh-sandbox-1` | `/workspace/tribal_event_mask_runs/stage1/seed1` | `1,000,008` | complete |
+| `2` | `relh-sandbox-2` | `/workspace/tribal_event_mask_runs/stage1/seed2` | `1,000,008` | complete |
+
+Masked Stage-1 final eval summary:
+
+| Seed | Eval raw return | Eval role shaping | Eval total return | EffRank/n | JS diversity | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-10.68` | `53.29` | `42.61` | `0.157` | `0.174` | `0.464` |
+| `1` | `-9.93` | `45.73` | `35.80` | `0.131` | `0.155` | `0.331` |
+| `2` | `-10.25` | `77.70` | `67.45` | `0.195` | `0.207` | `0.355` |
+
+Masked Stage-1 behavior gate:
+
+- Behavior artifacts:
+  - `relh-sandbox-1:/workspace/tribal_event_mask_runs/behavior_gate_stage1_7635f01b`
+  - `relh-sandbox-2:/workspace/tribal_event_mask_runs/behavior_gate_stage1_7635f01b`
+- Rollout shape: `3` episodes x `240` steps, with JSONL replays and periodic
+  rendered/snapshot frames.
+- Baselines on `relh-sandbox-1`:
+  - no-op: `0` task events, `1` unique joint action, invalid fraction `0.00`;
+  - move-sweep: `0` task events, invalid fraction `0.07`;
+  - random: `49.3` mean task events, invalid fraction `0.74`;
+  - use-sweep: `3.0` mean task events, invalid fraction `1.00`.
+- Deterministic checkpoints:
+  - seed 0: `280.0` mean task events, invalid fraction `0.02`,
+    `58.3` unique joint actions;
+  - seed 1: `268.0` mean task events, invalid fraction `0.01`,
+    `46.0` unique joint actions;
+  - seed 2: `410.0` mean task events, invalid fraction `0.01`,
+    `77.0` unique joint actions.
+- Stochastic checkpoints:
+  - seed 0: `265.7` mean task events, invalid fraction `0.04`;
+  - seed 1: `281.0` mean task events, invalid fraction `0.03`;
+  - seed 2: `157.7` mean task events, invalid fraction `0.08`.
+
+Interpretation:
+
+- Training did use shaped rewards to discover behavior, and action masking
+  removed the dominant invalid-action local optimum from the earlier reward-only
+  attempts.
+- This is the first behavior-valid ramp by the task-event gate: deterministic
+  checkpoints beat no-op, move-sweep, use-sweep, and random on task events while
+  keeping invalid action fractions near zero.
+- The policies are still not paper-ready. Raw environment return remains
+  negative, no heart deposits were observed, and deterministic policies still
+  spend a high fraction of steps on no-op (`0.64-0.77`).
+- The main remaining reward-debug target is higher-level objective completion:
+  turn resource pickup, crafting, handoff, and tumor-kill behavior into deposit
+  or score progress without reintroducing invalid-action collapse.
+
+Next ramp:
+
+- Launch a `10M`-agent-step masked Stage-2 single-condition ramp at
+  `shared_frac=0.0`, seeds `0,1,2`.
+- Keep the same reward design and mask first; do not retune coefficients until
+  the longer run shows whether deposits/score emerge naturally.
+- Run the same behavior gate after Stage 2.
+- Promote to a reward-mixing pilot only if Stage 2 keeps low invalid fractions,
+  keeps high task-event counts, and improves either deposits, raw score, or
+  another clear high-level objective metric.
+- If Stage 2 plateaus at resource/handoff behavior with no deposits or score,
+  add a targeted heart/deposit curriculum or stronger pre-deposit breadcrumb
+  rather than scaling directly to billion-step representation experiments.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

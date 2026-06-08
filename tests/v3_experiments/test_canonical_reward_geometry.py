@@ -254,6 +254,26 @@ def test_validator_accepts_smoke_record(tmp_path):
     assert validate_record(record, path=tmp_path / "result.json", allow_smoke=True) == []
 
 
+def test_validator_accepts_custom_smoke_condition_group(tmp_path):
+    checkpoint_path = tmp_path / "final_model.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    record = _valid_record(checkpoint_path)
+    record["condition_group"] = "stage1_event_v3_mask_alpha0"
+
+    assert validate_record(record, path=tmp_path / "result.json", allow_smoke=True) == []
+
+
+def test_validator_rejects_custom_full_condition_group(tmp_path):
+    checkpoint_path = tmp_path / "final_model.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    record = _valid_record(checkpoint_path)
+    record["condition_group"] = "stage1_event_v3_mask_alpha0"
+
+    issues = validate_record(record, path=tmp_path / "result.json")
+
+    assert "condition_group" in [issue.field for issue in issues]
+
+
 def test_validator_rejects_noncanonical_probe_chance(tmp_path):
     checkpoint_path = tmp_path / "final_model.pt"
     checkpoint_path.write_bytes(b"checkpoint")

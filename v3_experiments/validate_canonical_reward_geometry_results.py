@@ -137,7 +137,7 @@ def validate_record(
     _expect_equal(issues, path_label, record, "role_assignment", "agent_id % 3")
     _expect_equal(issues, path_label, record, "role_probe_cv", ROLE_PROBE_CV)
 
-    if record["condition_group"] not in CONDITION_GROUPS:
+    if record["condition_group"] not in CONDITION_GROUPS and not allow_smoke:
         issues.append(ValidationIssue(path_label, "condition_group", f"must be one of {CONDITION_GROUPS}"))
     if record["condition_group"] == "primary":
         _expect_equal(issues, path_label, record, "role_shaping_enabled", True)
