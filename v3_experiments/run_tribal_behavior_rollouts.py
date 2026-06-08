@@ -185,6 +185,7 @@ def _run_episode(
                 if args.snapshot_every > 0 and step % args.snapshot_every == 0:
                     frame["inventory"] = inventory_snapshot_to_dict(env.get_inventory_snapshot())
                     frame["world_stats"] = world_stats_to_dict(env.get_world_stats())
+                    frame["navigation"] = _navigation_snapshot_to_list(env)
                 replay_handle.write(json.dumps(frame, sort_keys=True) + "\n")
 
             obs = next_obs
@@ -310,6 +311,16 @@ def _render_env(env: Any) -> str | None:
     if callable(render):
         return str(render())
     return None
+
+
+def _navigation_snapshot_to_list(env: Any) -> list[list[int]] | None:
+    get_snapshot = getattr(env, "get_navigation_snapshot", None)
+    if get_snapshot is None:
+        return None
+    snapshot = get_snapshot()
+    if snapshot is None:
+        return None
+    return np.asarray(snapshot, dtype=np.int64).tolist()
 
 
 if __name__ == "__main__":

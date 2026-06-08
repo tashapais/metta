@@ -19,6 +19,7 @@ ACTION_SPACE_SIZE = ACTION_VERB_COUNT * ACTION_ARGUMENT_COUNT
 ACTION_STATS_COLUMN_COUNT = 26
 INVENTORY_COLUMN_COUNT = 9
 WORLD_STATS_COLUMN_COUNT = 12
+NAVIGATION_SNAPSHOT_COLUMN_COUNT = 13
 
 
 class TribalVillageEnv(pufferlib.PufferEnv):
@@ -113,6 +114,9 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         self.action_stats_buffer = np.zeros((self.total_agents, ACTION_STATS_COLUMN_COUNT), dtype=np.int32)
         self.inventory_snapshot_buffer = np.zeros((self.total_agents, INVENTORY_COLUMN_COUNT), dtype=np.int32)
         self.world_stats_buffer = np.zeros(WORLD_STATS_COLUMN_COUNT, dtype=np.int32)
+        self.navigation_snapshot_buffer = np.zeros(
+            (self.total_agents, NAVIGATION_SNAPSHOT_COLUMN_COUNT), dtype=np.int32
+        )
         self.action_mask_buffer = np.zeros((self.total_agents, ACTION_SPACE_SIZE), dtype=np.uint8)
 
         # Initialize environment
@@ -224,6 +228,15 @@ class TribalVillageEnv(pufferlib.PufferEnv):
                 ctypes.c_void_p,
             ]
             self.lib.tribal_village_get_world_stats.restype = ctypes.c_int32
+        except AttributeError:
+            pass
+
+        try:
+            self.lib.tribal_village_get_navigation_snapshot.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_navigation_snapshot.restype = ctypes.c_int32
         except AttributeError:
             pass
 
@@ -377,6 +390,19 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         if not success:
             return None
         return self.world_stats_buffer.copy()
+
+    def get_navigation_snapshot(self) -> Optional[np.ndarray]:
+        """Return per-agent positions, target distances, and chain inventory."""
+        try:
+            fn = self.lib.tribal_village_get_navigation_snapshot
+        except AttributeError:
+            return None
+
+        navigation_ptr = self.navigation_snapshot_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, navigation_ptr)
+        if not success:
+            return None
+        return self.navigation_snapshot_buffer.copy()
 
     def get_action_mask(self) -> Optional[np.ndarray]:
         """Return a per-agent action mask where nonzero entries can currently succeed."""

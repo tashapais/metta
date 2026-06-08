@@ -1212,6 +1212,125 @@ Next ramp:
   - promotion to a longer run requires nonzero heart deposits or a clear
     monotonic increase in battery production over Stage 2.
 
+V4 Stage-1 outcome:
+
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `event_v4_heart_chain_breadcrumbs`, `--use-action-mask`, and offline W&B.
+- Branch/worktree commit: `6a54d233dd10f435d957e1882082933aceaf27bd`.
+- Run directories:
+  - `/workspace/tribal_event_mask_runs/stage1_v4_heart_chain_1m/seed0`
+  - `/workspace/tribal_event_mask_runs/stage1_v4_heart_chain_1m/seed1`
+  - `/workspace/tribal_event_mask_runs/stage1_v4_heart_chain_1m/seed2`
+- Result JSON validation passed with `--allow-smoke` for all three seeds.
+
+V4 Stage-1 final eval summary:
+
+| Seed | Eval raw return | Eval role shaping | Eval total return | EffRank/n | JS diversity | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-11.37` | `5.43` | `-5.95` | `0.147` | `0.316` | `0.377` |
+| `1` | `-10.53` | `2.64` | `-7.89` | `0.102` | `0.312` | `0.386` |
+| `2` | `-10.20` | `3.38` | `-6.81` | `0.107` | `0.224` | `0.392` |
+
+V4 Stage-1 behavior gate:
+
+- Behavior artifacts:
+  - `relh-sandbox-1:/workspace/tribal_event_mask_runs/behavior_gate_stage1_v4_heart_chain_6a54d233d`
+  - `relh-sandbox-2:/workspace/tribal_event_mask_runs/behavior_gate_stage1_v4_heart_chain_6a54d233d`
+- Rollout shape: `3` episodes x `240` steps, with JSONL replays and periodic
+  rendered/inventory/world snapshots.
+- Baselines on `relh-sandbox-1`:
+  - no-op: `0` task events;
+  - move-sweep: `0` task events, invalid fraction `0.12`;
+  - random: `35.3` mean task events, invalid fraction `0.73`;
+  - use-sweep: `3.7` mean task events, invalid fraction `1.00`.
+- Deterministic checkpoints:
+  - seed 0: `229.7` mean task events, invalid fraction `0.08`,
+    `0` battery crafts, `0` deposits;
+  - seed 1: `195.3` mean task events, invalid fraction `0.07`,
+    `0` battery crafts, `0` deposits;
+  - seed 2: `135.0` mean task events, invalid fraction `0.12`,
+    `0` battery crafts, `0` deposits.
+- Stochastic checkpoints:
+  - seed 0: `156.3` mean task events, invalid fraction `0.01`,
+    `7` battery crafts, `0` deposits;
+  - seed 1: `100.0` mean task events, invalid fraction `0.02`,
+    `6` battery crafts, `0` deposits;
+  - seed 2: `128.3` mean task events, invalid fraction `0.02`,
+    `0` battery crafts, `0` deposits.
+
+V4 Stage-1 decision:
+
+- Do not promote v4 to a longer representation run.
+- V4 did improve part of the heart chain under stochastic sampling: seeds `0`
+  and `1` crafted batteries during the behavior gate.
+- V4 still failed the actual objective because every checkpoint produced `0`
+  heart deposits.
+- The failure is now more specific than the earlier v3 failure: policies can
+  discover ore and sometimes converter use, but they are not reliably returning
+  battery carriers to the home assembler and using the assembler when ready.
+
+### Reward-Debug Continuation: `event_v5_navigation_chain_breadcrumbs`
+
+Reason:
+
+- The simulator scoring contract requires `use` on an adjacent home assembler
+  while carrying a battery and while the assembler cooldown is ready.
+- V4 rewarded the terminal events heavily, but it did not provide a dense
+  breadcrumb for the navigation leg from battery carrier back to home assembler.
+- The built-in Tribal Village scripted AI handles this explicitly: after an
+  agent crafts a battery, it navigates toward `agent.homeassembler` and uses the
+  assembler when adjacent.
+
+Design:
+
+- Add a small simulator introspection hook,
+  `tribal_village_get_navigation_snapshot`, with one row per agent:
+  - agent position;
+  - home assembler position;
+  - nearest converter position;
+  - nearest mine position;
+  - distances to home assembler, nearest converter, and nearest mine;
+  - ore and battery inventory counts.
+- Keep action masking and terminal event rewards.
+- Add inventory-conditioned progress rewards:
+  - empty-handed agents get a small capped reward for reducing distance to the
+    nearest mine;
+  - ore carriers get a stronger reward for reducing distance to the nearest
+    converter;
+  - battery carriers get the strongest dense reward for reducing distance to
+    the home assembler;
+  - arriving adjacent to the home assembler with a battery gets a one-step
+    breadcrumb, but repeated waiting does not pay.
+- Continue saving behavior-gate replay snapshots; saved frames now include the
+  optional navigation snapshot so we can inspect whether battery carriers are
+  near the assembler before deciding on another coefficient change.
+
+Implementation status:
+
+- `event_v5_navigation_chain_breadcrumbs` has been implemented locally.
+- Focused unit tests pass, including navigation-progress reward math.
+- A tiny native Tribal Village smoke passed and verified the navigation
+  snapshot shape `(12, 13)`.
+
+Next ramp:
+
+- Commit and push `event_v5_navigation_chain_breadcrumbs`.
+- Update the sandbox worktrees to the new commit.
+- Run a short Stage-1 v5 masked ramp before scaling:
+  - `shared_frac=0.0`;
+  - seeds `0,1,2`;
+  - `1,000,008` agent steps;
+  - same behavior gate as v4, with navigation snapshots in saved replay frames.
+- Promotion criteria:
+  - invalid fraction remains below random/use-sweep;
+  - stochastic and deterministic gates produce battery crafts;
+  - at least one seed produces nonzero heart deposits, or the replay snapshots
+    show battery carriers repeatedly reaching a ready home assembler but failing
+    only on the final `use` action.
+- If v5 still produces batteries but no deposits, the next intervention should
+  be either a short scripted/imitation warm start for the home-assembler leg or
+  a curriculum map with shorter mine -> converter -> assembler distances.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

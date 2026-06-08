@@ -1,6 +1,7 @@
 ## Ultra-Fast Direct Buffer Interface
 ## Zero-copy numpy buffer communication - no conversions
 
+import vmath
 import common, environment, external_actions
 
 var globalEnv: Environment = nil
@@ -219,6 +220,55 @@ proc tribal_village_get_world_stats(
     world_buffer[9] = plantedLanterns.int32
     world_buffer[10] = productionBuildings.int32
     world_buffer[11] = globalEnv.things.len.int32
+    return 1
+  except:
+    return 0
+
+proc nearestThingSnapshot(env: Environment, pos: IVec2, kind: ThingKind): tuple[x: int32, y: int32, dist: int32] =
+  result = (x: -1'i32, y: -1'i32, dist: -1'i32)
+  var bestDist = int.high
+  for thing in env.things:
+    if thing.kind != kind:
+      continue
+    let distance = manhattanDistance(pos, thing.pos)
+    if distance < bestDist:
+      bestDist = distance
+      result = (x: thing.pos.x.int32, y: thing.pos.y.int32, dist: distance.int32)
+
+proc tribal_village_get_navigation_snapshot(
+  env: pointer,
+  navigation_buffer: ptr UncheckedArray[int32]  # [MapAgents, 13]
+): int32 {.exportc, dynlib.} =
+  ## Copy per-agent navigation state for reward breadcrumbs and debugging.
+  if globalEnv == nil or navigation_buffer.isNil:
+    return 0
+
+  try:
+    for i in 0..<MapAgents:
+      let offset = i * 13
+      if i < globalEnv.agents.len:
+        let agent = globalEnv.agents[i]
+        let nearestConverter = nearestThingSnapshot(globalEnv, agent.pos, Converter)
+        let nearestMine = nearestThingSnapshot(globalEnv, agent.pos, Mine)
+        var homeDist = -1'i32
+        if agent.homeassembler.x >= 0 and agent.homeassembler.y >= 0:
+          homeDist = manhattanDistance(agent.pos, agent.homeassembler).int32
+        navigation_buffer[offset + 0] = agent.pos.x.int32
+        navigation_buffer[offset + 1] = agent.pos.y.int32
+        navigation_buffer[offset + 2] = agent.homeassembler.x.int32
+        navigation_buffer[offset + 3] = agent.homeassembler.y.int32
+        navigation_buffer[offset + 4] = nearestConverter.x
+        navigation_buffer[offset + 5] = nearestConverter.y
+        navigation_buffer[offset + 6] = nearestMine.x
+        navigation_buffer[offset + 7] = nearestMine.y
+        navigation_buffer[offset + 8] = homeDist
+        navigation_buffer[offset + 9] = nearestConverter.dist
+        navigation_buffer[offset + 10] = nearestMine.dist
+        navigation_buffer[offset + 11] = agent.inventoryOre.int32
+        navigation_buffer[offset + 12] = agent.inventoryBattery.int32
+      else:
+        for col in 0..<13:
+          navigation_buffer[offset + col] = -1
     return 1
   except:
     return 0

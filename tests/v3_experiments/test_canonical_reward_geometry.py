@@ -23,6 +23,13 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V2_BREADCRUMB_ROLE_NAMES,
     EVENT_V3_NAVIGATION_ROLE_NAMES,
     EVENT_V4_HEART_CHAIN_ROLE_NAMES,
+    EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES,
+    NAV_DIST_HOME_ASSEMBLER,
+    NAV_DIST_NEAREST_CONVERTER,
+    NAV_DIST_NEAREST_MINE,
+    NAV_INVENTORY_BATTERY,
+    NAV_INVENTORY_ORE,
+    NAVIGATION_SNAPSHOT_COLUMNS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
@@ -31,6 +38,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v3_navigation_role_shaping_bonuses,
     event_v4_heart_chain_reward_design_details,
     event_v4_heart_chain_role_shaping_bonuses,
+    event_v5_navigation_chain_reward_design_details,
+    event_v5_navigation_chain_role_shaping_bonuses,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -216,6 +225,67 @@ def test_event_v4_heart_chain_reward_design_details_are_serializable():
     assert details["common_caps"]["action_move"] == 80
     assert details["task_event_coefficients"]["deposit_heart"] > 3 * details["task_event_coefficients"]["craft_battery"]
     assert details["task_event_coefficients"]["craft_battery"] > details["task_event_coefficients"]["craft_armor"]
+
+
+def test_event_v5_navigation_chain_pays_inventory_conditioned_progress():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    totals = np.zeros_like(stats)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    stats[0, stat_index["action_move"]] = 1
+    stats[1, stat_index["action_move"]] = 1
+    stats[2, stat_index["action_move"]] = 1
+    stats[3, stat_index["action_move"]] = 1
+    stats[4, stat_index["action_invalid"]] = 1
+
+    before = np.zeros((12, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = 10
+    after[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = 10
+    before[0, NAV_INVENTORY_ORE] = 1
+    before[0, NAV_DIST_NEAREST_CONVERTER] = 9
+    after[0, NAV_DIST_NEAREST_CONVERTER] = 7
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    before[1, NAV_DIST_HOME_ASSEMBLER] = 6
+    after[1, NAV_DIST_HOME_ASSEMBLER] = 3
+    before[2, NAV_DIST_NEAREST_MINE] = 4
+    after[2, NAV_DIST_NEAREST_MINE] = 3
+    before[3, NAV_INVENTORY_BATTERY] = 1
+    before[3, NAV_DIST_HOME_ASSEMBLER] = 4
+    after[3, NAV_DIST_HOME_ASSEMBLER] = 5
+    before[5, NAV_INVENTORY_BATTERY] = 1
+    before[5, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[5, NAV_DIST_HOME_ASSEMBLER] = 1
+
+    bonuses = event_v5_navigation_chain_role_shaping_bonuses(
+        stats,
+        totals,
+        navigation_before=before,
+        navigation_after=after,
+    )
+
+    assert bonuses[0] == pytest.approx(0.001 + 0.30 * 2)
+    assert bonuses[1] == pytest.approx(0.001 + 0.80 * 3)
+    assert bonuses[2] == pytest.approx(0.001 + 0.02)
+    assert bonuses[3] == pytest.approx(0.001)
+    assert bonuses[4] == pytest.approx(-0.006)
+    assert bonuses[5] == pytest.approx(0.80 + 0.15)
+    np.testing.assert_allclose(
+        event_v5_navigation_chain_role_shaping_bonuses(None, navigation_before=before, navigation_after=after),
+        np.zeros(12),
+    )
+
+
+def test_event_v5_navigation_chain_reward_design_details_are_serializable():
+    details = event_v5_navigation_chain_reward_design_details()
+
+    assert details["name"] == "event_v5_navigation_chain_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES)
+    assert details["navigation_snapshot_columns"] == list(NAVIGATION_SNAPSHOT_COLUMNS)
+    assert (
+        details["navigation_progress_coefficients"]["battery_to_home_assembler"]
+        > (details["navigation_progress_coefficients"]["ore_to_converter"])
+    )
+    assert details["task_event_coefficients"]["deposit_heart"] > details["task_event_coefficients"]["craft_battery"]
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
