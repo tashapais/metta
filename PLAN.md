@@ -1784,14 +1784,84 @@ V8 Stage-1 outcome:
   that off-chain cleanup needs either curriculum structure or affordance-level
   control rather than another small coefficient tweak.
 - Next iteration if we continue past v8:
-  - do not simply increase the v8 penalty magnitudes first;
-  - instead test a v9 curriculum/affordance condition that removes or masks the
-    off-chain distractors during the chain-learning phase, or restricts
-    successful `use`/`put` affordances to the current chain target;
+  - do not increase the v8 penalty magnitudes;
+  - instead test a v9 curriculum/affordance condition that makes the intended
+    chain easier to discover without training on additional negative rewards;
   - keep the v7 chain-compass observation and v6 chain rewards unchanged while
     varying only the curriculum/affordance intervention;
   - require v9 to match v7 deposits while reducing off-chain resource and
     non-battery craft counts before rerunning representation analyses.
+
+### Reward-Shaping Correction Before V9
+
+The v8 result is consistent with a known reward-shaping failure mode: adding
+independent negative terms can make exploration brittle, alter the effective
+task, and create local optima or avoidance behavior. Before continuing, we
+should treat the v8 penalties as a diagnostic mistake, not as a template to
+scale up.
+
+Primary references read before planning v9:
+
+- Ng, Harada, and Russell, "Policy Invariance Under Reward Transformations:
+  Theory and Application to Reward Shaping"
+  (`https://ai.stanford.edu/~ang/papers/shaping-icml99.pdf`):
+  potential-based shaping is the safe default because it adds progress
+  information as a potential difference rather than independent rewards and
+  penalties.
+- Devlin and Kudenko, "Dynamic Potential-Based Reward Shaping"
+  (`https://www.ifaamas.org/Proceedings/aamas2012/papers/2C_3.pdf`):
+  the potential-based view extends to multi-agent settings and dynamic
+  potentials only when the invariance assumptions are handled explicitly.
+- Toro Icarte et al., "Reward Machines: Exploiting Reward Function Structure
+  in Reinforcement Learning" (`https://arxiv.org/abs/2010.03950`):
+  sequential tasks should expose reward structure to the learner instead of
+  hiding a long chain behind black-box scalar events.
+- Andrychowicz et al., "Hindsight Experience Replay"
+  (`https://arxiv.org/abs/1707.01495`) and Nair et al., "Overcoming
+  Exploration in Reinforcement Learning with Demonstrations"
+  (`https://arxiv.org/abs/1709.10089`): sparse long-horizon tasks often need
+  relabeling, demonstrations, or curriculum to solve exploration, not more
+  manual reward terms.
+- Trott et al., "Keeping Your Distance: Solving Sparse Reward Tasks Using
+  Self-Balancing Shaped Rewards" (`https://arxiv.org/abs/1911.01417`):
+  naive dense distance shaping can trap learning in local optima; successful
+  shaping should decay toward the original sparse objective or otherwise avoid
+  becoming the task itself.
+
+Practical rules for v9:
+
+- No new negative rewards for off-chain behavior during PPO training.
+- Keep the terminal/success reward definition simple and positive:
+  ore -> battery -> heart deposit.
+- If dense shaping is needed, express it as potential-based progress:
+  `F(s, s') = gamma * Phi(s') - Phi(s)`, where `Phi` is monotonic over the
+  chain state:
+  - empty and closer to ore target;
+  - ore held and closer to converter;
+  - battery held and closer to home assembler;
+  - heart deposited.
+- Prefer curriculum over punishment:
+  - start with a cleaned or constrained chain-only village;
+  - gradually reintroduce distractor resources and alternate recipes only after
+    the chain behavior is stable;
+  - keep the evaluation world unchanged so promotion still measures robustness.
+- Prefer affordance guidance over penalty guidance:
+  - expose the current chain target, required inventory stage, and valid chain
+    action as observation features;
+  - optionally mask or route only impossible/irrelevant off-chain affordances in
+    the curriculum phase, but do not attach negative reward to successful
+    distractor actions.
+- Keep `chain_oracle` as a diagnostic teacher:
+  - compare learned checkpoint rollouts to oracle event counts;
+  - optionally add a short behavioral-cloning or warm-start phase from oracle
+    trajectories if pure PPO still struggles.
+- Promotion criteria for the next run:
+  - match or exceed v7 deposits on all three seeds;
+  - reduce off-chain behavior because the curriculum/environment makes it less
+    available, not because the agent is being punished for exploring it;
+  - raw return should not degrade relative to v7;
+  - the final evaluation must run in the full Tribal Village with distractors
+    restored.
 
 ## Candidate Commands
 
