@@ -206,6 +206,91 @@ Preferred first implementation:
 - If we need strict continuity with the old paper text, call this a revised
   three-role Tribal Village task and explicitly describe the role redesign.
 
+### Coworld-Derived `event_v1` Setup
+
+The standalone Coworld Tribal Village AI gives us a better behavioral template
+than the old passive gatherer/explorer/guardian shaping. It has six scripted
+team roles:
+
+- `Hearter`: ore -> battery -> assembler heart workflow.
+- `Armorer`: wood -> armor -> teammate armor handoff.
+- `Hunter`: wood -> spear -> tumor/spawner/enemy defense.
+- `Baker`: wheat -> bread -> teammate bread handoff.
+- `Lighter`: wheat -> lantern -> lantern planting and territory protection.
+- `Farmer`: water/fertile-ground/planting loop.
+
+We should not port that AI directly into the 12-agent canonical experiment,
+because the Coworld environment has a different contract: 48 agents, 8 teams,
+6 agents per team, and 64 actions including the extra `plant_resource` verb.
+The canonical trained package has 12 agents and 56 actions. Direct policy or
+checkpoint mixing would invalidate the geometry comparison.
+
+Instead, use Coworld as the semantic reference and collapse its six roles into
+three canonical role labels:
+
+| Canonical role | Agent label | Coworld sources | Rewarded event counters |
+| --- | --- | --- | --- |
+| `supplier` | `agent_id % 3 == 0` | Hearter/Farmer/Armorer/Baker/Lighter/Hunter collection phases | `resource_water`, `resource_wheat`, `resource_wood`, `resource_ore` |
+| `crafter_logistics` | `agent_id % 3 == 1` | Hearter battery/heart workflow, Armorer/Baker handoffs, Lighter/Hunter production | `craft_battery`, `craft_spear`, `craft_lantern`, `craft_armor`, `craft_bread`, `deposit_heart`, `put_armor`, `put_bread` |
+| `defender_territory` | `agent_id % 3 == 2` | Hunter combat, Lighter lantern protection | `tumor_kill`, `spawner_kill`, `agent_kill`, `lantern_plant` |
+
+All roles also receive a small common bonus for successful interactive verbs:
+`action_use`, `action_put`, `action_attack`, and `action_plant`. Invalid action
+attempts receive a small penalty. This common term is intentionally weak; it
+encourages interaction with the simulator without turning every role into the
+same generic "press use" policy.
+
+Initial `event_v1` coefficients:
+
+| Component | Counter | Coefficient |
+| --- | --- | ---: |
+| Common interaction | `action_use`, `action_put`, `action_attack`, `action_plant` | `0.02` |
+| Common invalid penalty | `action_invalid` | `-0.01` |
+| Supplier resource pickup | `resource_water`, `resource_wheat`, `resource_wood`, `resource_ore` | `0.20` |
+| Crafter/logistics production | `craft_battery`, `craft_spear`, `craft_lantern`, `craft_armor`, `craft_bread` | `0.45` |
+| Crafter/logistics scoring | `deposit_heart` | `0.80` |
+| Crafter/logistics handoff | `put_armor`, `put_bread` | `0.30` |
+| Defender/territory threat removal | `tumor_kill`, `spawner_kill` | `0.90` |
+| Defender/territory combat | `agent_kill` | `0.40` |
+| Defender/territory protection | `lantern_plant` | `0.45` |
+
+This setup is cleaner than the old passive reward for two reasons:
+
+- Rewards fire from per-step deltas of simulator counters, so unchanged
+  observations cannot pay repeated shaping.
+- The three labels describe real task subgraphs: supply, production/logistics,
+  and defense/territory. This is closer to the Coworld role structure while
+  preserving the 12-agent canonical geometry protocol.
+
+First training command shape:
+
+```bash
+uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --reward-design event_v1 \
+  --shared-frac 0.0 \
+  --seed 0 \
+  --total-agent-steps 1000000 \
+  --eval-trials 10 \
+  --output v3_experiments/behavioral_reward_results/event_v1_alpha0_seed0.json
+```
+
+Negative-control command shape:
+
+```bash
+uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --reward-design passive_v0 \
+  --shared-frac 0.0 \
+  --seed 0 \
+  --total-agent-steps 1000000 \
+  --eval-trials 10 \
+  --output v3_experiments/behavioral_reward_results/passive_v0_alpha0_seed0.json
+```
+
+Result JSON must record `reward_design`, `reward_design_details`, raw
+environment return, role-shaping return, individual pre-mix return, and final
+mixed return. W&B should use the same separation so shaped reward cannot be
+mistaken for task progress.
+
 ## Instrumentation Plan
 
 The next implementation task is not just changing reward constants. We need
@@ -651,8 +736,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Add behavior summary/red-flag output.
 - [x] Add no-op, random, and simple scripted baseline policies.
 - [x] Add replay generation to the rollout harness.
-- [ ] Implement event-based reward components.
-- [ ] Add reward component logging.
+- [x] Implement event-based reward components.
+- [x] Add reward component logging.
 - [x] Add output validation.
 - [x] Run tiny native no-op/random/scripted baseline smoke.
 - [ ] Run full no-op/random/scripted baseline gate.

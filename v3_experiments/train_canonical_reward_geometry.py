@@ -47,6 +47,13 @@ from v3_experiments.canonical_reward_geometry import (  # noqa: E402
     role_probe_chance,
     role_shaping_bonuses,
 )
+from v3_experiments.tribal_event_rewards import (  # noqa: E402
+    EVENT_V1_COMMON_COEFFICIENTS,
+    EVENT_V1_ROLE_COEFFICIENTS,
+    EVENT_V1_ROLE_NAMES,
+    event_v1_reward_design_details,
+    event_v1_role_shaping_bonuses,
+)
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
 CANONICAL_ENV_DEFINE = "canonicalRewardGeometry"
@@ -93,6 +100,7 @@ class RunnerConfig:
     vf_coef: float
     hidden_dim: int
     embedding_dim: int
+    reward_design: str
     disable_role_shaping: bool
     separate_encoders: bool
     env_backend: str
@@ -298,6 +306,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--vf-coef", type=float, default=0.5)
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--embedding-dim", type=int, default=64)
+    parser.add_argument(
+        "--reward-design",
+        choices=("passive_v0", "event_v1"),
+        default="passive_v0",
+        help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
+    )
     parser.add_argument("--disable-role-shaping", action="store_true")
     parser.add_argument("--separate-encoders", action="store_true")
     parser.add_argument("--env-backend", choices=("tribal", "mock"), default="tribal")
@@ -329,7 +343,7 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
     try:
         _validate_env_contract(env, config)
         group = config.condition_group or _condition_group(config)
-        run_name = config.run_name or _run_name(group, config.shared_frac, config.seed)
+        run_name = config.run_name or _run_name(group, config.shared_frac, config.seed, config.reward_design)
         output_path = Path(config.output)
         checkpoint_path = (
             Path(config.checkpoint_path) if config.checkpoint_path else _default_checkpoint_path(output_path, run_name)
@@ -400,10 +414,14 @@ def _train_policy(
     wandb_run: Any,
 ) -> dict[str, Any]:
     obs = env.reset(seed=config.seed)
+    event_stats = _EventStatsTracker(env)
     global_step = 0
     update = 0
     start_time = time.time()
     recent_returns: list[float] = []
+    recent_raw_returns: list[float] = []
+    recent_role_shaping_returns: list[float] = []
+    recent_individual_returns: list[float] = []
     last_metrics: dict[str, float] = {}
 
     while global_step < config.total_agent_steps:
@@ -427,7 +445,13 @@ def _train_policy(
                 )
             actions_np = actions.cpu().numpy().astype(np.int64)
             next_obs, env_rewards, done = env.step(actions_np)
-            shaped_rewards = _canonical_rewards(obs, env_rewards, config)
+            reward_components = _canonical_reward_components(
+                obs,
+                env_rewards,
+                config,
+                event_stats_delta=event_stats.delta(env),
+            )
+            shaped_rewards = reward_components["mixed_rewards"]
 
             obs_buf.append(obs.copy())
             action_buf.append(actions_np)
@@ -439,7 +463,14 @@ def _train_policy(
             logit_buf.append(logits.cpu().numpy())
 
             recent_returns.append(float(shaped_rewards.sum()))
-            obs = env.reset(seed=config.seed + global_step + 1) if done else next_obs
+            recent_raw_returns.append(float(reward_components["raw_env_rewards"].sum()))
+            recent_role_shaping_returns.append(float(reward_components["role_shaping_bonuses"].sum()))
+            recent_individual_returns.append(float(reward_components["individual_rewards"].sum()))
+            if done:
+                obs = env.reset(seed=config.seed + global_step + 1)
+                event_stats.reset(env)
+            else:
+                obs = next_obs
             global_step += env.num_agents
 
         obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
@@ -494,6 +525,9 @@ def _train_policy(
             "d_act_ordered_kl": ordered_kl_action_diversity(flat_logits),
             "d_act_js": js_action_diversity(flat_logits),
             "mean_return": float(np.mean(recent_returns[-100:])),
+            "mean_raw_env_return": float(np.mean(recent_raw_returns[-100:])),
+            "mean_role_shaping_return": float(np.mean(recent_role_shaping_returns[-100:])),
+            "mean_individual_return": float(np.mean(recent_individual_returns[-100:])),
             "policy_loss": pg_loss,
             "value_loss": value_loss,
             "entropy": entropy_loss,
@@ -579,9 +613,13 @@ def _evaluate_policy(
     with torch.no_grad():
         for trial in range(config.eval_trials):
             obs = env.reset(seed=config.seed + 100_000 + trial)
+            event_stats = _EventStatsTracker(env)
             embeddings: list[np.ndarray] = []
             logits: list[np.ndarray] = []
             returns = np.zeros(env.num_agents, dtype=np.float64)
+            raw_env_returns = np.zeros(env.num_agents, dtype=np.float64)
+            role_shaping_returns = np.zeros(env.num_agents, dtype=np.float64)
+            individual_returns = np.zeros(env.num_agents, dtype=np.float64)
             for step in range(config.eval_steps):
                 obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device)
                 actions, _logprob, _entropy, _value, emb, logit = policy.get_action_and_value(
@@ -590,10 +628,23 @@ def _evaluate_policy(
                     deterministic=True,
                 )
                 next_obs, rewards, done = env.step(actions.cpu().numpy())
-                returns += _canonical_rewards(obs, rewards, config)
+                reward_components = _canonical_reward_components(
+                    obs,
+                    rewards,
+                    config,
+                    event_stats_delta=event_stats.delta(env),
+                )
+                returns += reward_components["mixed_rewards"]
+                raw_env_returns += reward_components["raw_env_rewards"]
+                role_shaping_returns += reward_components["role_shaping_bonuses"]
+                individual_returns += reward_components["individual_rewards"]
                 embeddings.append(emb.cpu().numpy())
                 logits.append(logit.cpu().numpy())
-                obs = env.reset(seed=config.seed + 200_000 + trial * config.eval_steps + step) if done else next_obs
+                if done:
+                    obs = env.reset(seed=config.seed + 200_000 + trial * config.eval_steps + step)
+                    event_stats.reset(env)
+                else:
+                    obs = next_obs
 
             emb_arr = np.stack(embeddings)
             logit_arr = np.stack(logits)
@@ -608,12 +659,31 @@ def _evaluate_policy(
                     "role_probe_meta": probe_meta,
                     "mean_return": float(returns.mean()),
                     "total_return": float(returns.sum()),
+                    "mean_raw_env_return": float(raw_env_returns.mean()),
+                    "total_raw_env_return": float(raw_env_returns.sum()),
+                    "mean_role_shaping_return": float(role_shaping_returns.mean()),
+                    "total_role_shaping_return": float(role_shaping_returns.sum()),
+                    "mean_individual_return": float(individual_returns.mean()),
+                    "total_individual_return": float(individual_returns.sum()),
                 }
             )
     policy.train()
 
     summary: dict[str, Any] = {"eval_trial_metrics": trial_metrics}
-    for key in ("effrank_per_agent", "d_act_ordered_kl", "d_act_js", "role_probe_acc", "mean_return", "total_return"):
+    for key in (
+        "effrank_per_agent",
+        "d_act_ordered_kl",
+        "d_act_js",
+        "role_probe_acc",
+        "mean_return",
+        "total_return",
+        "mean_raw_env_return",
+        "total_raw_env_return",
+        "mean_role_shaping_return",
+        "total_role_shaping_return",
+        "mean_individual_return",
+        "total_individual_return",
+    ):
         values = np.array([float(item[key]) for item in trial_metrics], dtype=np.float64)
         summary[key] = float(values.mean())
         summary[f"{key}_eval_trial_std"] = float(values.std())
@@ -649,10 +719,12 @@ def _result_record(
         "map_width": env.map_width,
         "map_height": env.map_height,
         "role_assignment": "agent_id % 3",
-        "role_names": list(ROLE_NAMES),
+        "role_names": _reward_design_role_names(config),
         "role_labels": role_labels(env.num_agents).astype(int).tolist(),
+        "reward_design": config.reward_design,
+        "reward_design_details": _reward_design_details(config),
         "role_shaping_enabled": not config.disable_role_shaping,
-        "role_shaping_coefficients": ROLE_SHAPING_COEFFICIENTS,
+        "role_shaping_coefficients": _reward_design_coefficients(config),
         "role_shaping_layers": {"gold_layer": config.gold_layer, "altar_layer": config.altar_layer},
         "separate_encoders": config.separate_encoders,
         "total_agent_steps": config.total_agent_steps,
@@ -676,6 +748,10 @@ def _result_record(
             "d_act_js": "mean unordered Jensen-Shannon action diversity",
             "role_probe_acc": "3-way agent_id % 3 role probe with 4-fold held-out-agent CV",
             "role_probe_chance": "1/3",
+            "mean_raw_env_return": "eval mean return before role shaping and reward mixing",
+            "mean_role_shaping_return": "eval mean role-shaping bonus before reward mixing",
+            "mean_individual_return": "eval mean raw plus role-shaping return before reward mixing",
+            "mean_return": "eval mean mixed return after shared_frac reward mixing",
         },
         "train_metrics": train_metrics,
         **eval_summary,
@@ -704,21 +780,90 @@ def _compute_gae(
     return advantages.astype(np.float32), returns.astype(np.float32)
 
 
-def _canonical_rewards(obs: np.ndarray, env_rewards: np.ndarray, config: RunnerConfig) -> np.ndarray:
-    individual_rewards = np.asarray(env_rewards, dtype=np.float64)
+def _canonical_reward_components(
+    obs: np.ndarray,
+    env_rewards: np.ndarray,
+    config: RunnerConfig,
+    *,
+    event_stats_delta: np.ndarray | None = None,
+) -> dict[str, np.ndarray]:
+    raw_env_rewards = np.asarray(env_rewards, dtype=np.float64)
     if not config.disable_role_shaping:
-        individual_rewards = individual_rewards + role_shaping_bonuses(
+        bonuses = _role_shaping_bonuses_for_design(obs, raw_env_rewards.shape[-1], config, event_stats_delta)
+    else:
+        bonuses = np.zeros_like(raw_env_rewards, dtype=np.float64)
+    individual_rewards = raw_env_rewards + bonuses
+    return {
+        "raw_env_rewards": raw_env_rewards,
+        "role_shaping_bonuses": bonuses,
+        "individual_rewards": individual_rewards,
+        "mixed_rewards": mix_rewards(individual_rewards, config.shared_frac),
+    }
+
+
+def _canonical_rewards(
+    obs: np.ndarray,
+    env_rewards: np.ndarray,
+    config: RunnerConfig,
+    *,
+    event_stats_delta: np.ndarray | None = None,
+) -> np.ndarray:
+    return _canonical_reward_components(
+        obs,
+        env_rewards,
+        config,
+        event_stats_delta=event_stats_delta,
+    )["mixed_rewards"]
+
+
+def _role_shaping_bonuses_for_design(
+    obs: np.ndarray,
+    num_agents: int,
+    config: RunnerConfig,
+    event_stats_delta: np.ndarray | None,
+) -> np.ndarray:
+    if config.reward_design == "passive_v0":
+        return role_shaping_bonuses(
             obs,
             gold_layer=config.gold_layer,
             altar_layer=config.altar_layer,
         )
-    return mix_rewards(individual_rewards, config.shared_frac)
+    if config.reward_design == "event_v1":
+        return event_v1_role_shaping_bonuses(event_stats_delta, num_agents=num_agents)
+    raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
 def _make_env(config: RunnerConfig) -> CanonicalEnv:
     if config.env_backend == "mock":
         return MockCanonicalTribalEnv(config.max_steps, gold_layer=config.gold_layer, altar_layer=config.altar_layer)
     return TribalVillageAdapter(config.max_steps)
+
+
+class _EventStatsTracker:
+    def __init__(self, env: CanonicalEnv) -> None:
+        self._previous = _copy_action_stats(env)
+
+    def reset(self, env: CanonicalEnv) -> None:
+        self._previous = _copy_action_stats(env)
+
+    def delta(self, env: CanonicalEnv) -> np.ndarray | None:
+        current = _copy_action_stats(env)
+        if current is None:
+            self._previous = None
+            return None
+        if self._previous is None:
+            self._previous = current
+            return None
+        delta = current - self._previous
+        self._previous = current
+        return np.maximum(delta, 0)
+
+
+def _copy_action_stats(env: CanonicalEnv) -> np.ndarray | None:
+    stats = env.get_action_stats()
+    if stats is None:
+        return None
+    return np.asarray(stats, dtype=np.float64).copy()
 
 
 def _validate_config(config: RunnerConfig) -> None:
@@ -793,9 +938,37 @@ def _condition_group(config: RunnerConfig) -> str:
     return "primary"
 
 
-def _run_name(group: str, shared_frac: float, seed: int) -> str:
+def _reward_design_role_names(config: RunnerConfig) -> list[str]:
+    if config.reward_design == "event_v1":
+        return list(EVENT_V1_ROLE_NAMES)
+    return list(ROLE_NAMES)
+
+
+def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
+    if config.reward_design == "event_v1":
+        return {
+            "common": dict(EVENT_V1_COMMON_COEFFICIENTS),
+            "roles": {role: dict(coefficients) for role, coefficients in EVENT_V1_ROLE_COEFFICIENTS.items()},
+        }
+    return dict(ROLE_SHAPING_COEFFICIENTS)
+
+
+def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
+    if config.reward_design == "event_v1":
+        return event_v1_reward_design_details()
+    return {
+        "name": "passive_v0",
+        "summary": "Original observation-based role shaping from the reconstructed canonical runner.",
+        "role_names": list(ROLE_NAMES),
+        "coefficients": dict(ROLE_SHAPING_COEFFICIENTS),
+        "observation_layers": {"gold_layer": config.gold_layer, "altar_layer": config.altar_layer},
+    }
+
+
+def _run_name(group: str, shared_frac: float, seed: int, reward_design: str) -> str:
     alpha = str(shared_frac).replace(".", "p")
-    return f"canonical_reward_geometry_{group}_alpha{alpha}_seed{seed}"
+    reward_part = "" if reward_design == "passive_v0" else f"_{reward_design}"
+    return f"canonical_reward_geometry{reward_part}_{group}_alpha{alpha}_seed{seed}"
 
 
 def _default_checkpoint_path(output_path: Path, run_name: str) -> Path:

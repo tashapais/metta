@@ -17,6 +17,12 @@ from v3_experiments.canonical_reward_geometry import (
     summarize_probe_audit,
 )
 from v3_experiments.train_canonical_reward_geometry import main as train_canonical_main
+from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
+from v3_experiments.tribal_event_rewards import (
+    EVENT_V1_ROLE_NAMES,
+    event_v1_reward_design_details,
+    event_v1_role_shaping_bonuses,
+)
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
 
@@ -62,6 +68,41 @@ def test_role_shaping_bonuses_follow_fixed_roles():
     assert bonuses[1] == pytest.approx(0.0)
     assert bonuses[2] == pytest.approx(6.0)
     assert bonuses[4] == pytest.approx(0.5)
+
+
+def test_event_v1_role_shaping_bonuses_follow_success_events():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    stats[0, stat_index["resource_ore"]] = 2
+    stats[0, stat_index["action_use"]] = 2
+    stats[1, stat_index["craft_battery"]] = 1
+    stats[1, stat_index["deposit_heart"]] = 1
+    stats[1, stat_index["put_armor"]] = 1
+    stats[1, stat_index["action_use"]] = 2
+    stats[1, stat_index["action_put"]] = 1
+    stats[2, stat_index["tumor_kill"]] = 1
+    stats[2, stat_index["lantern_plant"]] = 1
+    stats[2, stat_index["action_attack"]] = 1
+    stats[2, stat_index["action_plant"]] = 1
+    stats[2, stat_index["action_invalid"]] = 1
+    stats[3, stat_index["craft_battery"]] = 1
+    stats[3, stat_index["action_use"]] = 1
+
+    bonuses = event_v1_role_shaping_bonuses(stats)
+
+    assert bonuses[0] == pytest.approx(0.20 * 2 + 0.02 * 2)
+    assert bonuses[1] == pytest.approx(0.45 + 0.80 + 0.30 + 0.02 * 3)
+    assert bonuses[2] == pytest.approx(0.90 + 0.45 + 0.02 * 2 - 0.01)
+    assert bonuses[3] == pytest.approx(0.02)
+    np.testing.assert_allclose(event_v1_role_shaping_bonuses(None), np.zeros(12))
+
+
+def test_event_v1_reward_design_details_are_serializable():
+    details = event_v1_reward_design_details()
+
+    assert details["name"] == "event_v1"
+    assert details["role_names"] == list(EVENT_V1_ROLE_NAMES)
+    assert details["coworld_role_sources"]["defender_territory"]
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -207,6 +248,59 @@ def test_train_canonical_reward_geometry_mock_smoke(tmp_path):
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 
 
+def test_train_canonical_reward_geometry_event_v1_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v1_result.json"
+    checkpoint_path = tmp_path / "event_v1_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v1",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v1"
+    assert record["role_names"] == list(EVENT_V1_ROLE_NAMES)
+    assert record["reward_design_details"]["coworld_role_sources"]["supplier"]
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
 def _valid_record(checkpoint_path):
     return {
         "schema_version": "canonical_reward_geometry_v1",
@@ -222,6 +316,8 @@ def _valid_record(checkpoint_path):
         "role_assignment": "agent_id % 3",
         "role_names": ["gatherer", "explorer", "guardian"],
         "role_labels": role_labels().astype(int).tolist(),
+        "reward_design": "passive_v0",
+        "reward_design_details": {"name": "passive_v0"},
         "role_shaping_enabled": True,
         "separate_encoders": False,
         "total_agent_steps": 24,
