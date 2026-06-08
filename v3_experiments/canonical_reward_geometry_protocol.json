@@ -1,0 +1,76 @@
+{
+  "status": "planned_canonical_rerun",
+  "question": "Does increasing shared reward mixing in 12-agent Tribal Village reduce MAPPO shared-encoder role geometry and behavioral diversity?",
+  "canonical_scenario": {
+    "environment": "Tribal Village",
+    "team_config": "1 team x 12 agents",
+    "map": "80x80",
+    "policy": "single shared MAPPO policy, no role input and no agent-specific parameters",
+    "role_assignment": "role = agent_id % 3",
+    "roles": [
+      "gatherer",
+      "explorer",
+      "guardian"
+    ],
+    "role_shaping_before_mixing": {
+      "gatherer": "0.3 * visible_gold_tiles",
+      "explorer": "0.5 if no gold or altar is visible",
+      "guardian": "2.0 * visible_altar_tiles"
+    },
+    "reward_mixing": "r_i_alpha = (1 - alpha) * r_i_ind + alpha * mean_j(r_j_ind)"
+  },
+  "primary_rerun": {
+    "shared_fracs": [
+      0.0,
+      0.8,
+      1.0
+    ],
+    "training_seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "training_steps_per_seed": 4000000,
+    "eval_trials_per_checkpoint": 10,
+    "reporting_unit": "mean and std across independent training seeds",
+    "eval_trials_role": "estimate each seed's final metrics, not the table-level uncertainty"
+  },
+  "canonical_metrics": {
+    "effrank_per_agent": "effective rank over flattened eval embeddings [eval_steps * agents, embedding_dim], divided by n_agents",
+    "d_act_ordered_kl": "mean ordered off-diagonal KL over n_agents * (n_agents - 1) pairs",
+    "d_act_js": "offline robustness check using unordered Jensen-Shannon divergence",
+    "role_probe_acc": "3-way fixed-role probe for labels agent_id % 3; chance is 1/3"
+  },
+  "mechanism_checks": [
+    {
+      "name": "no_role_shaping",
+      "conditions": "alpha in {0.0, 1.0}, seeds 0..2",
+      "purpose": "separate reward-mixing effects from hand-designed role-shaping rewards"
+    },
+    {
+      "name": "separate_encoders",
+      "conditions": "alpha in {0.0, 1.0}, seeds 0..2",
+      "purpose": "test whether shared-encoder gradient sharing is the proximate mechanism"
+    }
+  ],
+  "non_canonical_streams": [
+    {
+      "path_glob": "v3_experiments/results_reward_*.json",
+      "reason": "later MettaGrid arena reward-ablation stream uses binary top/bottom return probes, not the fixed 3-way Tribal role probe"
+    }
+  ],
+  "provenance_sources": {
+    "wandb": "tashapais/representation-collapse",
+    "git_branches": [
+      "main",
+      "origin/main",
+      "origin/tashapais-gpu0-smac-experiments",
+      "origin/tashapais-gpu1-craftax-experiments",
+      "origin/tashapais-gpu2-mettagrid-experiments",
+      "origin/tashapais-gpu3-ablation-experiments"
+    ],
+    "overleaf_pilot_notes": "/home/relh/Code/overleaf/representation-collapse-paper/runs.md"
+  }
+}

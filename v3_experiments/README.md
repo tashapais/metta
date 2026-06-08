@@ -1,5 +1,16 @@
 # V3 Experiments for Contrastive Learning Paper
 
+## Canonical shared-reward geometry reruns
+
+The current paper section about MAPPO representation geometry under shared
+rewards should use the fixed-role Tribal Village protocol in
+`README_canonical_reward_geometry.md` and
+`canonical_reward_geometry_protocol.json`.
+
+Do not cite `results_reward_*.json` as fixed-role Tribal Village role-probe
+evidence: those later runs use binary top/bottom return probes, not the 3-way
+`agent_id % 3` role probe.
+
 This folder contains experiment configurations and baselines for the contrastive learning paper.
 
 ## Required Experiments

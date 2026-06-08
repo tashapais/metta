@@ -12,12 +12,16 @@ Conditions:
   - individual+contrastive : individual rewards + inter-agent InfoNCE
   - shared+contrastive     : shared rewards + InfoNCE  (same as Exp 3 baseline/contrastive)
 
-At end of training, runs a downstream representation probe:
+At end of training, runs a downstream binary return probe:
   Labels each agent as "high_performer" (top half of team) or "low_performer"
   (bottom half) based on their cumulative episode return.
   Trains a logistic regression probe from frozen embeddings → label.
   High probe accuracy = representations encode who is contributing/specialising.
   Low probe accuracy  = representations have collapsed.
+
+This is not the canonical 3-way Tribal Village role probe used by the MAPPO
+shared-reward geometry paper section. Canonical role-probe helpers live in
+v3_experiments/canonical_reward_geometry.py.
 
 Usage (one GPU per call, 5 seeds each):
     cd /home/devuser/metta
@@ -675,7 +679,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     win_rate   = float(np.mean([1.0 if r > 0 else 0.0
                                 for r in recent_returns[-200:]])) if recent_returns else 0.0
 
-    # ---- Downstream role probe (from inline-collected training episodes) ----
+    # ---- Downstream binary return probe (from inline-collected training episodes) ----
     probe_results = {
         "probe_accuracy": 0.0, "probe_accuracy_std": 0.0,
         "probe_chance": 0.5, "probe_lift": 0.0, "n_samples": 0,
@@ -729,6 +733,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "contrastive":        use_cl,
         "reward_cl":          use_reward_cl,
         "condition":          cond,
+        "probe_schema":       "binary_return_top_bottom",
         "seed":               seed,
         "num_agents":         n_agents,
         "run_name":           run_name,
