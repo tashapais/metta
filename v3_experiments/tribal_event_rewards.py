@@ -10,6 +10,7 @@ from v3_experiments.canonical_reward_geometry import CANONICAL_NUM_AGENTS, role_
 from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
 
 EVENT_V1_ROLE_NAMES = ("supplier", "crafter_logistics", "defender_territory")
+EVENT_V2_BREADCRUMB_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 EVENT_V1_COMMON_COEFFICIENTS = {
     "action_attack": 0.02,
@@ -64,6 +65,60 @@ EVENT_V1_COWORLD_ROLE_SOURCES = {
     ],
 }
 
+EVENT_V2_BREADCRUMB_COMMON_COEFFICIENTS = {
+    "action_use": 0.08,
+    "action_put": 0.05,
+    "action_attack": 0.05,
+    "action_plant": 0.05,
+    "action_swap": 0.01,
+    "action_noop": -0.002,
+    "action_invalid": -0.001,
+}
+
+EVENT_V2_BREADCRUMB_TASK_COEFFICIENTS = {
+    "resource_water": 0.10,
+    "resource_wheat": 0.10,
+    "resource_wood": 0.10,
+    "resource_ore": 0.10,
+    "craft_battery": 0.25,
+    "craft_spear": 0.25,
+    "craft_lantern": 0.25,
+    "craft_armor": 0.25,
+    "craft_bread": 0.25,
+    "deposit_heart": 0.70,
+    "put_armor": 0.25,
+    "put_bread": 0.25,
+    "tumor_kill": 0.70,
+    "spawner_kill": 0.70,
+    "agent_kill": 0.25,
+    "lantern_plant": 0.35,
+}
+
+EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_water": 0.10,
+        "resource_wheat": 0.10,
+        "resource_wood": 0.10,
+        "resource_ore": 0.10,
+    },
+    "crafter_logistics": {
+        "craft_battery": 0.20,
+        "craft_spear": 0.20,
+        "craft_lantern": 0.20,
+        "craft_armor": 0.20,
+        "craft_bread": 0.20,
+        "deposit_heart": 0.30,
+        "put_armor": 0.15,
+        "put_bread": 0.15,
+    },
+    "defender_territory": {
+        "tumor_kill": 0.30,
+        "spawner_kill": 0.30,
+        "agent_kill": 0.15,
+        "lantern_plant": 0.15,
+    },
+}
+
 _STAT_INDEX = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
 
 
@@ -79,29 +134,42 @@ def event_v1_role_shaping_bonuses(
     stats return zeros so the mock backend and older libraries remain usable.
     """
 
-    if event_stats_delta is None:
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is None:
         return np.zeros(num_agents, dtype=np.float64)
 
-    stats = np.asarray(event_stats_delta, dtype=np.float64)
-    if stats.ndim != 2:
-        raise ValueError("event_stats_delta must have shape [agents, stat_columns]")
-    if stats.shape[0] != num_agents:
-        raise ValueError(f"event_stats_delta has {stats.shape[0]} agents, expected {num_agents}")
-    if stats.shape[1] != len(SIMULATOR_STAT_COLUMNS):
-        raise ValueError(f"event_stats_delta has {stats.shape[1]} columns, expected {len(SIMULATOR_STAT_COLUMNS)}")
-
-    stats = np.maximum(stats, 0.0)
     bonuses = np.zeros(num_agents, dtype=np.float64)
-    for stat_name, coefficient in EVENT_V1_COMMON_COEFFICIENTS.items():
-        bonuses += coefficient * stats[:, _STAT_INDEX[stat_name]]
+    _add_agent_coefficients(bonuses, stats, EVENT_V1_COMMON_COEFFICIENTS)
+    _add_role_coefficients(bonuses, stats, EVENT_V1_ROLE_NAMES, EVENT_V1_ROLE_COEFFICIENTS)
+    return bonuses
 
-    labels = role_labels(num_agents, len(EVENT_V1_ROLE_NAMES))
-    for role_id, role_name in enumerate(EVENT_V1_ROLE_NAMES):
-        mask = labels == role_id
-        if not np.any(mask):
-            continue
-        for stat_name, coefficient in EVENT_V1_ROLE_COEFFICIENTS[role_name].items():
-            bonuses[mask] += coefficient * stats[mask, _STAT_INDEX[stat_name]]
+
+def event_v2_breadcrumb_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    *,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return exploratory breadcrumb rewards for discovering task events.
+
+    This is intentionally not the final paper reward. It pays every agent a
+    role-agnostic bonus for successful task events, then adds role-specific
+    bonuses on top. The purpose is to help PPO discover the event surface before
+    rerunning a cleaner role-specialized reward.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is None:
+        return np.zeros(num_agents, dtype=np.float64)
+
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    _add_agent_coefficients(bonuses, stats, EVENT_V2_BREADCRUMB_COMMON_COEFFICIENTS)
+    _add_agent_coefficients(bonuses, stats, EVENT_V2_BREADCRUMB_TASK_COEFFICIENTS)
+    _add_role_coefficients(
+        bonuses,
+        stats,
+        EVENT_V2_BREADCRUMB_ROLE_NAMES,
+        EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS,
+    )
     return bonuses
 
 
@@ -117,3 +185,59 @@ def event_v1_reward_design_details() -> dict[str, Any]:
         "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
         "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
     }
+
+
+def event_v2_breadcrumb_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the breadcrumb reward design."""
+
+    return {
+        "name": "event_v2_breadcrumbs",
+        "summary": (
+            "Exploratory discovery reward: all roles get task-event breadcrumbs, "
+            "with Coworld-derived role bonuses layered on top."
+        ),
+        "role_names": list(EVENT_V2_BREADCRUMB_ROLE_NAMES),
+        "common_coefficients": dict(EVENT_V2_BREADCRUMB_COMMON_COEFFICIENTS),
+        "task_event_coefficients": dict(EVENT_V2_BREADCRUMB_TASK_COEFFICIENTS),
+        "role_coefficients": {role: dict(coeffs) for role, coeffs in EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS.items()},
+        "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
+        "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+    }
+
+
+def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
+    if event_stats_delta is None:
+        return None
+
+    stats = np.asarray(event_stats_delta, dtype=np.float64)
+    if stats.ndim != 2:
+        raise ValueError("event_stats_delta must have shape [agents, stat_columns]")
+    if stats.shape[0] != num_agents:
+        raise ValueError(f"event_stats_delta has {stats.shape[0]} agents, expected {num_agents}")
+    if stats.shape[1] != len(SIMULATOR_STAT_COLUMNS):
+        raise ValueError(f"event_stats_delta has {stats.shape[1]} columns, expected {len(SIMULATOR_STAT_COLUMNS)}")
+    return np.maximum(stats, 0.0)
+
+
+def _add_agent_coefficients(
+    bonuses: np.ndarray,
+    stats: np.ndarray,
+    coefficients: dict[str, float],
+) -> None:
+    for stat_name, coefficient in coefficients.items():
+        bonuses += coefficient * stats[:, _STAT_INDEX[stat_name]]
+
+
+def _add_role_coefficients(
+    bonuses: np.ndarray,
+    stats: np.ndarray,
+    role_names: tuple[str, ...],
+    coefficients_by_role: dict[str, dict[str, float]],
+) -> None:
+    labels = role_labels(stats.shape[0], len(role_names))
+    for role_id, role_name in enumerate(role_names):
+        mask = labels == role_id
+        if not np.any(mask):
+            continue
+        for stat_name, coefficient in coefficients_by_role[role_name].items():
+            bonuses[mask] += coefficient * stats[mask, _STAT_INDEX[stat_name]]

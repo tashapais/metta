@@ -833,6 +833,54 @@ Immediate next research action:
 - Re-run Stage 1 only after at least one of those changes makes task events
   discoverable by learning, not only by random/use-sweep baselines.
 
+### Reward-Debug Continuation: `event_v2_breadcrumbs`
+
+Interpretation of the Stage-1 failure:
+
+- We did train on `event_v1`; this was not just an evaluation failure.
+- The training runs sampled for `1,000,008` agent steps per seed, but PPO did
+  not discover positive event shaping in a stable way.
+- The evidence is different from the original passive-reward failure:
+  - original passive rewards paid for observations without meaningful work;
+  - `event_v1` only pays for real task events, but the learned policies failed
+    to discover those events.
+- The behavior counters are not the bottleneck because random/use-sweep
+  baselines produced resource and craft events.
+
+Next reward-debug design:
+
+- Add `event_v2_breadcrumbs` as an exploratory reward scaffold.
+- Keep the same three role names: `supplier`, `crafter_logistics`,
+  `defender_territory`.
+- Preserve `event_v1` as the sparse role-specialized baseline.
+- Pay all agents a role-agnostic breadcrumb for successful task events, then add
+  role-specific bonuses on top. This lets learning reinforce "resource pickup
+  happened" even if the first agent to discover it is not assigned to the
+  supplier label.
+- Increase rewards for successful interactive verbs and reduce the invalid
+  penalty. The previous invalid penalty plus sparse role-specific rewards likely
+  made exploratory `use` behavior unattractive before task events were found.
+
+Initial `event_v2_breadcrumbs` intent:
+
+| Component | Purpose |
+| --- | --- |
+| valid interaction breadcrumb | keep agents trying successful `use`, `put`, `attack`, `plant`, and `swap` actions |
+| small no-op/invalid penalty | discourage collapse without overwhelming rare discoveries |
+| role-agnostic task-event reward | reinforce resource/craft/deposit/handoff/combat/lantern events for every role |
+| extra role-specific reward | keep pressure toward the Coworld-derived three-role decomposition |
+
+Ramp rules for `event_v2_breadcrumbs`:
+
+- First run a tiny native smoke to confirm reward metadata and event deltas.
+- Re-run Stage 1 with seeds `0,1,2`, `shared_frac=0.0`, and a higher entropy
+  coefficient such as `--ent-coef 0.05`.
+- Promote only if at least one checkpoint rollout has nonzero task events and
+  nonzero shaping return, and preferably beats random/use-sweep on at least one
+  meaningful task category.
+- If `event_v2_breadcrumbs` still fails, the next step should be curriculum or
+  scripted/imitation warm starts, not larger budgets.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
