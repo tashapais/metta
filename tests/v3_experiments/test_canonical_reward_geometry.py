@@ -16,7 +16,19 @@ from v3_experiments.canonical_reward_geometry import (
     role_shaping_bonuses,
     summarize_probe_audit,
 )
-from v3_experiments.train_canonical_reward_geometry import main as train_canonical_main
+from v3_experiments.train_canonical_reward_geometry import (
+    CHAIN_COMPASS_CENTER_VALUE,
+    CHAIN_COMPASS_NEGATIVE_VALUE,
+    CHAIN_COMPASS_OBSERVATION_PLANES,
+    CHAIN_COMPASS_POSITIVE_VALUE,
+    CHAIN_COMPASS_STAGE_BATTERY_VALUE,
+    CHAIN_COMPASS_STAGE_EMPTY_VALUE,
+    CHAIN_COMPASS_STAGE_ORE_VALUE,
+    _augment_chain_compass_observation,
+)
+from v3_experiments.train_canonical_reward_geometry import (
+    main as train_canonical_main,
+)
 from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
 from v3_experiments.tribal_event_rewards import (
     EVENT_V1_ROLE_NAMES,
@@ -25,6 +37,7 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V4_HEART_CHAIN_ROLE_NAMES,
     EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES,
     EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
+    EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_DIST_HOME_ASSEMBLER,
@@ -51,6 +64,7 @@ from v3_experiments.tribal_event_rewards import (
     event_v5_navigation_chain_role_shaping_bonuses,
     event_v6_oracle_chain_reward_design_details,
     event_v6_oracle_chain_role_shaping_bonuses,
+    event_v7_chain_compass_reward_design_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -398,6 +412,52 @@ def test_event_v6_oracle_chain_reward_design_details_are_serializable():
     assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
     assert details["oracle_action_coefficients"]["use_chain_target"] > 0
     assert details["navigation_snapshot_columns"] == list(NAVIGATION_SNAPSHOT_COLUMNS)
+
+
+def test_event_v7_chain_compass_reward_design_details_are_serializable():
+    details = event_v7_chain_compass_reward_design_details()
+
+    assert details["name"] == "event_v7_chain_compass_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES)
+    assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
+    assert details["oracle_action_coefficients"]["use_chain_target"] > 0
+    assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
+
+
+def test_chain_compass_observation_tracks_inventory_conditioned_target():
+    obs = np.zeros((3, 21, 11, 11), dtype=np.uint8)
+    navigation = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    navigation[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+
+    navigation[0, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y]] = [7, 4]
+
+    navigation[1, [NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y]] = [2, 5]
+    navigation[1, NAV_INVENTORY_ORE] = 1
+
+    navigation[2, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [4, 6, 1]
+    navigation[2, NAV_INVENTORY_BATTERY] = 1
+
+    augmented = _augment_chain_compass_observation(obs, navigation)
+    extra = augmented[:, 21:, :, :]
+    dx = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_dx_sign"]
+    dy = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_dy_sign"]
+    stage = CHAIN_COMPASS_OBSERVATION_PLANES["chain_inventory_stage"]
+    adjacent = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_adjacent"]
+
+    assert augmented.shape == (3, 26, 11, 11)
+    assert np.all(extra[0, dx] == CHAIN_COMPASS_POSITIVE_VALUE)
+    assert np.all(extra[0, dy] == CHAIN_COMPASS_NEGATIVE_VALUE)
+    assert np.all(extra[0, stage] == CHAIN_COMPASS_STAGE_EMPTY_VALUE)
+    assert np.all(extra[0, adjacent] == 0)
+
+    assert np.all(extra[1, dx] == CHAIN_COMPASS_NEGATIVE_VALUE)
+    assert np.all(extra[1, dy] == CHAIN_COMPASS_CENTER_VALUE)
+    assert np.all(extra[1, stage] == CHAIN_COMPASS_STAGE_ORE_VALUE)
+
+    assert np.all(extra[2, dx] == CHAIN_COMPASS_NEGATIVE_VALUE)
+    assert np.all(extra[2, dy] == CHAIN_COMPASS_POSITIVE_VALUE)
+    assert np.all(extra[2, stage] == CHAIN_COMPASS_STAGE_BATTERY_VALUE)
+    assert np.all(extra[2, adjacent] == CHAIN_COMPASS_POSITIVE_VALUE)
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -836,6 +896,64 @@ def test_train_canonical_reward_geometry_event_v6_oracle_chain_mock_smoke(tmp_pa
         "resource_ore",
     }
     assert record["reward_design_details"]["oracle_action_coefficients"]["use_chain_target"] > 0
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def test_train_canonical_reward_geometry_event_v7_chain_compass_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v7_result.json"
+    checkpoint_path = tmp_path / "event_v7_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v7_chain_compass_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v7_chain_compass_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES)
+    assert record["chain_compass_observation"] is True
+    assert record["obs_shape"] == [26, 11, 11]
+    assert record["reward_design_details"]["observation_breadcrumbs"]["planes"] == list(
+        CHAIN_COMPASS_OBSERVATION_PLANES
+    )
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 

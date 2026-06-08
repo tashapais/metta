@@ -15,6 +15,7 @@ EVENT_V3_NAVIGATION_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V4_HEART_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V6_ORACLE_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V7_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -737,6 +738,38 @@ def event_v6_oracle_chain_reward_design_details() -> dict[str, Any]:
         "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
         "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
     }
+
+
+def event_v7_chain_compass_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the chain-compass design."""
+
+    details = event_v6_oracle_chain_reward_design_details()
+    details.update(
+        {
+            "name": "event_v7_chain_compass_breadcrumbs",
+            "summary": (
+                "Debug reward that keeps the v6 chain-only oracle breadcrumbs "
+                "and adds observation planes for the current ore -> battery -> "
+                "heart-deposit target."
+            ),
+            "role_names": list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES),
+            "observation_breadcrumbs": {
+                "planes": [
+                    "chain_target_dx_sign",
+                    "chain_target_dy_sign",
+                    "chain_inventory_stage",
+                    "chain_target_closeness",
+                    "chain_target_adjacent",
+                ],
+                "source": "navigation snapshot exposed by the canonical Tribal Village build",
+                "purpose": (
+                    "Make the currently shaped chain target observable to the "
+                    "feed-forward policy instead of relying on hidden global map state."
+                ),
+            },
+        }
+    )
+    return details
 
 
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:

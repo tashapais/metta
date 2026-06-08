@@ -101,6 +101,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--snapshot-every", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--stochastic", action="store_true", help="Sample checkpoint actions instead of argmax.")
+    parser.add_argument(
+        "--chain-compass-observation",
+        action="store_true",
+        help="Use the v7 chain-compass observation planes when loading/evaluating checkpoints.",
+    )
     parser.add_argument("--allow-noncanonical-env", action="store_true")
     return parser.parse_args(argv)
 
@@ -142,6 +147,7 @@ def run_rollouts(args: argparse.Namespace, argv: list[str]) -> dict[str, Any]:
             "policy": args.policy,
             "checkpoint_path": args.checkpoint_path,
             "environment_backend": args.env_backend,
+            "chain_compass_observation": args.chain_compass_observation,
             "seed": args.seed,
             "episodes": args.episodes,
             "steps_per_episode": args.steps,
@@ -161,8 +167,13 @@ def run_rollouts(args: argparse.Namespace, argv: list[str]) -> dict[str, Any]:
 
 def _make_behavior_env(args: argparse.Namespace):
     if args.env_backend == "mock":
-        return MockCanonicalTribalEnv(args.steps, gold_layer=11, altar_layer=16)
-    env = TribalVillageAdapter(args.steps)
+        return MockCanonicalTribalEnv(
+            args.steps,
+            gold_layer=11,
+            altar_layer=16,
+            chain_compass_observation=args.chain_compass_observation,
+        )
+    env = TribalVillageAdapter(args.steps, chain_compass_observation=args.chain_compass_observation)
     if not args.allow_noncanonical_env:
         mismatches = {
             "num_agents": env.num_agents != 12,
@@ -410,11 +421,18 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
     env_record = checkpoint.get("env", {})
     checkpoint_action_space = int(env_record.get("action_space_size", env.action_space_size))
     checkpoint_num_agents = int(env_record.get("num_agents", env.num_agents))
-    if checkpoint_action_space != env.action_space_size or checkpoint_num_agents != env.num_agents:
+    checkpoint_obs_shape = tuple(int(x) for x in env_record.get("obs_shape", env.obs_shape))
+    if (
+        checkpoint_action_space != env.action_space_size
+        or checkpoint_num_agents != env.num_agents
+        or checkpoint_obs_shape != tuple(env.obs_shape)
+    ):
         raise ValueError(
             "checkpoint environment contract does not match rollout environment: "
             f"checkpoint agents/actions=({checkpoint_num_agents}, {checkpoint_action_space}), "
-            f"env agents/actions=({env.num_agents}, {env.action_space_size})"
+            f"checkpoint obs_shape={checkpoint_obs_shape}, "
+            f"env agents/actions=({env.num_agents}, {env.action_space_size}), "
+            f"env obs_shape={env.obs_shape}"
         )
 
     separate_encoders = bool(config.get("separate_encoders", False))

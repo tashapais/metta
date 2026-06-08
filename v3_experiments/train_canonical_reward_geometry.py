@@ -80,6 +80,18 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS,
     EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
     EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS,
+    EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
+    NAV_AGENT_X,
+    NAV_AGENT_Y,
+    NAV_HOME_ASSEMBLER_X,
+    NAV_HOME_ASSEMBLER_Y,
+    NAV_INVENTORY_BATTERY,
+    NAV_INVENTORY_ORE,
+    NAV_NEAREST_CONVERTER_X,
+    NAV_NEAREST_CONVERTER_Y,
+    NAV_NEAREST_MINE_X,
+    NAV_NEAREST_MINE_Y,
+    NAVIGATION_SNAPSHOT_COLUMNS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
@@ -92,10 +104,26 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v5_navigation_chain_role_shaping_bonuses,
     event_v6_oracle_chain_reward_design_details,
     event_v6_oracle_chain_role_shaping_bonuses,
+    event_v7_chain_compass_reward_design_details,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
 CANONICAL_ENV_DEFINE = "canonicalRewardGeometry"
+CHAIN_COMPASS_OBS_LAYERS = 5
+CHAIN_COMPASS_OBSERVATION_PLANES = {
+    "chain_target_dx_sign": 0,
+    "chain_target_dy_sign": 1,
+    "chain_inventory_stage": 2,
+    "chain_target_closeness": 3,
+    "chain_target_adjacent": 4,
+}
+CHAIN_COMPASS_CENTER_VALUE = 127
+CHAIN_COMPASS_NEGATIVE_VALUE = 0
+CHAIN_COMPASS_POSITIVE_VALUE = 255
+CHAIN_COMPASS_STAGE_EMPTY_VALUE = 64
+CHAIN_COMPASS_STAGE_ORE_VALUE = 160
+CHAIN_COMPASS_STAGE_BATTERY_VALUE = 255
+CHAIN_COMPASS_MAX_DISTANCE = 80
 
 
 class CanonicalEnv(Protocol):
@@ -147,6 +175,7 @@ class RunnerConfig:
     disable_role_shaping: bool
     separate_encoders: bool
     use_action_mask: bool
+    chain_compass_observation: bool
     env_backend: str
     allow_noncanonical_env: bool
     gold_layer: int
@@ -220,6 +249,89 @@ class ActorCritic(nn.Module):
         return action, log_prob, entropy, value, embedding, policy_logits
 
 
+def _chain_compass_obs_shape(base_obs_shape: tuple[int, ...]) -> tuple[int, ...]:
+    if len(base_obs_shape) != 3:
+        raise ValueError(f"chain compass expects CHW observations, got {base_obs_shape}")
+    return (int(base_obs_shape[0]) + CHAIN_COMPASS_OBS_LAYERS, int(base_obs_shape[1]), int(base_obs_shape[2]))
+
+
+def _augment_chain_compass_observation(
+    obs: np.ndarray,
+    navigation_snapshot: np.ndarray | None,
+) -> np.ndarray:
+    obs_arr = np.asarray(obs)
+    if obs_arr.ndim != 4:
+        raise ValueError(f"chain compass expects [agents, channels, width, height], got {obs_arr.shape}")
+    num_agents, _channels, width, height = obs_arr.shape
+    extra = np.zeros((num_agents, CHAIN_COMPASS_OBS_LAYERS, width, height), dtype=obs_arr.dtype)
+    if navigation_snapshot is None:
+        return np.concatenate([obs_arr, extra], axis=1)
+
+    navigation = np.asarray(navigation_snapshot, dtype=np.float64)
+    if navigation.shape[0] != num_agents or navigation.shape[1] < len(NAVIGATION_SNAPSHOT_COLUMNS):
+        raise ValueError(
+            "navigation snapshot shape does not match observation batch: "
+            f"navigation={navigation.shape}, obs={obs_arr.shape}"
+        )
+
+    dx_plane = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_dx_sign"]
+    dy_plane = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_dy_sign"]
+    stage_plane = CHAIN_COMPASS_OBSERVATION_PLANES["chain_inventory_stage"]
+    closeness_plane = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_closeness"]
+    adjacent_plane = CHAIN_COMPASS_OBSERVATION_PLANES["chain_target_adjacent"]
+    for agent_id, row in enumerate(navigation):
+        target, stage_value = _chain_compass_target_and_stage(row)
+        extra[agent_id, stage_plane, :, :] = stage_value
+        if target is None:
+            extra[agent_id, dx_plane, :, :] = CHAIN_COMPASS_CENTER_VALUE
+            extra[agent_id, dy_plane, :, :] = CHAIN_COMPASS_CENTER_VALUE
+            continue
+
+        agent_x = int(row[NAV_AGENT_X])
+        agent_y = int(row[NAV_AGENT_Y])
+        target_x, target_y = target
+        dx = target_x - agent_x
+        dy = target_y - agent_y
+        distance = max(abs(dx), abs(dy))
+        extra[agent_id, dx_plane, :, :] = _chain_compass_sign_value(dx)
+        extra[agent_id, dy_plane, :, :] = _chain_compass_sign_value(dy)
+        extra[agent_id, closeness_plane, :, :] = _chain_compass_closeness_value(distance)
+        if distance <= 1:
+            extra[agent_id, adjacent_plane, :, :] = CHAIN_COMPASS_POSITIVE_VALUE
+
+    return np.concatenate([obs_arr, extra], axis=1)
+
+
+def _chain_compass_target_and_stage(row: np.ndarray) -> tuple[tuple[int, int] | None, int]:
+    if int(row[NAV_INVENTORY_BATTERY]) > 0:
+        return (
+            (int(row[NAV_HOME_ASSEMBLER_X]), int(row[NAV_HOME_ASSEMBLER_Y])),
+            CHAIN_COMPASS_STAGE_BATTERY_VALUE,
+        )
+    if int(row[NAV_INVENTORY_ORE]) > 0:
+        return (
+            (int(row[NAV_NEAREST_CONVERTER_X]), int(row[NAV_NEAREST_CONVERTER_Y])),
+            CHAIN_COMPASS_STAGE_ORE_VALUE,
+        )
+    return (
+        (int(row[NAV_NEAREST_MINE_X]), int(row[NAV_NEAREST_MINE_Y])),
+        CHAIN_COMPASS_STAGE_EMPTY_VALUE,
+    )
+
+
+def _chain_compass_sign_value(delta: int) -> int:
+    if delta > 0:
+        return CHAIN_COMPASS_POSITIVE_VALUE
+    if delta < 0:
+        return CHAIN_COMPASS_NEGATIVE_VALUE
+    return CHAIN_COMPASS_CENTER_VALUE
+
+
+def _chain_compass_closeness_value(distance: int) -> int:
+    clipped = max(0, min(CHAIN_COMPASS_MAX_DISTANCE, int(distance)))
+    return int(round(255 * (CHAIN_COMPASS_MAX_DISTANCE - clipped) / CHAIN_COMPASS_MAX_DISTANCE))
+
+
 class MockCanonicalTribalEnv:
     """Fast deterministic backend used only for CLI/tests."""
 
@@ -227,14 +339,26 @@ class MockCanonicalTribalEnv:
     num_teams = 1
     map_width = 80
     map_height = 80
+    base_obs_shape = (21, 11, 11)
     obs_shape = (21, 11, 11)
     action_space_size = 56
     build_id = "mock-canonical-tribal-village"
 
-    def __init__(self, max_steps: int, *, gold_layer: int, altar_layer: int) -> None:
+    def __init__(
+        self,
+        max_steps: int,
+        *,
+        gold_layer: int,
+        altar_layer: int,
+        chain_compass_observation: bool = False,
+    ) -> None:
         self.max_steps = max_steps
         self.gold_layer = gold_layer
         self.altar_layer = altar_layer
+        self.chain_compass_observation = chain_compass_observation
+        self.obs_shape = (
+            _chain_compass_obs_shape(self.base_obs_shape) if chain_compass_observation else self.base_obs_shape
+        )
         self._rng = np.random.default_rng(0)
         self._step = 0
 
@@ -268,7 +392,7 @@ class MockCanonicalTribalEnv:
         return None
 
     def _observations(self) -> np.ndarray:
-        obs = self._rng.integers(0, 3, size=(self.num_agents, *self.obs_shape), dtype=np.uint8)
+        obs = self._rng.integers(0, 3, size=(self.num_agents, *self.base_obs_shape), dtype=np.uint8)
         labels = role_labels(self.num_agents)
         for agent_id, role in enumerate(labels):
             obs[agent_id, :, :, :] = 0
@@ -277,11 +401,19 @@ class MockCanonicalTribalEnv:
                 obs[agent_id, self.gold_layer, 3:8, 3:8] = 1
             elif role == 2:
                 obs[agent_id, self.altar_layer, 4:7, 4:7] = 1
-        return obs
+        if not self.chain_compass_observation:
+            return obs
+        return _augment_chain_compass_observation(obs, self.get_navigation_snapshot())
 
 
 class TribalVillageAdapter:
-    def __init__(self, max_steps: int, *, build_canonical: bool = True) -> None:
+    def __init__(
+        self,
+        max_steps: int,
+        *,
+        build_canonical: bool = True,
+        chain_compass_observation: bool = False,
+    ) -> None:
         if build_canonical:
             _append_nim_define(CANONICAL_ENV_DEFINE)
         _ensure_tribal_village_import_path()
@@ -296,19 +428,23 @@ class TribalVillageAdapter:
         self.num_teams = 1
         self.map_width = int(self._env.map_width or 0)
         self.map_height = int(self._env.map_height or 0)
-        self.obs_shape = tuple(int(x) for x in self._env.single_observation_space.shape)
+        self.chain_compass_observation = chain_compass_observation
+        self.base_obs_shape = tuple(int(x) for x in self._env.single_observation_space.shape)
+        self.obs_shape = (
+            _chain_compass_obs_shape(self.base_obs_shape) if chain_compass_observation else self.base_obs_shape
+        )
         self.action_space_size = int(self._env.single_action_space.n)
         self.build_id = f"{library_path.name}:{_git_sha(REPO_ROOT / 'packages' / 'tribal_village')}"
 
     def reset(self, seed: int | None = None) -> np.ndarray:
         obs, _info = self._env.reset(seed=seed)
-        return _stack_agent_dict(obs, self.num_agents)
+        return self._observations_from_agent_dict(obs)
 
     def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, bool]:
         action_dict = {f"agent_{idx}": np.asarray(int(action), dtype=np.int64) for idx, action in enumerate(actions)}
         obs, rewards, terminated, truncated, _info = self._env.step(action_dict)
         done = any(terminated.values()) or any(truncated.values())
-        return _stack_agent_dict(obs, self.num_agents), _stack_reward_dict(rewards, self.num_agents), done
+        return self._observations_from_agent_dict(obs), _stack_reward_dict(rewards, self.num_agents), done
 
     def close(self) -> None:
         self._env.close()
@@ -344,6 +480,12 @@ class TribalVillageAdapter:
             return None
         snapshot = get_snapshot()
         return None if snapshot is None else np.asarray(snapshot, dtype=np.float64)
+
+    def _observations_from_agent_dict(self, obs: dict[str, np.ndarray]) -> np.ndarray:
+        stacked = _stack_agent_dict(obs, self.num_agents)
+        if not self.chain_compass_observation:
+            return stacked
+        return _augment_chain_compass_observation(stacked, self.get_navigation_snapshot())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -382,6 +524,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v4_heart_chain_breadcrumbs",
             "event_v5_navigation_chain_breadcrumbs",
             "event_v6_oracle_chain_breadcrumbs",
+            "event_v7_chain_compass_breadcrumbs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -389,6 +532,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--disable-role-shaping", action="store_true")
     parser.add_argument("--separate-encoders", action="store_true")
     parser.add_argument("--use-action-mask", action="store_true")
+    parser.add_argument(
+        "--chain-compass-observation",
+        action="store_true",
+        help="Append current chain-target direction/stage planes to Tribal observations.",
+    )
     parser.add_argument("--env-backend", choices=("tribal", "mock"), default="tribal")
     parser.add_argument("--allow-noncanonical-env", action="store_true")
     parser.add_argument("--gold-layer", type=int, default=DEFAULT_GOLD_LAYER)
@@ -838,6 +986,7 @@ def _result_record(
         "role_shaping_layers": {"gold_layer": config.gold_layer, "altar_layer": config.altar_layer},
         "separate_encoders": config.separate_encoders,
         "use_action_mask": config.use_action_mask,
+        "chain_compass_observation": _uses_chain_compass_observation(config),
         "total_agent_steps": config.total_agent_steps,
         "eval_trials": config.eval_trials,
         "eval_steps": config.eval_steps,
@@ -1003,13 +1152,33 @@ def _role_shaping_bonuses_for_design(
             action_mask=action_mask_before,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v7_chain_compass_breadcrumbs":
+        return event_v6_oracle_chain_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
 def _make_env(config: RunnerConfig) -> CanonicalEnv:
+    chain_compass_observation = _uses_chain_compass_observation(config)
     if config.env_backend == "mock":
-        return MockCanonicalTribalEnv(config.max_steps, gold_layer=config.gold_layer, altar_layer=config.altar_layer)
-    return TribalVillageAdapter(config.max_steps)
+        return MockCanonicalTribalEnv(
+            config.max_steps,
+            gold_layer=config.gold_layer,
+            altar_layer=config.altar_layer,
+            chain_compass_observation=chain_compass_observation,
+        )
+    return TribalVillageAdapter(config.max_steps, chain_compass_observation=chain_compass_observation)
+
+
+def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
+    return config.chain_compass_observation or config.reward_design == "event_v7_chain_compass_breadcrumbs"
 
 
 class _EventStatsTracker:
@@ -1106,7 +1275,7 @@ def _init_wandb(config: RunnerConfig, env: CanonicalEnv, run_name: str, argv: li
 
 
 def _env_metadata(env: CanonicalEnv) -> dict[str, Any]:
-    return {
+    metadata = {
         "num_agents": env.num_agents,
         "num_teams": env.num_teams,
         "map_width": env.map_width,
@@ -1115,6 +1284,13 @@ def _env_metadata(env: CanonicalEnv) -> dict[str, Any]:
         "action_space_size": env.action_space_size,
         "tribal_village_build_id": env.build_id,
     }
+    chain_compass_observation = getattr(env, "chain_compass_observation", None)
+    if chain_compass_observation is not None:
+        metadata["chain_compass_observation"] = bool(chain_compass_observation)
+    base_obs_shape = getattr(env, "base_obs_shape", None)
+    if base_obs_shape is not None:
+        metadata["base_obs_shape"] = list(base_obs_shape)
+    return metadata
 
 
 def _condition_group(config: RunnerConfig) -> str:
@@ -1138,6 +1314,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES)
     if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
         return list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES)
+    if config.reward_design == "event_v7_chain_compass_breadcrumbs":
+        return list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1192,6 +1370,18 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v7_chain_compass_breadcrumbs":
+        return {
+            "common": dict(EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS),
+            "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+            "navigation_progress": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS),
+            "navigation_progress_caps": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS),
+            "oracle_actions": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+            "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+            "roles": {
+                role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1208,6 +1398,8 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v5_navigation_chain_reward_design_details()
     if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
         return event_v6_oracle_chain_reward_design_details()
+    if config.reward_design == "event_v7_chain_compass_breadcrumbs":
+        return event_v7_chain_compass_reward_design_details()
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

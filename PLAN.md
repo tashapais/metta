@@ -1515,23 +1515,102 @@ Implementation status:
   - checkpoint: `/tmp/event_v6_oracle_chain_native_smoke.pt`;
   - validation: `validate_canonical_reward_geometry_results.py --allow-smoke`.
 
+V6 Stage-1 outcome:
+
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `--use-action-mask`, seeds `0,1,2`, and the v6 chain-only reward.
+- Final eval summary:
+  - seed `0`: raw `-11.3213`, shaping `11.9934`, total `0.6721`,
+    effrank/agent `0.1068`, JS action diversity `0.3461`, role probe `0.4139`;
+  - seed `1`: raw `-11.1030`, shaping `24.1995`, total `13.0965`,
+    effrank/agent `0.1089`, JS action diversity `0.3402`, role probe `0.3033`;
+  - seed `2`: raw `-10.8423`, shaping `22.1815`, total `11.3392`,
+    effrank/agent `0.1412`, JS action diversity `0.3299`, role probe `0.3527`.
+- Behavior gate summary:
+  - diagnostic `chain_oracle`: `27` heart deposits, `49` battery crafts,
+    `58` ore pickups across the same rollout horizon;
+  - seed `0` deterministic/stochastic checkpoints: `0` battery crafts and
+    `0` heart deposits;
+  - seed `1` deterministic checkpoint: `1` battery craft and `0` deposits;
+  - seed `1` stochastic checkpoint: `0` battery crafts and `0` deposits;
+  - seed `2` deterministic checkpoint: `1` battery craft and `0` deposits;
+  - seed `2` stochastic checkpoint: `0` battery crafts and `0` deposits.
+- Decision: v6 still fails the meaningful-behavior gate. It proves reward
+  terms can generate shaped return and sometimes battery crafts, but the policy
+  still does not complete deposits. The crucial clue is that `chain_oracle`
+  uses privileged global target positions from the navigation snapshot, while
+  the learned policy receives only a local feed-forward observation. This makes
+  the next debugging step an observability breadcrumb, not another coefficient
+  tweak.
+
+### Reward-Debug Continuation: `event_v7_chain_compass_breadcrumbs`
+
+Purpose:
+
+- Keep the v6 chain-only reward so we do not reintroduce off-chain incentives.
+- Add a minimal observation breadcrumb that makes the currently shaped chain
+  target visible to the policy.
+- Treat this as a debug/curriculum intervention. It is not the final paper
+  reward until it passes the behavior gate and we understand how much of the
+  result comes from the observation breadcrumb.
+
+Design:
+
+- Reuse v6 reward coefficients:
+  - `resource_ore`: `1.00`;
+  - `craft_battery`: `8.00`;
+  - `deposit_heart`: `40.00`;
+  - inventory-conditioned progress and mask-valid oracle-action bonuses
+    unchanged from v6.
+- Append five uint8 observation planes to the canonical 21-channel local
+  observation:
+  - `chain_target_dx_sign`: west/aligned/east target direction;
+  - `chain_target_dy_sign`: north/aligned/south target direction;
+  - `chain_inventory_stage`: empty -> mine, ore -> converter,
+    battery -> home assembler;
+  - `chain_target_closeness`: clipped Chebyshev closeness to current target;
+  - `chain_target_adjacent`: whether the current target is adjacent and a
+    `use` action is plausibly relevant.
+- Resulting checkpoint observation contract is `[26, 11, 11]` instead of
+  `[21, 11, 11]`.
+- Behavior rollout must pass `--chain-compass-observation` for v7 checkpoints;
+  the rollout loader now checks `obs_shape` before loading model weights.
+
+Implementation status:
+
+- `event_v7_chain_compass_breadcrumbs` has been implemented locally.
+- Focused validation passed:
+  - `uv run ruff check ...`;
+  - `uv run ruff format --check ...`;
+  - `uv run pytest tests/v3_experiments/test_canonical_reward_geometry.py
+    tests/v3_experiments/test_tribal_behavior_tools.py -q`;
+  - result: `41 passed`.
+- Tiny native Tribal Village smoke passed:
+  - output: `/tmp/event_v7_chain_compass_native_smoke.json`;
+  - checkpoint: `/tmp/event_v7_chain_compass_native_smoke.pt`;
+  - recorded `obs_shape: [26, 11, 11]`;
+  - recorded `chain_compass_observation: true`.
+
 Next ramp:
 
-- Commit and push `event_v6_oracle_chain_breadcrumbs`.
-- Update sandbox worktrees to the v6 commit.
-- Run a short Stage-1 v6 masked ramp:
+- Commit and push `event_v7_chain_compass_breadcrumbs`.
+- Update sandbox worktrees to the v7 commit.
+- Run a short Stage-1 v7 masked ramp:
   - `shared_frac=0.0`;
   - seeds `0,1,2`;
   - `1,000,008` agent steps;
-  - same behavior gate as v5, including the `chain_oracle` diagnostic baseline.
+  - `--use-action-mask`;
+  - `--reward-design event_v7_chain_compass_breadcrumbs`.
+- Run the same behavior gate as v6, but evaluate v7 checkpoints with
+  `--chain-compass-observation`.
 - Promotion criteria:
   - repeated battery crafts across seeds;
   - nonzero heart deposits in deterministic or repeatable stochastic rollouts;
   - trained checkpoints close part of the gap to `chain_oracle`, not merely
     random/use-sweep;
-  - off-chain events no longer dominate task-event counts.
-- If v6 still does not produce deposits, switch from reward tweaking to a
-  curriculum or warm-start intervention:
+  - off-chain events stay secondary to ore, battery, and deposit chain events.
+- If v7 still does not produce deposits, stop coefficient tweaking and move to
+  an explicit curriculum or warm start:
   - shorter mine -> converter -> assembler distances; or
   - a short imitation/behavior-cloning warm start from the chain oracle before
     MAPPO fine-tuning.

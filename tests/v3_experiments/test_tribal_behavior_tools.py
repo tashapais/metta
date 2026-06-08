@@ -167,6 +167,7 @@ def test_run_tribal_behavior_rollouts_mock_noop_writes_valid_record(tmp_path):
     record = json.loads((output_dir / "rollout_metrics.json").read_text())
     assert validate_behavior_record(record) == []
     assert record["policy"] == "no_op"
+    assert record["chain_compass_observation"] is False
     assert record["env_contract"]["action_space_size"] == 56
     metrics = record["episode_metrics"][0]["behavior_metrics"]
     assert metrics["unique_action_count"] == 1
@@ -176,6 +177,37 @@ def test_run_tribal_behavior_rollouts_mock_noop_writes_valid_record(tmp_path):
     assert metrics["world_stats_final"] is None
     summary = summarize_record(output_dir / "rollout_metrics.json", record)
     assert summary["flags"] == ["no_task_events", "single_joint_action", "mostly_noop"]
+
+
+def test_run_tribal_behavior_rollouts_mock_chain_compass_contract(tmp_path):
+    output_dir = tmp_path / "rollouts"
+
+    assert (
+        rollout_main(
+            [
+                "--env-backend",
+                "mock",
+                "--policy",
+                "no_op",
+                "--chain-compass-observation",
+                "--episodes",
+                "1",
+                "--steps",
+                "3",
+                "--seed",
+                "7",
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads((output_dir / "rollout_metrics.json").read_text())
+    assert validate_behavior_record(record) == []
+    assert record["chain_compass_observation"] is True
+    assert record["env_contract"]["obs_shape"] == [26, 11, 11]
+    assert record["env_contract"]["base_obs_shape"] == [21, 11, 11]
 
 
 def test_chain_oracle_follows_current_inventory_target():
