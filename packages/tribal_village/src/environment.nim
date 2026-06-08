@@ -1233,6 +1233,119 @@ proc plantAction(env: Environment, id: int, agent: Thing, argument: int) =
   inc env.stats[id].lanternPlant
   inc env.stats[id].actionPlant
 
+proc isActionCurrentlyValid*(env: Environment, id: int, actionValue: uint8): bool =
+  ## Check whether an action can succeed in the current state without mutating it.
+  if id < 0 or id >= env.agents.len:
+    return false
+  let agent = env.agents[id]
+  if agent.isNil or agent.frozen > 0:
+    return actionValue == encodeAction(0'u8, 0'u8)
+
+  let decoded = decodeAction(actionValue)
+  let verb = decoded.verb.int
+  let argument = decoded.argument.int
+  if verb < 0 or verb >= ActionVerbCount or argument < 0 or argument >= ActionArgumentCount:
+    return false
+  if verb == 0:
+    return argument == 0
+
+  let dir = Orientation(argument)
+  let delta = getOrientationDelta(dir)
+  let targetPos = ivec2(agent.pos.x + delta.x.int32, agent.pos.y + delta.y.int32)
+
+  case verb:
+  of 1:
+    if targetPos.x < 0 or targetPos.x >= MapWidth or targetPos.y < 0 or targetPos.y >= MapHeight:
+      return false
+    if env.isEmpty(targetPos):
+      return true
+    let blocker = env.getThing(targetPos)
+    if blocker.isNil or blocker.kind != PlantedLantern:
+      return false
+    for dy in -1 .. 1:
+      for dx in -1 .. 1:
+        if dx == 0 and dy == 0:
+          continue
+        let alt = ivec2(targetPos.x + dx.int32, targetPos.y + dy.int32)
+        if alt.x < 0 or alt.y < 0 or alt.x >= MapWidth or alt.y >= MapHeight:
+          continue
+        if env.isEmpty(alt) and env.terrain[alt.x][alt.y] != Water:
+          return true
+    return false
+  of 2:
+    let hasSpear = agent.inventorySpear > 0
+    let maxRange = if hasSpear: 2 else: 1
+    for distance in 1 .. maxRange:
+      let attackPos = agent.pos + ivec2(delta.x * distance, delta.y * distance)
+      if attackPos.x < 0 or attackPos.x >= MapWidth or attackPos.y < 0 or attackPos.y >= MapHeight:
+        continue
+      let target = env.getThing(attackPos)
+      if target.isNil:
+        continue
+      case target.kind:
+      of Tumor, Spawner:
+        return true
+      of Agent:
+        if target.agentId != agent.agentId and getTeamId(target.agentId) != getTeamId(agent.agentId):
+          return true
+      else:
+        discard
+    return false
+  of 3:
+    if targetPos.x < 0 or targetPos.x >= MapWidth or targetPos.y < 0 or targetPos.y >= MapHeight:
+      return false
+    case env.terrain[targetPos.x][targetPos.y]:
+    of Water:
+      return agent.inventoryWater < MapObjectAgentMaxInventory
+    of Wheat:
+      return agent.inventoryWheat < MapObjectAgentMaxInventory
+    of Tree:
+      return agent.inventoryWood < MapObjectAgentMaxInventory
+    of Empty:
+      discard
+
+    let thing = env.getThing(targetPos)
+    if thing.isNil or isBuildingFrozen(targetPos, env):
+      return false
+    case thing.kind:
+    of Mine:
+      return thing.cooldown == 0 and agent.inventoryOre < MapObjectAgentMaxInventory
+    of Converter:
+      return thing.cooldown == 0 and agent.inventoryOre > 0 and agent.inventoryBattery < MapObjectAgentMaxInventory
+    of Forge:
+      return thing.cooldown == 0 and agent.inventoryWood > 0 and agent.inventorySpear == 0
+    of WeavingLoom:
+      return thing.cooldown == 0 and agent.inventoryWheat > 0 and agent.inventoryLantern == 0
+    of Armory:
+      return thing.cooldown == 0 and agent.inventoryWood > 0 and agent.inventoryArmor == 0
+    of ClayOven:
+      return thing.cooldown == 0 and agent.inventoryWheat > 0
+    of assembler:
+      return thing.cooldown == 0 and agent.inventoryBattery >= 1
+    else:
+      return false
+  of 4:
+    if argument > 1:
+      return false
+    let swapTarget = env.getThing(agent.pos + orientationToVec(agent.orientation))
+    return not swapTarget.isNil and swapTarget.kind == Agent and swapTarget.frozen > 0
+  of 5:
+    if targetPos.x < 0 or targetPos.x >= MapWidth or targetPos.y < 0 or targetPos.y >= MapHeight:
+      return false
+    let target = env.getThing(targetPos)
+    if target.isNil or target.kind != Agent:
+      return false
+    return (agent.inventoryArmor > 0 and target.inventoryArmor == 0) or
+      (agent.inventoryBread > 0 and target.inventoryBread < MapObjectAgentMaxInventory)
+  of 6:
+    if agent.inventoryLantern <= 0:
+      return false
+    if targetPos.x < 0 or targetPos.x >= MapWidth or targetPos.y < 0 or targetPos.y >= MapHeight:
+      return false
+    return env.isEmpty(targetPos) and env.terrain[targetPos.x][targetPos.y] != Water
+  else:
+    return false
+
 proc init(env: Environment) =
   # Use current time for random seed to get different maps each time
   let seed = int(nowSeconds() * 1000)

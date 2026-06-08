@@ -974,6 +974,43 @@ Promotion rule:
   debugging and switch to a curriculum, action masking, or scripted/imitation
   warm start.
 
+`event_v3_navigation_breadcrumbs` Stage-1 outcome:
+
+- `event_v3_navigation_breadcrumbs` was implemented and pushed at
+  `d87a6086f535ee4fd892e40638437d7dc873c8cd`.
+- Stage-1 ran seeds `0,1,2` for `1,000,008` agent steps with
+  `--ent-coef 0.03` and offline W&B.
+- Run directories:
+  - `/workspace/tribal_event_v3_runs/stage1/stage1_event_v3_navigation_alpha0_seed0_1m_d87a6086f`
+  - `/workspace/tribal_event_v3_runs/stage1/stage1_event_v3_navigation_alpha0_seed1_1m_d87a6086f`
+  - `/workspace/tribal_event_v3_runs/stage1/stage1_event_v3_navigation_alpha0_seed2_1m_d87a6086f`
+- Final deterministic eval still failed:
+  - seed 0: eval raw `-10.98`, eval shaping `-3.82`, JS diversity `0.000053`;
+  - seed 1: eval raw `-10.28`, eval shaping `-3.91`, JS diversity `0.000122`;
+  - seed 2: eval raw `-10.06`, eval shaping `-3.82`, JS diversity `0.000209`.
+- Behavior-gate rollouts under `/workspace/tribal_event_v3_runs/behavior_gate`
+  showed the same core failure:
+  - seed 0 deterministic mostly repeated move action `15`, with invalid
+    fraction `0.92`;
+  - seed 1 deterministic mostly repeated use action `31`, with invalid
+    fraction `1.00`;
+  - seed 2 deterministic repeated use action `30`, with invalid fraction
+    `1.00`;
+  - stochastic rollouts were still random-like, with invalid fraction around
+    `0.72-0.77`.
+
+Decision:
+
+- `event_v3_navigation_breadcrumbs` is not behavior-valid.
+- Do not scale reward-only training from this point.
+- The next intervention is action masking: expose a simulator-derived
+  per-agent mask of actions that can currently succeed, train with
+  `--use-action-mask`, and apply the same mask during checkpoint behavior
+  rollouts.
+- Promotion still requires deterministic behavior to beat no-op/random/sweep
+  baselines on task events while dropping the invalid fraction materially below
+  random.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

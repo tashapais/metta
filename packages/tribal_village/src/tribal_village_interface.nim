@@ -1,7 +1,7 @@
 ## Ultra-Fast Direct Buffer Interface
 ## Zero-copy numpy buffer communication - no conversions
 
-import environment, external_actions
+import common, environment, external_actions
 
 var globalEnv: Environment = nil
 
@@ -219,6 +219,25 @@ proc tribal_village_get_world_stats(
     world_buffer[9] = plantedLanterns.int32
     world_buffer[10] = productionBuildings.int32
     world_buffer[11] = globalEnv.things.len.int32
+    return 1
+  except:
+    return 0
+
+proc tribal_village_get_action_mask(
+  env: pointer,
+  mask_buffer: ptr UncheckedArray[uint8]  # [MapAgents, ActionVerbCount * ActionArgumentCount]
+): int32 {.exportc, dynlib.} =
+  ## Copy a per-agent mask of actions that can currently succeed.
+  if globalEnv == nil or mask_buffer.isNil:
+    return 0
+
+  try:
+    let actionCount = ActionVerbCount * ActionArgumentCount
+    for i in 0..<MapAgents:
+      let offset = i * actionCount
+      for action in 0..<actionCount:
+        mask_buffer[offset + action] =
+          if globalEnv.isActionCurrentlyValid(i, action.uint8): 1'u8 else: 0'u8
     return 1
   except:
     return 0

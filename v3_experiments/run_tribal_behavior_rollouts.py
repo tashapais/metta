@@ -40,6 +40,7 @@ from v3_experiments.tribal_behavior import (  # noqa: E402
 class LoadedCheckpointPolicy:
     policy: ActorCritic
     separate_encoders: bool
+    use_action_mask: bool
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -238,6 +239,7 @@ def _policy_actions(
             actions, _logprob, _entropy, _value, _emb, _logit = checkpoint_policy.policy.get_action_and_value(
                 obs_t,
                 agent_ids=_agent_ids(env.num_agents, device) if checkpoint_policy.separate_encoders else None,
+                action_mask=_checkpoint_action_mask(env, checkpoint_policy, device),
                 deterministic=not args.stochastic,
             )
         return actions.cpu().numpy().astype(np.int64)
@@ -259,6 +261,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         )
 
     separate_encoders = bool(config.get("separate_encoders", False))
+    use_action_mask = bool(config.get("use_action_mask", False))
     policy = ActorCritic(
         env.obs_shape,
         env.action_space_size,
@@ -269,7 +272,26 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
     ).to(args.device)
     policy.load_state_dict(checkpoint["model_state_dict"])
     policy.eval()
-    return LoadedCheckpointPolicy(policy=policy, separate_encoders=separate_encoders)
+    return LoadedCheckpointPolicy(policy=policy, separate_encoders=separate_encoders, use_action_mask=use_action_mask)
+
+
+def _checkpoint_action_mask(
+    env: Any,
+    checkpoint_policy: LoadedCheckpointPolicy,
+    device: torch.device,
+) -> torch.Tensor | None:
+    if not checkpoint_policy.use_action_mask:
+        return None
+    get_mask = getattr(env, "get_action_mask", None)
+    if get_mask is None:
+        raise RuntimeError("checkpoint was trained with action masks but rollout environment does not expose masks")
+    mask = get_mask()
+    if mask is None:
+        raise RuntimeError("checkpoint was trained with action masks but rollout environment returned no mask")
+    mask_arr = np.asarray(mask, dtype=bool)
+    if mask_arr.shape != (env.num_agents, env.action_space_size):
+        raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
+    return torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
 
 
 def _torch_load_checkpoint(path: Path, device: str) -> dict[str, Any]:

@@ -91,6 +91,8 @@ class CanonicalEnv(Protocol):
 
     def get_world_stats(self) -> np.ndarray | None: ...
 
+    def get_action_mask(self) -> np.ndarray | None: ...
+
     def close(self) -> None: ...
 
 
@@ -116,6 +118,7 @@ class RunnerConfig:
     reward_design: str
     disable_role_shaping: bool
     separate_encoders: bool
+    use_action_mask: bool
     env_backend: str
     allow_noncanonical_env: bool
     gold_layer: int
@@ -174,17 +177,19 @@ class ActorCritic(nn.Module):
         action: torch.Tensor | None = None,
         *,
         agent_ids: torch.Tensor | None = None,
+        action_mask: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         embedding = self.encode(obs, agent_ids=agent_ids)
         logits = self.actor(embedding)
-        dist = Categorical(logits=logits)
+        policy_logits = _masked_logits(logits, action_mask)
+        dist = Categorical(logits=policy_logits)
         if action is None:
-            action = torch.argmax(logits, dim=-1) if deterministic else dist.sample()
+            action = torch.argmax(policy_logits, dim=-1) if deterministic else dist.sample()
         log_prob = dist.log_prob(action)
         entropy = dist.entropy()
         value = self.critic(embedding).squeeze(-1)
-        return action, log_prob, entropy, value, embedding, logits
+        return action, log_prob, entropy, value, embedding, policy_logits
 
 
 class MockCanonicalTribalEnv:
@@ -227,6 +232,9 @@ class MockCanonicalTribalEnv:
 
     def get_world_stats(self) -> np.ndarray | None:
         return None
+
+    def get_action_mask(self) -> np.ndarray | None:
+        return np.ones((self.num_agents, self.action_space_size), dtype=bool)
 
     def _observations(self) -> np.ndarray:
         obs = self._rng.integers(0, 3, size=(self.num_agents, *self.obs_shape), dtype=np.uint8)
@@ -292,6 +300,13 @@ class TribalVillageAdapter:
             return None
         return get_stats()
 
+    def get_action_mask(self) -> np.ndarray | None:
+        get_mask = getattr(self._env, "get_action_mask", None)
+        if get_mask is None:
+            return None
+        mask = get_mask()
+        return None if mask is None else np.asarray(mask, dtype=bool)
+
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
@@ -327,6 +342,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--disable-role-shaping", action="store_true")
     parser.add_argument("--separate-encoders", action="store_true")
+    parser.add_argument("--use-action-mask", action="store_true")
     parser.add_argument("--env-backend", choices=("tribal", "mock"), default="tribal")
     parser.add_argument("--allow-noncanonical-env", action="store_true")
     parser.add_argument("--gold-layer", type=int, default=DEFAULT_GOLD_LAYER)
@@ -448,13 +464,17 @@ def _train_policy(
         value_buf: list[np.ndarray] = []
         embedding_buf: list[np.ndarray] = []
         logit_buf: list[np.ndarray] = []
+        mask_buf: list[np.ndarray] = []
 
         for _ in range(rollout_steps):
             obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
             agent_ids = _agent_ids(env.num_agents, device) if config.separate_encoders else None
+            action_mask = _action_mask_tensor(env, config, device)
             with torch.no_grad():
                 actions, logprob, _entropy, values, embeddings, logits = policy.get_action_and_value(
-                    obs_tensor, agent_ids=agent_ids
+                    obs_tensor,
+                    agent_ids=agent_ids,
+                    action_mask=action_mask,
                 )
             actions_np = actions.cpu().numpy().astype(np.int64)
             next_obs, env_rewards, done = env.step(actions_np)
@@ -475,6 +495,8 @@ def _train_policy(
             value_buf.append(values.cpu().numpy())
             embedding_buf.append(embeddings.cpu().numpy())
             logit_buf.append(logits.cpu().numpy())
+            if action_mask is not None:
+                mask_buf.append(action_mask.cpu().numpy())
 
             recent_returns.append(float(shaped_rewards.sum()))
             recent_raw_returns.append(float(reward_components["raw_env_rewards"].sum()))
@@ -522,6 +544,7 @@ def _train_policy(
             flat_advantages,
             flat_returns,
             flat_agent_ids,
+            np.stack(mask_buf).reshape(-1, env.action_space_size) if config.use_action_mask else None,
             config,
             device,
         )
@@ -567,6 +590,7 @@ def _ppo_update(
     flat_advantages: np.ndarray,
     flat_returns: np.ndarray,
     flat_agent_ids: np.ndarray,
+    flat_action_masks: np.ndarray | None,
     config: RunnerConfig,
     device: torch.device,
 ) -> tuple[float, float, float]:
@@ -591,10 +615,18 @@ def _ppo_update(
                 if config.separate_encoders
                 else None
             )
+            action_mask_t = (
+                torch.as_tensor(flat_action_masks[batch_idx], dtype=torch.bool, device=device)
+                if flat_action_masks is not None
+                else None
+            )
 
             adv_t = (adv_t - adv_t.mean()) / (adv_t.std(unbiased=False) + 1e-8)
             _action, new_logprob, entropy, value, _embedding, _logits = policy.get_action_and_value(
-                obs_t, action_t, agent_ids=agent_ids_t
+                obs_t,
+                action_t,
+                agent_ids=agent_ids_t,
+                action_mask=action_mask_t,
             )
             ratio = (new_logprob - old_logprob_t).exp()
             pg_loss = torch.max(-adv_t * ratio, -adv_t * ratio.clamp(1 - config.clip_coef, 1 + config.clip_coef)).mean()
@@ -639,6 +671,7 @@ def _evaluate_policy(
                 actions, _logprob, _entropy, _value, emb, logit = policy.get_action_and_value(
                     obs_t,
                     agent_ids=_agent_ids(env.num_agents, device) if config.separate_encoders else None,
+                    action_mask=_action_mask_tensor(env, config, device),
                     deterministic=True,
                 )
                 next_obs, rewards, done = env.step(actions.cpu().numpy())
@@ -742,6 +775,7 @@ def _result_record(
         "role_shaping_coefficients": _reward_design_coefficients(config),
         "role_shaping_layers": {"gold_layer": config.gold_layer, "altar_layer": config.altar_layer},
         "separate_encoders": config.separate_encoders,
+        "use_action_mask": config.use_action_mask,
         "total_agent_steps": config.total_agent_steps,
         "eval_trials": config.eval_trials,
         "eval_steps": config.eval_steps,
@@ -1038,6 +1072,29 @@ def _default_checkpoint_path(output_path: Path, run_name: str) -> Path:
 
 def _agent_ids(num_agents: int, device: torch.device) -> torch.Tensor:
     return torch.arange(num_agents, dtype=torch.long, device=device)
+
+
+def _masked_logits(logits: torch.Tensor, action_mask: torch.Tensor | None) -> torch.Tensor:
+    if action_mask is None:
+        return logits
+    mask = action_mask.to(device=logits.device, dtype=torch.bool)
+    if mask.shape != logits.shape:
+        raise ValueError(f"action mask shape {tuple(mask.shape)} does not match logits {tuple(logits.shape)}")
+    if not torch.all(mask.any(dim=-1)):
+        raise ValueError("action mask contains an agent with no valid actions")
+    return logits.masked_fill(~mask, -1e9)
+
+
+def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.device) -> torch.Tensor | None:
+    if not config.use_action_mask:
+        return None
+    mask = env.get_action_mask()
+    if mask is None:
+        raise RuntimeError("--use-action-mask was passed but the environment does not expose masks")
+    mask_arr = np.asarray(mask, dtype=bool)
+    if mask_arr.shape != (env.num_agents, env.action_space_size):
+        raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
+    return torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
 
 
 def _seed_everything(seed: int) -> None:

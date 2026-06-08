@@ -113,6 +113,7 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         self.action_stats_buffer = np.zeros((self.total_agents, ACTION_STATS_COLUMN_COUNT), dtype=np.int32)
         self.inventory_snapshot_buffer = np.zeros((self.total_agents, INVENTORY_COLUMN_COUNT), dtype=np.int32)
         self.world_stats_buffer = np.zeros(WORLD_STATS_COLUMN_COUNT, dtype=np.int32)
+        self.action_mask_buffer = np.zeros((self.total_agents, ACTION_SPACE_SIZE), dtype=np.uint8)
 
         # Initialize environment
         self.env_ptr = self.lib.tribal_village_create()
@@ -223,6 +224,15 @@ class TribalVillageEnv(pufferlib.PufferEnv):
                 ctypes.c_void_p,
             ]
             self.lib.tribal_village_get_world_stats.restype = ctypes.c_int32
+        except AttributeError:
+            pass
+
+        try:
+            self.lib.tribal_village_get_action_mask.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_action_mask.restype = ctypes.c_int32
         except AttributeError:
             pass
 
@@ -367,6 +377,19 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         if not success:
             return None
         return self.world_stats_buffer.copy()
+
+    def get_action_mask(self) -> Optional[np.ndarray]:
+        """Return a per-agent action mask where nonzero entries can currently succeed."""
+        try:
+            fn = self.lib.tribal_village_get_action_mask
+        except AttributeError:
+            return None
+
+        mask_ptr = self.action_mask_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, mask_ptr)
+        if not success:
+            return None
+        return self.action_mask_buffer.copy().astype(bool)
 
     def close(self):
         """Clean up the environment."""

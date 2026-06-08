@@ -436,6 +436,7 @@ def test_train_canonical_reward_geometry_event_v3_navigation_mock_smoke(tmp_path
                 "mock",
                 "--reward-design",
                 "event_v3_navigation_breadcrumbs",
+                "--use-action-mask",
                 "--shared-frac",
                 "0.0",
                 "--seed",
@@ -472,6 +473,7 @@ def test_train_canonical_reward_geometry_event_v3_navigation_mock_smoke(tmp_path
     record = json.loads(output_path.read_text())
     assert record["reward_design"] == "event_v3_navigation_breadcrumbs"
     assert record["role_names"] == list(EVENT_V3_NAVIGATION_ROLE_NAMES)
+    assert record["use_action_mask"] is True
     assert record["reward_design_details"]["common_caps"]["action_move"] == 40
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
