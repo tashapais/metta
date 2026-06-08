@@ -12,6 +12,7 @@ from typing import Iterable, Optional
 
 DEFAULT_NIM_VERSION = os.environ.get("TRIBAL_VILLAGE_NIM_VERSION", "2.2.6")
 DEFAULT_NIMBY_VERSION = os.environ.get("TRIBAL_VILLAGE_NIMBY_VERSION", "0.1.11")
+NIM_DEFINES_ENV_VAR = "TRIBAL_VILLAGE_NIM_DEFINES"
 
 
 def _target_library_name() -> str:
@@ -39,11 +40,18 @@ def _latest_mtime(paths: Iterable[Path]) -> Optional[float]:
     return max(mtimes)
 
 
+def _requested_nim_defines() -> tuple[str, ...]:
+    raw = os.environ.get(NIM_DEFINES_ENV_VAR, "")
+    normalized = raw.replace(",", " ")
+    return tuple(part.strip() for part in normalized.split() if part.strip())
+
+
 def _build_library(project_root: Path) -> Path:
     _ensure_nim_toolchain()
     _install_nim_deps(project_root)
 
     ext = Path(_target_library_name()).suffix
+    define_args = [f"-d:{define}" for define in _requested_nim_defines()]
     cmd = [
         "nim",
         "c",
@@ -51,6 +59,7 @@ def _build_library(project_root: Path) -> Path:
         "--mm:arc",
         "--opt:speed",
         "-d:danger",
+        *define_args,
         f"--out:libtribal_village{ext}",
         "src/tribal_village_interface.nim",
     ]
@@ -76,12 +85,19 @@ def ensure_nim_library_current(verbose: bool = True) -> Path:
     project_root = package_dir.parent
     target_name = _target_library_name()
     target_path = package_dir / target_name
+    defines_path = package_dir / f"{target_name}.defines"
+    requested_defines = "\n".join(_requested_nim_defines()) + "\n"
 
     source_files = _collect_source_files(project_root)
     latest_source_mtime = _latest_mtime(source_files)
     lib_mtime: Optional[float] = target_path.stat().st_mtime if target_path.exists() else None
+    current_defines = defines_path.read_text() if defines_path.exists() else None
 
-    needs_rebuild = lib_mtime is None or (latest_source_mtime is not None and lib_mtime < latest_source_mtime)
+    needs_rebuild = (
+        lib_mtime is None
+        or current_defines != requested_defines
+        or (latest_source_mtime is not None and lib_mtime < latest_source_mtime)
+    )
 
     if not needs_rebuild:
         return target_path
@@ -92,6 +108,7 @@ def ensure_nim_library_current(verbose: bool = True) -> Path:
     built_lib = _build_library(project_root)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(built_lib, target_path)
+    defines_path.write_text(requested_defines)
 
     if verbose:
         print(f"Copied {built_lib} to {target_path}")

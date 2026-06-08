@@ -13,6 +13,7 @@ uv.lock
 *.dylib
 *.dll
 *.so
+*.defines
 
 # Nim compilation artifacts
 *.out

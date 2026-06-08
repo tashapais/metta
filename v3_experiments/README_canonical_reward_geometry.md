@@ -27,6 +27,30 @@ trials. Treat it as provisional until the reruns below replace it.
 The machine-readable version is
 `v3_experiments/canonical_reward_geometry_protocol.json`.
 
+## Runner
+
+Use the canonical runner for all new fixed-role Tribal Village reruns:
+
+```bash
+uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --shared-frac 0.8 \
+  --seed 0 \
+  --total-agent-steps 4000000 \
+  --eval-trials 10 \
+  --output v3_experiments/canonical_results/primary_alpha0.8_seed0.json
+```
+
+The runner builds Tribal Village with the `canonicalRewardGeometry` Nim define,
+which sets the environment to 1 team x 12 agents on an 80x80 map. For local
+contract checks only, use `--env-backend mock`.
+
+Validate finished JSON files before aggregation:
+
+```bash
+uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
+  v3_experiments/canonical_results/*.json
+```
+
 ## Canonical Metrics
 
 - `effrank_per_agent`: effective rank over flattened eval embeddings divided by 12.

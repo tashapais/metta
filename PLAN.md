@@ -97,10 +97,10 @@ uv run python v3_experiments/audit_reward_geometry.py \
 ## Preparation Before Reruns
 
 Do not launch the new sandbox jobs until the items in this section are handled.
-The current branch has protocol, metric helpers, and audit helpers, but it does
-not yet have a canonical training launcher for the fixed-role Tribal Village
-reward-mixing experiment. The later `paper_exp_reward_type.py` script should not
-be used for this paper section because it trains the non-canonical binary
+This branch now has protocol, metric helpers, audit helpers, a canonical
+training launcher, and an output validator for the fixed-role Tribal Village
+reward-mixing experiment. The later `paper_exp_reward_type.py` script should
+not be used for this paper section because it trains the non-canonical binary
 top/bottom return-probe stream.
 
 ### 1. Finish The Provenance Recovery Decision
@@ -140,9 +140,9 @@ Decision rule:
 - If they are not recovered, create a new canonical runner in this branch and
   mark the experiments as reconstructed reruns that match the protocol below.
 
-### 2. Build Or Recover The Canonical Runner
+### 2. Use The Canonical Runner
 
-Add or recover a runner with an explicit entrypoint, tentatively:
+Use the explicit canonical entrypoint:
 
 ```bash
 uv run python v3_experiments/train_canonical_reward_geometry.py \
@@ -153,7 +153,7 @@ uv run python v3_experiments/train_canonical_reward_geometry.py \
   --output v3_experiments/canonical_results/primary_alpha0.8_seed0.json
 ```
 
-The runner must implement the canonical environment and policy contract:
+The runner implements the canonical environment and policy contract:
 
 - Tribal Village, 1 team x 12 agents, 80x80 map.
 - Fixed roles from `agent_id % 3`: four gatherers, four explorers, four
@@ -306,16 +306,26 @@ Remote setup checklist:
 
 ### 6. Run Short Smoke Tests Before 4M-Step Jobs
 
-Before launching the full matrix, run one very short smoke per condition family:
+Before launching the full matrix, run one very short local contract smoke per
+condition family:
 
 ```bash
 uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --env-backend mock \
   --shared-frac 0.0 \
   --seed 0 \
   --total-agent-steps 12000 \
   --eval-trials 1 \
-  --output /tmp/canonical_reward_geometry_smoke.json
+  --output /tmp/canonical_reward_geometry_smoke.json \
+  --checkpoint-path /tmp/canonical_reward_geometry_smoke.pt
+
+uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
+  --allow-smoke \
+  /tmp/canonical_reward_geometry_smoke.json
 ```
+
+Then run the same short smoke on the sandbox with the real Tribal backend and
+`--wandb-mode online` after W&B auth is confirmed.
 
 Smoke acceptance criteria:
 
@@ -324,7 +334,7 @@ Smoke acceptance criteria:
 - `role_probe_chance` is `1/3`.
 - `obs_shape` and `action_space_size` are present and stable.
 - A checkpoint is written and loadable.
-- A W&B run is created with the expected config fields.
+- The sandbox Tribal smoke creates a W&B run with the expected config fields.
 - `d_act_ordered_kl`, `d_act_js`, and `effrank_per_agent` are finite numbers.
 
 Only after these pass should the long jobs start.
@@ -531,9 +541,23 @@ The final results section is canonical only when:
 - `v3_experiments/canonical_reward_geometry.py`
   - role labels
   - reward mixing
+  - role-shaping bonuses
+  - effective rank
   - ordered-KL action diversity
   - JS action diversity
+  - fixed 3-way role probe
   - fixed-role probe audit
+- `v3_experiments/train_canonical_reward_geometry.py`
+  - canonical Tribal Village runner
+  - mock backend for local smoke tests
+  - W&B config/final-metric logging
+  - per-seed JSON and checkpoint output
+- `v3_experiments/validate_canonical_reward_geometry_results.py`
+  - per-seed output contract validation
+  - full-run and smoke-run validation modes
+- `packages/tribal_village`
+  - `canonicalRewardGeometry` Nim define for 1 team x 12 agents on an 80x80 map
+  - build helper tracks `TRIBAL_VILLAGE_NIM_DEFINES` changes and rebuilds the native library
 - `v3_experiments/audit_reward_geometry.py`
   - local result audit
   - git branch provenance audit
@@ -543,7 +567,9 @@ The final results section is canonical only when:
 - `v3_experiments/README_canonical_reward_geometry.md`
   - runbook for audit and reruns
 - `tests/v3_experiments/test_canonical_reward_geometry.py`
-  - tests for reward mixing, role labels, `D_act`, JS, and stale probe audits
+  - tests for reward mixing, role labels, role shaping, effective rank,
+    fixed-role probe CV, `D_act`, JS, stale probe audits, validator behavior,
+    and mock-runner smoke
 
 Focused verification already run:
 
@@ -554,5 +580,5 @@ uv run pytest tests/v3_experiments/test_canonical_reward_geometry.py -q
 Result:
 
 ```text
-7 passed
+13 passed
 ```

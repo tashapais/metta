@@ -11,6 +11,10 @@ Do not cite `results_reward_*.json` as fixed-role Tribal Village role-probe
 evidence: those later runs use binary top/bottom return probes, not the 3-way
 `agent_id % 3` role probe.
 
+New fixed-role Tribal Village reruns should use
+`train_canonical_reward_geometry.py` and validate raw per-seed JSONs with
+`validate_canonical_reward_geometry_results.py` before aggregation.
+
 This folder contains experiment configurations and baselines for the contrastive learning paper.
 
 ## Required Experiments

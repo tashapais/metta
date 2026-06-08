@@ -9,19 +9,47 @@ const
   MapLayoutRoomsX* = 1
   MapLayoutRoomsY* = 1
   MapBorder* = 4
-  MapRoomWidth* = 192  # 16:9 aspect ratio
-  MapRoomHeight* = 108
+
+when defined(canonicalRewardGeometry):
+  const
+    MapRoomWidth* = 76
+    MapRoomHeight* = 76
+else:
+  const
+    MapRoomWidth* = 192  # 16:9 aspect ratio
+    MapRoomHeight* = 108
+
+const
   MapRoomBorder* = 0
 
-  # World Objects
-  # Eight bases with six agents each -> 48 agents total (divisible by 12 and 16 for batching).
-  MapRoomObjectsHouses* = 8
-  MapAgentsPerHouse* = 6
-  MapRoomObjectsAgents* = MapRoomObjectsHouses * MapAgentsPerHouse  # 48 total agents
-  MapRoomObjectsConverters* = 10
-  MapRoomObjectsMines* = 20
-  MapRoomObjectsWalls* = 30
+when defined(canonicalRewardGeometry):
+  const
+    # Canonical reward-geometry reruns use one team with 12 agents.
+    MapRoomObjectsHouses* = 1
+    MapAgentsPerHouse* = 12
+else:
+  const
+    # Eight bases with six agents each -> 48 agents total (divisible by 12 and 16 for batching).
+    MapRoomObjectsHouses* = 8
+    MapAgentsPerHouse* = 6
 
+const
+  # World Objects
+  MapRoomObjectsAgents* = MapRoomObjectsHouses * MapAgentsPerHouse
+
+when defined(canonicalRewardGeometry):
+  const
+    # Canonical reward-geometry reruns use one team with 12 agents.
+    MapRoomObjectsConverters* = 4
+    MapRoomObjectsMines* = 12
+    MapRoomObjectsWalls* = 16
+else:
+  const
+    MapRoomObjectsConverters* = 10
+    MapRoomObjectsMines* = 20
+    MapRoomObjectsWalls* = 30
+
+const
   # Agent Parameters
   MapObjectAgentMaxInventory* = 5
   MapObjectAgentFreezeDuration* = 10

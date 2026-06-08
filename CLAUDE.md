@@ -99,7 +99,7 @@ CUDA_VISIBLE_DEVICES=N WANDB_API_KEY=... .venv/bin/python -u \
 bash v3_experiments/launch_2x2_contrastive.sh
 ```
 
-Scikit-learn must be installed separately: `.venv/bin/pip install scikit-learn`
+Scikit-learn is declared in `pyproject.toml` for the linear probes.
 `install.sh` fails in no-TTY — verify env with:
 `.venv/bin/python -c "import mettagrid, wandb, sklearn, torch; print('OK')"`
 
