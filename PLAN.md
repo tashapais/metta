@@ -1937,6 +1937,74 @@ V9 promotion criteria:
   representation debugging and pursue curriculum, affordance masking, or
   short oracle warm starts as the next intervention.
 
+V9 Stage-1 outcome:
+
+- Implementation commit: `d4708a0b8a`.
+- Remote worktrees were staged on both sandboxes at commit `d4708a0b8a` from the
+  `tasha` remote. `origin` on those worktrees still points at
+  `Metta-AI/metta`, so future fetches for this branch should use `tasha`.
+- Tiny native Tribal Village smokes passed on both sandboxes:
+  - sandbox 1 output:
+    `/workspace/tribal_event_mask_runs/smoke_v9_sandbox1.json`;
+  - sandbox 2 output:
+    `/workspace/tribal_event_mask_runs/smoke_v9_sandbox2.json`;
+  - both recorded `reward_design:
+    event_v9_potential_chain_compass_breadcrumbs`;
+  - both recorded `chain_compass_observation: true`.
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `--use-action-mask`, seeds `0,1,2`, offline W&B, and the v9 potential-chain
+  reward.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage1_v9_potential_chain_compass_1m`.
+- Result validation:
+  - `validate_canonical_reward_geometry_results.py --allow-smoke` passed for
+    all three result JSONs.
+- Final eval summary:
+  - seed `0`: raw `-10.3439`, shaping `-75.4350`, total `-85.7789`,
+    effrank/agent `0.2062`, JS action diversity `0.2997`, role probe `0.2709`;
+  - seed `1`: raw `1.3358`, shaping `137.9324`, total `139.2683`,
+    effrank/agent `0.2765`, JS action diversity `0.4978`, role probe `0.3436`;
+  - seed `2`: raw `-9.4900`, shaping `-55.8264`, total `-65.3164`,
+    effrank/agent `0.1906`, JS action diversity `0.3677`, role probe `0.3919`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v9_potential_chain_compass_d4708a0b8a`.
+- Behavior-output validation passed:
+  - sandbox 1: `9` rollout files;
+  - sandbox 2: `2` rollout files.
+- Behavior gate summary:
+  - diagnostic `chain_oracle`: `25` heart deposits, `49` crafts, `53`
+    resources, raw reward `-5.767`;
+  - `random`: `0` deposits, `111` resources, `5` crafts, raw reward `-35.467`,
+    mostly invalid;
+  - `use_sweep`: `0` deposits, `31` resources, `14` crafts, raw reward
+    `-30.400`, mostly invalid;
+  - seed `0` deterministic checkpoint: `0` deposits, `335` resources,
+    `8` crafts, `67` combat events, raw reward `-41.883`;
+  - seed `0` stochastic checkpoint: `2` deposits, `408` resources, `37` crafts,
+    `43` combat events, raw reward `-33.763`;
+  - seed `1` deterministic checkpoint: `48` deposits, `347` resources,
+    `145` crafts, `17` combat events, raw reward `7.967`;
+  - seed `1` stochastic checkpoint: `49` deposits, `326` resources,
+    `129` crafts, `0` combat events, raw reward `6.167`;
+  - seed `2` deterministic checkpoint: `37` deposits, `182` resources,
+    `82` crafts, `2` combat events, raw reward `-2.367`;
+  - seed `2` stochastic checkpoint: `30` deposits, `506` resources,
+    `125` crafts, `22` combat events, raw reward `-13.900`.
+- Decision: v9 is a real training signal but not a clean promotion condition.
+  It restores nonzero heart deposits for every seed under at least one rollout
+  mode and strongly improves seeds `1` and `2`, but seed `0` remains weak and
+  the policies still do large amounts of off-chain resource collection,
+  non-battery crafting, handoffs, and combat.
+- Next iteration:
+  - do not add explicit negative rewards;
+  - keep v9's potential-chain framing as the preferred reward-shaping baseline;
+  - add a curriculum or affordance intervention that removes or delays
+    distractors while training, then evaluate in the full world;
+  - consider a short `chain_oracle` warm start or behavior-cloning phase before
+    PPO if pure PPO remains seed-fragile;
+  - do not rerun representation analyses until the behavior gate is cleaner and
+    stable across all seeds.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2022,9 +2090,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Add output validation.
 - [x] Record reward-shaping source notes for the v9 correction.
 - [x] Run tiny native no-op/random/scripted baseline smoke.
-- [ ] Run full no-op/random/scripted baseline gate.
-- [ ] Run short `shared_frac=0.0` training gate.
-- [ ] Inspect replays and compare behavior metrics.
+- [x] Run full no-op/random/scripted baseline gate.
+- [x] Run short `shared_frac=0.0` training gate.
+- [x] Compare behavior metrics.
+- [ ] Inspect replays.
 - [ ] Iterate on rewards until behavior passes.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.

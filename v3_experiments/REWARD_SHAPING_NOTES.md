@@ -48,6 +48,12 @@ details into the Overleaf source.
 - `event_v8_clean_chain_compass_breadcrumbs` added explicit negative
   coefficients for off-chain successful events. It failed the promotion gate:
   seed 1 lost heart deposits, and off-chain behavior was not reliably reduced.
+- `event_v9_potential_chain_compass_breadcrumbs` removed the explicit negative
+  event coefficients and replaced clipped distance rewards with a bounded
+  potential-difference term. It restored meaningful heart-chain behavior in all
+  three seeds by the weak criterion that each seed had nonzero deterministic or
+  stochastic deposits, but it did not solve cleanup: seed 0 remained weak and
+  off-chain resource, craft, handoff, and combat events were still substantial.
 
 ## Current V9 Rule
 
@@ -64,3 +70,41 @@ For v9, do not add more independent negative reward terms. Use:
 The potential-difference term can be signed by construction, but it is not a
 new hand-authored punishment for off-chain behavior. It is a bounded progress
 term whose paper status depends on the behavior gate.
+
+## V9 Stage-1 Outcome
+
+Run date: 2026-06-08.
+
+- Commit: `d4708a0b8a`.
+- Stage-1 root:
+  `/workspace/tribal_event_mask_runs/stage1_v9_potential_chain_compass_1m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v9_potential_chain_compass_d4708a0b8a`.
+- Result JSON validation passed for all three seeds.
+- Behavior-output validation passed for 9 files on `relh-sandbox-1` and 2 files
+  on `relh-sandbox-2`.
+
+Headline behavior over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Crafts | Deposits | Combat |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-5.767` | `42.3` | `53` | `49` | `25` | `0` |
+| `random` | `-35.467` | `42.3` | `111` | `5` | `0` | `0` |
+| `seed0_deterministic` | `-41.883` | `139.3` | `335` | `8` | `0` | `67` |
+| `seed0_stochastic` | `-33.763` | `169.0` | `408` | `37` | `2` | `43` |
+| `seed1_deterministic` | `7.967` | `259.3` | `347` | `145` | `48` | `17` |
+| `seed1_stochastic` | `6.167` | `201.7` | `326` | `129` | `49` | `0` |
+| `seed2_deterministic` | `-2.367` | `114.7` | `182` | `82` | `37` | `2` |
+| `seed2_stochastic` | `-13.900` | `262.3` | `506` | `125` | `30` | `22` |
+
+Decision:
+
+- V9 is a better reward-shaping direction than v8 because it avoids explicit
+  negative event penalties and recovers deposits for all seeds under at least
+  one rollout mode.
+- V9 is not ready as the final paper condition because seed 0 is weak and
+  off-chain activity remains large.
+- The next useful step is not stronger reward penalties. It should be a
+  curriculum, affordance mask, chain-only start distribution, or short oracle
+  warm start that makes the heart chain cleaner without punishing exploratory
+  off-chain successes.
