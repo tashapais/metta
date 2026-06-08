@@ -86,18 +86,17 @@ proc tribal_village_step_with_pointers(
 
 proc tribal_village_get_action_stats(
   env: pointer,
-  stats_buffer: ptr UncheckedArray[int32]  # [MapAgents, 8]
+  stats_buffer: ptr UncheckedArray[int32]  # [MapAgents, 26]
 ): int32 {.exportc, dynlib.} =
   ## Copy cumulative action stats to a flat buffer.
   ##
-  ## Columns:
-  ## 0 invalid, 1 noop, 2 move, 3 attack, 4 use, 5 swap, 6 put, 7 plant.
+  ## Columns are mirrored in v3_experiments.tribal_behavior.SIMULATOR_STAT_COLUMNS.
   if globalEnv == nil or stats_buffer.isNil:
     return 0
 
   try:
     for i in 0..<MapAgents:
-      let offset = i * 8
+      let offset = i * 26
       if i < globalEnv.stats.len:
         let stats = globalEnv.stats[i]
         stats_buffer[offset + 0] = stats.actionInvalid.int32
@@ -108,9 +107,118 @@ proc tribal_village_get_action_stats(
         stats_buffer[offset + 5] = stats.actionSwap.int32
         stats_buffer[offset + 6] = stats.actionPut.int32
         stats_buffer[offset + 7] = stats.actionPlant.int32
+        stats_buffer[offset + 8] = stats.resourceWater.int32
+        stats_buffer[offset + 9] = stats.resourceWheat.int32
+        stats_buffer[offset + 10] = stats.resourceWood.int32
+        stats_buffer[offset + 11] = stats.resourceOre.int32
+        stats_buffer[offset + 12] = stats.craftBattery.int32
+        stats_buffer[offset + 13] = stats.craftSpear.int32
+        stats_buffer[offset + 14] = stats.craftLantern.int32
+        stats_buffer[offset + 15] = stats.craftArmor.int32
+        stats_buffer[offset + 16] = stats.craftBread.int32
+        stats_buffer[offset + 17] = stats.depositHeart.int32
+        stats_buffer[offset + 18] = stats.putArmor.int32
+        stats_buffer[offset + 19] = stats.putBread.int32
+        stats_buffer[offset + 20] = stats.tumorKill.int32
+        stats_buffer[offset + 21] = stats.spawnerKill.int32
+        stats_buffer[offset + 22] = stats.agentKill.int32
+        stats_buffer[offset + 23] = stats.death.int32
+        stats_buffer[offset + 24] = stats.respawn.int32
+        stats_buffer[offset + 25] = stats.lanternPlant.int32
       else:
-        for col in 0..<8:
+        for col in 0..<26:
           stats_buffer[offset + col] = 0
+    return 1
+  except:
+    return 0
+
+proc tribal_village_get_inventory_snapshot(
+  env: pointer,
+  inventory_buffer: ptr UncheckedArray[int32]  # [MapAgents, 9]
+): int32 {.exportc, dynlib.} =
+  ## Copy current per-agent inventory counts.
+  if globalEnv == nil or inventory_buffer.isNil:
+    return 0
+
+  try:
+    for i in 0..<MapAgents:
+      let offset = i * 9
+      if i < globalEnv.agents.len:
+        let agent = globalEnv.agents[i]
+        inventory_buffer[offset + 0] = agent.inventoryOre.int32
+        inventory_buffer[offset + 1] = agent.inventoryBattery.int32
+        inventory_buffer[offset + 2] = agent.inventoryWater.int32
+        inventory_buffer[offset + 3] = agent.inventoryWheat.int32
+        inventory_buffer[offset + 4] = agent.inventoryWood.int32
+        inventory_buffer[offset + 5] = agent.inventorySpear.int32
+        inventory_buffer[offset + 6] = agent.inventoryLantern.int32
+        inventory_buffer[offset + 7] = agent.inventoryArmor.int32
+        inventory_buffer[offset + 8] = agent.inventoryBread.int32
+      else:
+        for col in 0..<9:
+          inventory_buffer[offset + col] = 0
+    return 1
+  except:
+    return 0
+
+proc tribal_village_get_world_stats(
+  env: pointer,
+  world_buffer: ptr UncheckedArray[int32]  # [12]
+): int32 {.exportc, dynlib.} =
+  ## Copy coarse world-state counters.
+  if globalEnv == nil or world_buffer.isNil:
+    return 0
+
+  try:
+    var liveAgents = 0
+    var deadAgents = 0
+    var assemblers = 0
+    var assemblerHearts = 0
+    var mines = 0
+    var converters = 0
+    var spawners = 0
+    var tumors = 0
+    var plantedLanterns = 0
+    var productionBuildings = 0
+
+    for i in 0..<MapAgents:
+      if globalEnv.terminated[i] > 0.0:
+        inc deadAgents
+      else:
+        inc liveAgents
+
+    for thing in globalEnv.things:
+      case thing.kind
+      of assembler:
+        inc assemblers
+        assemblerHearts += thing.hearts
+      of Mine:
+        inc mines
+      of Converter:
+        inc converters
+      of Spawner:
+        inc spawners
+      of Tumor:
+        inc tumors
+      of PlantedLantern:
+        inc plantedLanterns
+      of Forge, Armory, ClayOven, WeavingLoom:
+        inc productionBuildings
+      else:
+        discard
+
+    world_buffer[0] = globalEnv.currentStep.int32
+    world_buffer[1] = liveAgents.int32
+    world_buffer[2] = deadAgents.int32
+    world_buffer[3] = assemblers.int32
+    world_buffer[4] = assemblerHearts.int32
+    world_buffer[5] = mines.int32
+    world_buffer[6] = converters.int32
+    world_buffer[7] = spawners.int32
+    world_buffer[8] = tumors.int32
+    world_buffer[9] = plantedLanterns.int32
+    world_buffer[10] = productionBuildings.int32
+    world_buffer[11] = globalEnv.things.len.int32
     return 1
   except:
     return 0

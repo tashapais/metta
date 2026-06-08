@@ -218,6 +218,24 @@ type
     actionSwap*: int     # Action 4: SWAP
     actionPlant*: int    # Action 6: PLANT lantern
     actionPut*: int      # Action 5: GIVE to teammate
+    resourceWater*: int
+    resourceWheat*: int
+    resourceWood*: int
+    resourceOre*: int
+    craftBattery*: int
+    craftSpear*: int
+    craftLantern*: int
+    craftArmor*: int
+    craftBread*: int
+    depositHeart*: int
+    putArmor*: int
+    putBread*: int
+    tumorKill*: int
+    spawnerKill*: int
+    agentKill*: int
+    death*: int
+    respawn*: int
+    lanternPlant*: int
 
   TileColor* = object
     r*, g*, b*: float32      # RGB color components
@@ -577,6 +595,8 @@ proc killAgent(env: Environment, victim: Thing) =
   env.updateObservations(AgentInventoryBreadLayer, victim.pos, 0)
 
   env.terminated[victim.agentId] = 1.0
+  if victim.agentId >= 0 and victim.agentId < env.stats.len:
+    inc env.stats[victim.agentId].death
   victim.frozen = 999999
   victim.reward += env.config.deathPenalty
 
@@ -621,12 +641,14 @@ proc attackAction(env: Environment, id: int, agent: Thing, argument: int) =
       if idx >= 0:
         env.things.del(idx)
       agent.reward += env.config.tumorKillReward
+      inc env.stats[id].tumorKill
       attackHit = true
     of Spawner:
       env.grid[attackPos.x][attackPos.y] = nil
       let idx = env.things.find(target)
       if idx >= 0:
         env.things.del(idx)
+      inc env.stats[id].spawnerKill
       attackHit = true
     of Agent:
       if target.agentId == agent.agentId:
@@ -635,6 +657,7 @@ proc attackAction(env: Environment, id: int, agent: Thing, argument: int) =
         continue
       env.transferAgentInventory(agent, target)
       env.killAgent(target)
+      inc env.stats[id].agentKill
       attackHit = true
     else:
       discard
@@ -675,6 +698,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventoryWater += 1
       env.terrain[targetPos.x][targetPos.y] = Empty
       agent.reward += env.config.waterReward
+      inc env.stats[id].resourceWater
       inc env.stats[id].actionUse
       return
     else:
@@ -685,6 +709,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventoryWheat += 1
       env.terrain[targetPos.x][targetPos.y] = Empty
       agent.reward += env.config.wheatReward
+      inc env.stats[id].resourceWheat
       inc env.stats[id].actionUse
       return
     else:
@@ -695,6 +720,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventoryWood += 1
       env.terrain[targetPos.x][targetPos.y] = Empty
       agent.reward += env.config.woodReward
+      inc env.stats[id].resourceWood
       inc env.stats[id].actionUse
       return
     else:
@@ -721,6 +747,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       thing.cooldown = MapObjectMineCooldown
       env.updateObservations(MineReadyLayer, thing.pos, thing.cooldown)
       if agent.inventoryOre == 1: agent.reward += env.config.oreReward
+      inc env.stats[id].resourceOre
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -733,6 +760,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       thing.cooldown = 0
       env.updateObservations(ConverterReadyLayer, thing.pos, 1)
       if agent.inventoryBattery == 1: agent.reward += env.config.batteryReward
+      inc env.stats[id].craftBattery
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -742,6 +770,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventorySpear = 5
       thing.cooldown = 5
       agent.reward += env.config.spearReward
+      inc env.stats[id].craftSpear
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -751,6 +780,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventoryLantern = 1
       thing.cooldown = 15
       agent.reward += env.config.clothReward
+      inc env.stats[id].craftLantern
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -760,6 +790,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       agent.inventoryArmor = 5
       thing.cooldown = 20
       agent.reward += env.config.armorReward
+      inc env.stats[id].craftArmor
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -770,6 +801,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       thing.cooldown = 10
       # No observation layer for bread; optional for UI later
       agent.reward += env.config.foodReward
+      inc env.stats[id].craftBread
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -782,6 +814,7 @@ proc useAction(env: Environment, id: int, agent: Thing, argument: int) =
       env.updateObservations(assemblerHeartsLayer, thing.pos, thing.hearts)
       env.updateObservations(assemblerReadyLayer, thing.pos, thing.cooldown)
       agent.reward += env.config.heartReward
+      inc env.stats[id].depositHeart
       inc env.stats[id].actionUse
     else:
       inc env.stats[id].actionInvalid
@@ -830,12 +863,14 @@ proc putAction(env: Environment, id: int, agent: Thing, argument: int) =
   if agent.inventoryArmor > 0 and target.inventoryArmor == 0:
     target.inventoryArmor = agent.inventoryArmor
     agent.inventoryArmor = 0
+    inc env.stats[id].putArmor
     transferred = true
   # Otherwise give food if possible (no obs layer yet)
   elif agent.inventoryBread > 0 and target.inventoryBread < MapObjectAgentMaxInventory:
     let giveAmt = min(agent.inventoryBread, MapObjectAgentMaxInventory - target.inventoryBread)
     agent.inventoryBread -= giveAmt
     target.inventoryBread += giveAmt
+    inc env.stats[id].putBread
     transferred = true
   if transferred:
     inc env.stats[id].actionPut
@@ -1195,6 +1230,7 @@ proc plantAction(env: Environment, id: int, agent: Thing, argument: int) =
   # Give reward for planting
   agent.reward += env.config.clothReward * 0.5  # Half reward for planting
 
+  inc env.stats[id].lanternPlant
   inc env.stats[id].actionPlant
 
 proc init(env: Environment) =
@@ -1811,6 +1847,7 @@ proc step*(env: Environment, actions: ptr array[MapAgents, uint8]) =
           agent.inventorySpear = 0
           agent.frozen = 0
           env.terminated[agentId] = 0.0
+          inc env.stats[agentId].respawn
 
           # Update grid
           env.grid[agent.pos.x][agent.pos.y] = agent

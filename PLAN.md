@@ -622,6 +622,7 @@ uv run python v3_experiments/run_tribal_behavior_rollouts.py \
   --episodes 5 \
   --steps 240 \
   --save-replays \
+  --snapshot-every 20 \
   --output-dir v3_experiments/behavioral_reward_results/replays/event_v1_alpha0_seed0
 ```
 
@@ -632,12 +633,22 @@ uv run python v3_experiments/validate_tribal_behavior_outputs.py \
   --results-dir v3_experiments/behavioral_reward_results
 ```
 
+Summarize behavior-gate outputs:
+
+```bash
+uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
+  --results-dir v3_experiments/behavioral_reward_results \
+  --output v3_experiments/behavioral_reward_results/behavior_summary.json
+```
+
 ## Implementation Checklist
 
 - [x] Write the Tribal version audit script.
 - [x] Add or expose initial action-level environment event counters.
-- [ ] Add richer resource, crafting, tumor, and inventory event counters.
+- [x] Add richer resource, crafting, tumor, lifecycle, and inventory event counters.
+- [x] Add inventory and world-state snapshot introspection.
 - [x] Add rollout metrics JSON output.
+- [x] Add behavior summary/red-flag output.
 - [x] Add no-op, random, and simple scripted baseline policies.
 - [x] Add replay generation to the rollout harness.
 - [ ] Implement event-based reward components.

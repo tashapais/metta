@@ -67,6 +67,10 @@ class CanonicalEnv(Protocol):
 
     def get_action_stats(self) -> np.ndarray | None: ...
 
+    def get_inventory_snapshot(self) -> np.ndarray | None: ...
+
+    def get_world_stats(self) -> np.ndarray | None: ...
+
     def close(self) -> None: ...
 
 
@@ -197,6 +201,12 @@ class MockCanonicalTribalEnv:
     def get_action_stats(self) -> np.ndarray | None:
         return None
 
+    def get_inventory_snapshot(self) -> np.ndarray | None:
+        return None
+
+    def get_world_stats(self) -> np.ndarray | None:
+        return None
+
     def _observations(self) -> np.ndarray:
         obs = self._rng.integers(0, 3, size=(self.num_agents, *self.obs_shape), dtype=np.uint8)
         labels = role_labels(self.num_agents)
@@ -245,6 +255,18 @@ class TribalVillageAdapter:
 
     def get_action_stats(self) -> np.ndarray | None:
         get_stats = getattr(self._env, "get_action_stats", None)
+        if get_stats is None:
+            return None
+        return get_stats()
+
+    def get_inventory_snapshot(self) -> np.ndarray | None:
+        get_snapshot = getattr(self._env, "get_inventory_snapshot", None)
+        if get_snapshot is None:
+            return None
+        return get_snapshot()
+
+    def get_world_stats(self) -> np.ndarray | None:
+        get_stats = getattr(self._env, "get_world_stats", None)
         if get_stats is None:
             return None
         return get_stats()

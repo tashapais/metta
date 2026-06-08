@@ -16,6 +16,9 @@ import pufferlib
 ACTION_VERB_COUNT = 7
 ACTION_ARGUMENT_COUNT = 8
 ACTION_SPACE_SIZE = ACTION_VERB_COUNT * ACTION_ARGUMENT_COUNT
+ACTION_STATS_COLUMN_COUNT = 26
+INVENTORY_COLUMN_COUNT = 9
+WORLD_STATS_COLUMN_COUNT = 12
 
 
 class TribalVillageEnv(pufferlib.PufferEnv):
@@ -107,7 +110,9 @@ class TribalVillageEnv(pufferlib.PufferEnv):
 
         # Only allocate actions buffer (input to environment)
         self.actions_buffer = np.zeros(self.total_agents, dtype=np.uint8)
-        self.action_stats_buffer = np.zeros((self.total_agents, 8), dtype=np.int32)
+        self.action_stats_buffer = np.zeros((self.total_agents, ACTION_STATS_COLUMN_COUNT), dtype=np.int32)
+        self.inventory_snapshot_buffer = np.zeros((self.total_agents, INVENTORY_COLUMN_COUNT), dtype=np.int32)
+        self.world_stats_buffer = np.zeros(WORLD_STATS_COLUMN_COUNT, dtype=np.int32)
 
         # Initialize environment
         self.env_ptr = self.lib.tribal_village_create()
@@ -200,6 +205,24 @@ class TribalVillageEnv(pufferlib.PufferEnv):
                 ctypes.c_void_p,
             ]
             self.lib.tribal_village_get_action_stats.restype = ctypes.c_int32
+        except AttributeError:
+            pass
+
+        try:
+            self.lib.tribal_village_get_inventory_snapshot.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_inventory_snapshot.restype = ctypes.c_int32
+        except AttributeError:
+            pass
+
+        try:
+            self.lib.tribal_village_get_world_stats.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_world_stats.restype = ctypes.c_int32
         except AttributeError:
             pass
 
@@ -318,6 +341,32 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         if not success:
             return None
         return self.action_stats_buffer.copy()
+
+    def get_inventory_snapshot(self) -> Optional[np.ndarray]:
+        """Return current per-agent inventory counts if available."""
+        try:
+            fn = self.lib.tribal_village_get_inventory_snapshot
+        except AttributeError:
+            return None
+
+        inventory_ptr = self.inventory_snapshot_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, inventory_ptr)
+        if not success:
+            return None
+        return self.inventory_snapshot_buffer.copy()
+
+    def get_world_stats(self) -> Optional[np.ndarray]:
+        """Return coarse current world-state counters if available."""
+        try:
+            fn = self.lib.tribal_village_get_world_stats
+        except AttributeError:
+            return None
+
+        world_ptr = self.world_stats_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, world_ptr)
+        if not success:
+            return None
+        return self.world_stats_buffer.copy()
 
     def close(self):
         """Clean up the environment."""

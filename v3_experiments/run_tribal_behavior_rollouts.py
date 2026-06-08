@@ -28,8 +28,10 @@ from v3_experiments.train_canonical_reward_geometry import (  # noqa: E402
 from v3_experiments.tribal_behavior import (  # noqa: E402
     BEHAVIOR_SCHEMA_VERSION,
     aggregate_episode_metrics,
+    inventory_snapshot_to_dict,
     summarize_behavior_rollout,
     validate_behavior_record,
+    world_stats_to_dict,
     write_json,
 )
 
@@ -63,6 +65,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--save-replays", action="store_true")
     parser.add_argument("--render-every", type=int, default=0)
+    parser.add_argument("--snapshot-every", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--stochastic", action="store_true", help="Sample checkpoint actions instead of argmax.")
     parser.add_argument("--allow-noncanonical-env", action="store_true")
@@ -151,6 +154,8 @@ def _run_episode(
     replay_dir: Path,
 ) -> tuple[dict[str, Any], Path | None]:
     obs = env.reset(seed=seed)
+    inventory_initial = env.get_inventory_snapshot()
+    world_stats_initial = env.get_world_stats()
     actions_by_step: list[np.ndarray] = []
     rewards_by_step: list[np.ndarray] = []
     replay_path = replay_dir / f"episode_{episode:03d}.jsonl" if args.save_replays else None
@@ -176,6 +181,9 @@ def _run_episode(
                 }
                 if args.render_every > 0 and step % args.render_every == 0:
                     frame["render"] = _render_env(env)
+                if args.snapshot_every > 0 and step % args.snapshot_every == 0:
+                    frame["inventory"] = inventory_snapshot_to_dict(env.get_inventory_snapshot())
+                    frame["world_stats"] = world_stats_to_dict(env.get_world_stats())
                 replay_handle.write(json.dumps(frame, sort_keys=True) + "\n")
 
             obs = next_obs
@@ -192,6 +200,10 @@ def _run_episode(
         reward_arr,
         action_space_size=env.action_space_size,
         simulator_action_stats=env.get_action_stats(),
+        inventory_initial=inventory_initial,
+        inventory_final=env.get_inventory_snapshot(),
+        world_stats_initial=world_stats_initial,
+        world_stats_final=env.get_world_stats(),
     )
     return {
         "episode": episode,
