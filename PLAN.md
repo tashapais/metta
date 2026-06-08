@@ -1615,6 +1615,62 @@ Next ramp:
   - a short imitation/behavior-cloning warm start from the chain oracle before
     MAPPO fine-tuning.
 
+V7 Stage-1 outcome:
+
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `--use-action-mask`, `--chain-compass-observation`, seeds `0,1,2`, and the
+  v7 chain-compass reward.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage1_v7_chain_compass_1m`.
+- Result validation:
+  - `validate_canonical_reward_geometry_results.py --allow-smoke` passed for
+    all three result JSONs.
+- Final eval summary:
+  - seed `0`: raw `-9.1662`, shaping `164.2705`, total `155.1043`,
+    effrank/agent `0.1864`, JS action diversity `0.2868`, role probe `0.3491`;
+  - seed `1`: raw `0.1002`, shaping `371.7712`, total `371.8713`,
+    effrank/agent `0.1844`, JS action diversity `0.4025`, role probe `0.3868`;
+  - seed `2`: raw `1.2093`, shaping `367.6329`, total `368.8422`,
+    effrank/agent `0.2003`, JS action diversity `0.3297`, role probe `0.2980`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v7_chain_compass_8f1ac1751`.
+- Behavior-output validation passed:
+  - sandbox 1: `9` rollout files;
+  - sandbox 2: `2` rollout files.
+- Behavior gate summary:
+  - diagnostic `chain_oracle`: `58` heart deposits, `83` battery crafts,
+    `87` ore pickups;
+  - `random`: `0` deposits and mostly invalid actions;
+  - `use_sweep`: `0` deposits and mostly invalid actions;
+  - seed `0` deterministic checkpoint: `9` heart deposits, `29` battery crafts,
+    `48` ore pickups;
+  - seed `0` stochastic checkpoint: `19` heart deposits, `32` battery crafts,
+    `69` ore pickups;
+  - seed `1` deterministic checkpoint: `35` heart deposits, `63` battery crafts,
+    `67` ore pickups;
+  - seed `1` stochastic checkpoint: `25` heart deposits, `31` battery crafts,
+    `58` ore pickups;
+  - seed `2` deterministic checkpoint: `30` heart deposits, `40` battery crafts,
+    `70` ore pickups;
+  - seed `2` stochastic checkpoint: `18` heart deposits, `21` battery crafts,
+    `43` ore pickups.
+- Decision: v7 breaks the previous training failure. The policies are no
+  longer merely accumulating shaped return or collecting off-chain resources;
+  every seed has deterministic and stochastic checkpoint rollouts with nonzero
+  heart deposits.
+- Caveat: v7 is still a debug/curriculum intervention. Learned policies
+  continue to collect water/wheat/wood and craft armor/bread/lantern/spear in
+  addition to the heart chain, and raw environment reward remains negative for
+  most behavior-gate rollouts. Treat v7 as evidence that meaningful chain
+  behavior is trainable with an observation breadcrumb, not as the final paper
+  condition.
+- Next research step:
+  - archive v7 replays for qualitative inspection;
+  - run a longer v7 ramp if behavior remains stable under replay review;
+  - only then rerun representation analyses, clearly labeling v7 as the
+    chain-compass/curriculum condition rather than the original MAPPO-only
+    reward-shaping condition.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
