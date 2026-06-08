@@ -24,11 +24,20 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V3_NAVIGATION_ROLE_NAMES,
     EVENT_V4_HEART_CHAIN_ROLE_NAMES,
     EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES,
+    EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
+    NAV_AGENT_X,
+    NAV_AGENT_Y,
     NAV_DIST_HOME_ASSEMBLER,
     NAV_DIST_NEAREST_CONVERTER,
     NAV_DIST_NEAREST_MINE,
+    NAV_HOME_ASSEMBLER_X,
+    NAV_HOME_ASSEMBLER_Y,
     NAV_INVENTORY_BATTERY,
     NAV_INVENTORY_ORE,
+    NAV_NEAREST_CONVERTER_X,
+    NAV_NEAREST_CONVERTER_Y,
+    NAV_NEAREST_MINE_X,
+    NAV_NEAREST_MINE_Y,
     NAVIGATION_SNAPSHOT_COLUMNS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
@@ -40,6 +49,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v4_heart_chain_role_shaping_bonuses,
     event_v5_navigation_chain_reward_design_details,
     event_v5_navigation_chain_role_shaping_bonuses,
+    event_v6_oracle_chain_reward_design_details,
+    event_v6_oracle_chain_role_shaping_bonuses,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -286,6 +297,107 @@ def test_event_v5_navigation_chain_reward_design_details_are_serializable():
         > (details["navigation_progress_coefficients"]["ore_to_converter"])
     )
     assert details["task_event_coefficients"]["deposit_heart"] > details["task_event_coefficients"]["craft_battery"]
+
+
+def test_event_v6_oracle_chain_pays_only_chain_progress_and_actions():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    totals = np.zeros_like(stats)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    actions = np.zeros(12, dtype=np.int64)
+    action_mask = np.ones((12, 56), dtype=bool)
+
+    before = np.zeros((12, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = 10
+    after[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = 10
+
+    before[0, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE]] = [7, 4, 3]
+    before[0, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    after[0, NAV_DIST_NEAREST_MINE] = 1
+    stats[0, stat_index["action_move"]] = 1
+    totals[0, stat_index["action_move"]] = 1
+    actions[0] = 13  # move NE toward mine.
+
+    before[1, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE]] = [7, 4, 1]
+    before[1, [NAV_AGENT_X, NAV_AGENT_Y]] = [6, 5]
+    stats[1, stat_index["action_use"]] = 1
+    stats[1, stat_index["resource_ore"]] = 1
+    actions[1] = 29  # use NE at mine.
+
+    before[2, [NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y, NAV_DIST_NEAREST_CONVERTER]] = [2, 5, 2]
+    before[2, [NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    before[2, NAV_INVENTORY_ORE] = 1
+    after[2, NAV_DIST_NEAREST_CONVERTER] = 1
+    stats[2, stat_index["action_move"]] = 1
+    totals[2, stat_index["action_move"]] = 1
+    actions[2] = 10  # move W toward converter.
+
+    before[3, [NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y, NAV_DIST_NEAREST_CONVERTER]] = [3, 5, 1]
+    before[3, [NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    before[3, NAV_INVENTORY_ORE] = 1
+    stats[3, stat_index["action_use"]] = 1
+    stats[3, stat_index["craft_battery"]] = 1
+    actions[3] = 26  # use W at converter.
+
+    before[4, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [3, 6, 3]
+    before[4, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    before[4, NAV_INVENTORY_BATTERY] = 1
+    after[4, NAV_DIST_HOME_ASSEMBLER] = 1
+    stats[4, stat_index["action_move"]] = 1
+    totals[4, stat_index["action_move"]] = 1
+    actions[4] = 14  # move SW toward home assembler.
+
+    before[5, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [3, 6, 1]
+    before[5, [NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    before[5, NAV_INVENTORY_BATTERY] = 1
+    stats[5, stat_index["action_use"]] = 1
+    stats[5, stat_index["deposit_heart"]] = 1
+    actions[5] = 30  # use SW at home assembler.
+
+    stats[6, stat_index["action_invalid"]] = 1
+
+    before[7, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [3, 6, 1]
+    before[7, [NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    before[7, NAV_INVENTORY_BATTERY] = 1
+    actions[7] = 30
+    action_mask[7, 30] = False
+
+    stats[8, stat_index["resource_water"]] = 9
+    stats[8, stat_index["craft_armor"]] = 3
+    stats[8, stat_index["tumor_kill"]] = 2
+
+    bonuses = event_v6_oracle_chain_role_shaping_bonuses(
+        stats,
+        totals,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+    )
+
+    assert bonuses[0] == pytest.approx(0.08 * 2 + 0.05)
+    assert bonuses[1] == pytest.approx(1.00 + 1.00)
+    assert bonuses[2] == pytest.approx(0.80 + 0.05)
+    assert bonuses[3] == pytest.approx(8.00 + 1.00)
+    assert bonuses[4] == pytest.approx(1.50 * 2 + 0.50 + 0.05)
+    assert bonuses[5] == pytest.approx(40.00 + 1.00)
+    assert bonuses[6] == pytest.approx(-0.02)
+    assert bonuses[7] == pytest.approx(0.0)
+    assert bonuses[8] == pytest.approx(0.0)
+    np.testing.assert_allclose(
+        event_v6_oracle_chain_role_shaping_bonuses(None, navigation_before=before, navigation_after=after),
+        np.zeros(12),
+    )
+
+
+def test_event_v6_oracle_chain_reward_design_details_are_serializable():
+    details = event_v6_oracle_chain_reward_design_details()
+
+    assert details["name"] == "event_v6_oracle_chain_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES)
+    assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
+    assert details["oracle_action_coefficients"]["use_chain_target"] > 0
+    assert details["navigation_snapshot_columns"] == list(NAVIGATION_SNAPSHOT_COLUMNS)
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -664,6 +776,66 @@ def test_train_canonical_reward_geometry_event_v4_heart_chain_mock_smoke(tmp_pat
     assert record["use_action_mask"] is True
     assert record["reward_design_details"]["common_caps"]["action_move"] == 80
     assert record["reward_design_details"]["task_event_coefficients"]["craft_battery"] == pytest.approx(6.0)
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def test_train_canonical_reward_geometry_event_v6_oracle_chain_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v6_result.json"
+    checkpoint_path = tmp_path / "event_v6_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v6_oracle_chain_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v6_oracle_chain_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES)
+    assert record["use_action_mask"] is True
+    assert set(record["reward_design_details"]["task_event_coefficients"]) == {
+        "craft_battery",
+        "deposit_heart",
+        "resource_ore",
+    }
+    assert record["reward_design_details"]["oracle_action_coefficients"]["use_chain_target"] > 0
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 

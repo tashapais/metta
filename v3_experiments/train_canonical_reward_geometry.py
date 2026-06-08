@@ -72,6 +72,14 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V5_NAVIGATION_CHAIN_ROLE_COEFFICIENTS,
     EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES,
     EVENT_V5_NAVIGATION_CHAIN_TASK_COEFFICIENTS,
+    EVENT_V6_ORACLE_CHAIN_ACTION_CAPS,
+    EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS,
+    EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS,
+    EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS,
+    EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS,
+    EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS,
+    EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
+    EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
@@ -82,6 +90,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v4_heart_chain_role_shaping_bonuses,
     event_v5_navigation_chain_reward_design_details,
     event_v5_navigation_chain_role_shaping_bonuses,
+    event_v6_oracle_chain_reward_design_details,
+    event_v6_oracle_chain_role_shaping_bonuses,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -371,6 +381,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v3_navigation_breadcrumbs",
             "event_v4_heart_chain_breadcrumbs",
             "event_v5_navigation_chain_breadcrumbs",
+            "event_v6_oracle_chain_breadcrumbs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -505,6 +516,7 @@ def _train_policy(
             obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device)
             agent_ids = _agent_ids(env.num_agents, device) if config.separate_encoders else None
             action_mask = _action_mask_tensor(env, config, device)
+            action_mask_np = None if action_mask is None else action_mask.cpu().numpy()
             with torch.no_grad():
                 actions, logprob, _entropy, values, embeddings, logits = policy.get_action_and_value(
                     obs_tensor,
@@ -523,6 +535,8 @@ def _train_policy(
                 event_stats_total=event_stats.current,
                 navigation_before=navigation_before,
                 navigation_after=navigation_after,
+                actions=actions_np,
+                action_mask_before=action_mask_np,
             )
             shaped_rewards = reward_components["mixed_rewards"]
 
@@ -707,14 +721,17 @@ def _evaluate_policy(
             individual_returns = np.zeros(env.num_agents, dtype=np.float64)
             for step in range(config.eval_steps):
                 obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device)
+                action_mask = _action_mask_tensor(env, config, device)
+                action_mask_np = None if action_mask is None else action_mask.cpu().numpy()
                 actions, _logprob, _entropy, _value, emb, logit = policy.get_action_and_value(
                     obs_t,
                     agent_ids=_agent_ids(env.num_agents, device) if config.separate_encoders else None,
-                    action_mask=_action_mask_tensor(env, config, device),
+                    action_mask=action_mask,
                     deterministic=True,
                 )
                 navigation_before = _copy_navigation_snapshot(env)
-                next_obs, rewards, done = env.step(actions.cpu().numpy())
+                actions_np = actions.cpu().numpy().astype(np.int64)
+                next_obs, rewards, done = env.step(actions_np)
                 navigation_after = _copy_navigation_snapshot(env)
                 reward_components = _canonical_reward_components(
                     obs,
@@ -724,6 +741,8 @@ def _evaluate_policy(
                     event_stats_total=event_stats.current,
                     navigation_before=navigation_before,
                     navigation_after=navigation_after,
+                    actions=actions_np,
+                    action_mask_before=action_mask_np,
                 )
                 returns += reward_components["mixed_rewards"]
                 raw_env_returns += reward_components["raw_env_rewards"]
@@ -881,6 +900,8 @@ def _canonical_reward_components(
     event_stats_total: np.ndarray | None = None,
     navigation_before: np.ndarray | None = None,
     navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask_before: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     raw_env_rewards = np.asarray(env_rewards, dtype=np.float64)
     if not config.disable_role_shaping:
@@ -892,6 +913,8 @@ def _canonical_reward_components(
             event_stats_total,
             navigation_before,
             navigation_after,
+            actions,
+            action_mask_before,
         )
     else:
         bonuses = np.zeros_like(raw_env_rewards, dtype=np.float64)
@@ -913,6 +936,8 @@ def _canonical_rewards(
     event_stats_total: np.ndarray | None = None,
     navigation_before: np.ndarray | None = None,
     navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask_before: np.ndarray | None = None,
 ) -> np.ndarray:
     return _canonical_reward_components(
         obs,
@@ -922,6 +947,8 @@ def _canonical_rewards(
         event_stats_total=event_stats_total,
         navigation_before=navigation_before,
         navigation_after=navigation_after,
+        actions=actions,
+        action_mask_before=action_mask_before,
     )["mixed_rewards"]
 
 
@@ -933,6 +960,8 @@ def _role_shaping_bonuses_for_design(
     event_stats_total: np.ndarray | None = None,
     navigation_before: np.ndarray | None = None,
     navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask_before: np.ndarray | None = None,
 ) -> np.ndarray:
     if config.reward_design == "passive_v0":
         return role_shaping_bonuses(
@@ -962,6 +991,16 @@ def _role_shaping_bonuses_for_design(
             event_stats_total,
             navigation_before=navigation_before,
             navigation_after=navigation_after,
+            num_agents=num_agents,
+        )
+    if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
+        return event_v6_oracle_chain_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
             num_agents=num_agents,
         )
     raise ValueError(f"unknown reward design: {config.reward_design}")
@@ -1097,6 +1136,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V4_HEART_CHAIN_ROLE_NAMES)
     if config.reward_design == "event_v5_navigation_chain_breadcrumbs":
         return list(EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES)
+    if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
+        return list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1139,6 +1180,18 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 role: dict(coefficients) for role, coefficients in EVENT_V5_NAVIGATION_CHAIN_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
+        return {
+            "common": dict(EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS),
+            "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+            "navigation_progress": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS),
+            "navigation_progress_caps": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS),
+            "oracle_actions": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+            "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+            "roles": {
+                role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1153,6 +1206,8 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v4_heart_chain_reward_design_details()
     if config.reward_design == "event_v5_navigation_chain_breadcrumbs":
         return event_v5_navigation_chain_reward_design_details()
+    if config.reward_design == "event_v6_oracle_chain_breadcrumbs":
+        return event_v6_oracle_chain_reward_design_details()
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

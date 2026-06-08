@@ -14,6 +14,7 @@ EVENT_V2_BREADCRUMB_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V3_NAVIGATION_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V4_HEART_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V6_ORACLE_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -342,6 +343,58 @@ EVENT_V5_NAVIGATION_CHAIN_ROLE_COEFFICIENTS = {
     },
 }
 
+EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS = {
+    "action_noop": -0.010,
+    "action_invalid": -0.020,
+}
+
+EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS = {
+    "resource_ore": 1.00,
+    "craft_battery": 8.00,
+    "deposit_heart": 40.00,
+}
+
+EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS = {
+    "toward_mine_empty": 0.08,
+    "ore_to_converter": 0.80,
+    "battery_to_home_assembler": 1.50,
+    "battery_adjacent_home_assembler": 0.50,
+}
+
+EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS = {
+    "toward_mine_empty": 160,
+    "ore_to_converter": 160,
+    "battery_to_home_assembler": 160,
+    "battery_adjacent_home_assembler": 24,
+}
+
+EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS = {
+    "move_toward_chain_target": 0.05,
+    "use_chain_target": 1.00,
+}
+
+EVENT_V6_ORACLE_CHAIN_ACTION_CAPS = {
+    "move_toward_chain_target": 160,
+    "use_chain_target": 80,
+}
+
+EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS = {role: {} for role in EVENT_V6_ORACLE_CHAIN_ROLE_NAMES}
+
+ACTION_ARGUMENT_COUNT = 8
+MOVE_VERB = 1
+USE_VERB = 3
+ORIENTATION_DELTAS = (
+    (0, -1),
+    (0, 1),
+    (-1, 0),
+    (1, 0),
+    (-1, -1),
+    (1, -1),
+    (-1, 1),
+    (1, 1),
+)
+ORIENTATION_BY_DELTA = {delta: index for index, delta in enumerate(ORIENTATION_DELTAS)}
+
 _STAT_INDEX = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
 
 
@@ -529,6 +582,45 @@ def event_v5_navigation_chain_role_shaping_bonuses(
     return bonuses
 
 
+def event_v6_oracle_chain_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return chain-only breadcrumbs aligned to a simple ore-to-heart oracle.
+
+    ``event_v5_navigation_chain_breadcrumbs`` still rewarded enough off-chain
+    activity that policies gathered water/wheat/wood, fought tumors, and rarely
+    completed battery deposits. This debug design focuses shaping on the single
+    ore -> battery -> home-assembler chain and pays a small dense bonus only
+    when the chosen action matches a mask-valid oracle move/use action.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is None:
+        return np.zeros(num_agents, dtype=np.float64)
+    totals = _validate_event_stats_total(event_stats_total, num_agents)
+
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    _add_agent_coefficients(bonuses, stats, EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS)
+    _add_agent_coefficients(bonuses, stats, EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS)
+    _add_navigation_progress_bonuses(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        totals,
+        progress_coefficients=EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS,
+        progress_caps=EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS,
+    )
+    _add_chain_oracle_action_bonuses(bonuses, navigation_before, actions, action_mask, totals)
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -624,6 +716,29 @@ def event_v5_navigation_chain_reward_design_details() -> dict[str, Any]:
     }
 
 
+def event_v6_oracle_chain_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the oracle-chain design."""
+
+    return {
+        "name": "event_v6_oracle_chain_breadcrumbs",
+        "summary": (
+            "Debug reward that strips off-chain task bonuses and adds mask-valid "
+            "oracle-action breadcrumbs for the ore -> battery -> heart-deposit chain."
+        ),
+        "role_names": list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES),
+        "common_coefficients": dict(EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS),
+        "task_event_coefficients": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+        "navigation_progress_coefficients": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS),
+        "navigation_progress_caps": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS),
+        "oracle_action_coefficients": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+        "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+        "navigation_snapshot_columns": list(NAVIGATION_SNAPSHOT_COLUMNS),
+        "role_coefficients": {role: dict(coeffs) for role, coeffs in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()},
+        "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
+        "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+    }
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -698,11 +813,16 @@ def _add_navigation_progress_bonuses(
     navigation_before: np.ndarray | None,
     navigation_after: np.ndarray | None,
     event_stats_total: np.ndarray | None,
+    *,
+    progress_coefficients: dict[str, float] | None = None,
+    progress_caps: dict[str, int] | None = None,
 ) -> None:
     before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
     after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
     if before is None or after is None:
         return
+    coefficients = progress_coefficients or EVENT_V5_NAVIGATION_CHAIN_PROGRESS_COEFFICIENTS
+    caps = progress_caps or EVENT_V5_NAVIGATION_CHAIN_PROGRESS_CAPS
 
     ore_before = before[:, NAV_INVENTORY_ORE] > 0
     battery_before = before[:, NAV_INVENTORY_BATTERY] > 0
@@ -729,12 +849,160 @@ def _add_navigation_progress_bonuses(
     for name, (eligible, progress) in progress_terms.items():
         capped = _navigation_progress_cap_eligible(
             event_stats_total,
-            EVENT_V5_NAVIGATION_CHAIN_PROGRESS_CAPS[name],
+            caps[name],
             bonuses.shape[0],
         )
-        bonuses[eligible & capped] += (
-            EVENT_V5_NAVIGATION_CHAIN_PROGRESS_COEFFICIENTS[name] * progress[eligible & capped]
+        bonuses[eligible & capped] += coefficients[name] * progress[eligible & capped]
+
+
+def _add_chain_oracle_action_bonuses(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    navigation = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if navigation is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+
+    move_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V6_ORACLE_CHAIN_ACTION_CAPS["move_toward_chain_target"],
+        bonuses.shape[0],
+    )
+    use_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_use",
+        EVENT_V6_ORACLE_CHAIN_ACTION_CAPS["use_chain_target"],
+        bonuses.shape[0],
+    )
+
+    for agent_id, row in enumerate(navigation):
+        target = _chain_target(row)
+        if target is None:
+            continue
+        agent_x = int(row[NAV_AGENT_X])
+        agent_y = int(row[NAV_AGENT_Y])
+        target_x, target_y = target
+        dx = _sign(target_x - agent_x)
+        dy = _sign(target_y - agent_y)
+        if dx == 0 and dy == 0:
+            continue
+
+        if max(abs(target_x - agent_x), abs(target_y - agent_y)) == 1:
+            action = _encode_action(USE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+            if actions_arr[agent_id] == action and use_cap[agent_id] and _mask_allows(mask, agent_id, action):
+                bonuses[agent_id] += EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS["use_chain_target"]
+            continue
+
+        action = _best_masked_move_toward(
+            agent_x, agent_y, target_x, target_y, None if mask is None else mask[agent_id]
         )
+        if action is None:
+            action = _encode_action(MOVE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+        if actions_arr[agent_id] == action and move_cap[agent_id]:
+            bonuses[agent_id] += EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS["move_toward_chain_target"]
+
+
+def _validate_actions(actions: np.ndarray | None, num_agents: int) -> np.ndarray | None:
+    if actions is None:
+        return None
+    actions_arr = np.asarray(actions, dtype=np.int64)
+    if actions_arr.shape != (num_agents,):
+        raise ValueError(f"actions must have shape [{num_agents}]")
+    return actions_arr
+
+
+def _validate_action_mask(action_mask: np.ndarray | None, num_agents: int) -> np.ndarray | None:
+    if action_mask is None:
+        return None
+    mask = np.asarray(action_mask, dtype=bool)
+    if mask.ndim != 2 or mask.shape[0] != num_agents:
+        raise ValueError(f"action_mask must have shape [{num_agents}, action_space_size]")
+    return mask
+
+
+def _chain_target(navigation_row: np.ndarray) -> tuple[int, int] | None:
+    if int(navigation_row[NAV_INVENTORY_BATTERY]) > 0:
+        return _target_if_valid(navigation_row, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER)
+    if int(navigation_row[NAV_INVENTORY_ORE]) > 0:
+        return _target_if_valid(navigation_row, NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y)
+    return _target_if_valid(navigation_row, NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y)
+
+
+def _target_if_valid(
+    navigation_row: np.ndarray,
+    x_index: int,
+    y_index: int,
+    distance_index: int | None = None,
+) -> tuple[int, int] | None:
+    target_x = int(navigation_row[x_index])
+    target_y = int(navigation_row[y_index])
+    if target_x < 0 or target_y < 0:
+        return None
+    if distance_index is not None and int(navigation_row[distance_index]) < 0:
+        return None
+    return target_x, target_y
+
+
+def _best_masked_move_toward(
+    agent_x: int,
+    agent_y: int,
+    target_x: int,
+    target_y: int,
+    action_mask: np.ndarray | None,
+) -> int | None:
+    if action_mask is None:
+        return None
+
+    best_action = None
+    best_distance = None
+    for orientation, (delta_x, delta_y) in enumerate(ORIENTATION_DELTAS):
+        action = _encode_action(MOVE_VERB, orientation)
+        if not _mask_allows_single(action_mask, action):
+            continue
+        distance = abs(target_x - (agent_x + delta_x)) + abs(target_y - (agent_y + delta_y))
+        if best_distance is None or distance < best_distance:
+            best_action = action
+            best_distance = distance
+    return best_action
+
+
+def _mask_allows(mask: np.ndarray | None, agent_id: int, action: int) -> bool:
+    if mask is None:
+        return True
+    return _mask_allows_single(mask[agent_id], action)
+
+
+def _mask_allows_single(mask_row: np.ndarray, action: int) -> bool:
+    return action < mask_row.shape[0] and bool(mask_row[action])
+
+
+def _action_cap_eligible(
+    event_stats_total: np.ndarray | None,
+    stat_name: str,
+    cap: int,
+    num_agents: int,
+) -> np.ndarray:
+    if event_stats_total is None:
+        return np.ones(num_agents, dtype=bool)
+    return event_stats_total[:, _STAT_INDEX[stat_name]] <= cap
+
+
+def _encode_action(verb: int, argument: int) -> int:
+    return int(verb * ACTION_ARGUMENT_COUNT + argument)
+
+
+def _sign(value: int) -> int:
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
 
 
 def _validate_navigation_snapshot(navigation: np.ndarray | None, num_agents: int) -> np.ndarray | None:

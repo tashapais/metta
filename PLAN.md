@@ -1402,6 +1402,140 @@ V5 Stage-1 decision:
   - a curriculum/debug map with shorter mine -> converter -> assembler
     distances before returning to the full canonical map.
 
+V5 Stage-2 outcome:
+
+- Stage-2 ran at `shared_frac=0.0` for `10,000,008` agent steps with
+  `event_v5_navigation_chain_breadcrumbs`, `--use-action-mask`, and offline
+  W&B.
+- Training/checkpoint commit: `7ecf4453b649f26deb75219bfcdcc5405ff2df3b`.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage2_v5_navigation_chain_10m`.
+- Result JSON validation passed with `--allow-smoke` for all three seeds.
+
+V5 Stage-2 final eval summary:
+
+| Seed | Eval raw return | Eval role shaping | Eval total return | EffRank/n | JS diversity | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-13.53` | `12.32` | `-1.21` | `0.578` | `0.328` | `0.370` |
+| `1` | `-13.19` | `8.70` | `-4.48` | `0.374` | `0.243` | `0.405` |
+| `2` | `-12.57` | `6.40` | `-6.17` | `0.329` | `0.304` | `0.449` |
+
+V5 Stage-2 behavior gate:
+
+- Behavior-gate commit: `0351e1196ea2b6da9e6b824064ebe746dc47f636`.
+- Behavior artifacts:
+  - `relh-sandbox-1:/workspace/tribal_event_mask_runs/behavior_gate_stage2_v5_navigation_chain_0351e1196`
+  - `relh-sandbox-2:/workspace/tribal_event_mask_runs/behavior_gate_stage2_v5_navigation_chain_0351e1196`
+- Rollout shape: `3` episodes x `240` steps, with JSONL replays and periodic
+  rendered/inventory/world/navigation snapshots.
+- New diagnostic baseline:
+  - `chain_oracle` reads the navigation snapshot and action mask, then follows
+    the ore -> battery -> home-assembler chain;
+  - local smoke produced `49` heart deposits over `3` episodes;
+  - sandbox behavior gate produced `51` heart deposits, `70` battery crafts,
+    and `73` ore pickups, proving the canonical simulator can produce the
+    desired behavior under the current contract.
+- Baselines:
+  - no-op: `0` task events, `0` deposits;
+  - move-sweep: `0` task events, `0` deposits;
+  - random: `20.3` mean task events, `3` crafts, `0` deposits;
+  - use-sweep: `14.7` mean task events, `6` armor crafts, `0` deposits.
+- Stage-2 checkpoints:
+  - seed 0 deterministic: `168.0` mean task events, `15` ore pickups,
+    `0` battery crafts, `0` deposits;
+  - seed 0 stochastic: `178.3` mean task events, `25` ore pickups,
+    `0` battery crafts, `0` deposits;
+  - seed 1 deterministic: `165.7` mean task events, `35` ore pickups,
+    `0` battery crafts, `0` deposits;
+  - seed 1 stochastic: `187.0` mean task events, `54` ore pickups,
+    `2` battery crafts, `0` deposits;
+  - seed 2 deterministic: `112.3` mean task events, `14` ore pickups,
+    `0` battery crafts, `0` deposits;
+  - seed 2 stochastic: `176.3` mean task events, `53` ore pickups,
+    `0` battery crafts, `0` deposits.
+
+V5 Stage-2 decision:
+
+- V5 does not pass the behavioral validity gate.
+- The failure is not a simulator impossibility: the chain oracle deposits
+  hearts repeatedly under the same map, action space, and rollout length.
+- The learned checkpoints discovered task activity, but it was mostly off-chain:
+  water/wheat/wood collection, armor/spear/bread/lantern crafting, and tumor
+  combat. The heart chain remained weak: almost no battery production and zero
+  deposits across all Stage-2 checkpoint gates.
+- Do not run reward-mixing or representation sweeps from v5.
+- The next reward-debug step should strip off-chain shaped rewards and add
+  explicit mask-valid breadcrumbs for the exact ore -> battery -> home-assembler
+  chain.
+
+### Reward-Debug Continuation: `event_v6_oracle_chain_breadcrumbs`
+
+Purpose:
+
+- Convert the v5 failure into a narrower debug target: learn the same chain
+  that the diagnostic oracle can execute.
+- Keep this as a behavior-discovery reward, not as a final paper reward.
+  Once chain completion is reliable, we can decide whether to reintroduce
+  role-specific terms for the representation experiment.
+
+Design:
+
+- Remove off-chain shaped task rewards:
+  - no shaped reward for water, wheat, wood;
+  - no shaped reward for spear, lantern, armor, bread;
+  - no shaped reward for tumor/spawner combat.
+- Keep only heart-chain event rewards:
+  - `resource_ore`: `1.00`;
+  - `craft_battery`: `8.00`;
+  - `deposit_heart`: `40.00`.
+- Keep inventory-conditioned navigation progress:
+  - empty-handed agents toward nearest mine: `0.08` per positive distance step;
+  - ore carriers toward nearest converter: `0.80` per positive distance step;
+  - battery carriers toward home assembler: `1.50` per positive distance step;
+  - first arrival adjacent to the home assembler while carrying a battery:
+    `0.50`.
+- Add mask-valid oracle-action breadcrumbs:
+  - `move_toward_chain_target`: `0.05` when the chosen move matches the best
+    valid move toward the current chain target;
+  - `use_chain_target`: `1.00` when adjacent to the current chain target and
+    the chosen `use` action is allowed by the pre-step action mask.
+- Keep small anti-collapse terms:
+  - `action_noop`: `-0.010`;
+  - `action_invalid`: `-0.020`.
+
+Implementation status:
+
+- `event_v6_oracle_chain_breadcrumbs` has been implemented locally.
+- The trainer now passes chosen actions and pre-step action masks into reward
+  computation so the oracle-use breadcrumb cannot pay for cooldown-invalid use
+  spam.
+- Focused tests pass, including v6 reward math and trainer metadata.
+- A tiny native Tribal Village smoke passed:
+  - output: `/tmp/event_v6_oracle_chain_native_smoke.json`;
+  - checkpoint: `/tmp/event_v6_oracle_chain_native_smoke.pt`;
+  - validation: `validate_canonical_reward_geometry_results.py --allow-smoke`.
+
+Next ramp:
+
+- Commit and push `event_v6_oracle_chain_breadcrumbs`.
+- Update sandbox worktrees to the v6 commit.
+- Run a short Stage-1 v6 masked ramp:
+  - `shared_frac=0.0`;
+  - seeds `0,1,2`;
+  - `1,000,008` agent steps;
+  - same behavior gate as v5, including the `chain_oracle` diagnostic baseline.
+- Promotion criteria:
+  - repeated battery crafts across seeds;
+  - nonzero heart deposits in deterministic or repeatable stochastic rollouts;
+  - trained checkpoints close part of the gap to `chain_oracle`, not merely
+    random/use-sweep;
+  - off-chain events no longer dominate task-event counts.
+- If v6 still does not produce deposits, switch from reward tweaking to a
+  curriculum or warm-start intervention:
+  - shorter mine -> converter -> assembler distances; or
+  - a short imitation/behavior-cloning warm start from the chain oracle before
+    MAPPO fine-tuning.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
