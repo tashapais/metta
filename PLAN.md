@@ -656,6 +656,90 @@ Possible final claim if behavior still fails:
   metrics, but the policies failed behavioral validation; we therefore do not
   interpret the probe results as evidence of learned task roles."
 
+## Live Sandbox Ramp: 2026-06-08
+
+Goal:
+
+- Use `relh-sandbox-1` and `relh-sandbox-2` to run the `event_v1` reward ramp
+  in increasing budgets, with behavior-gate evidence before promoting to larger
+  representation experiments.
+
+Branch and code state:
+
+- Local branch: `canonical-reward-geometry-plan`.
+- Launch branch: `tashapais/metta` branch `canonical-reward-geometry-plan`.
+- Exact launch commit should be recorded in every result JSON.
+- Remote sandboxes may have `/workspace/metta` on Metta-AI upstream branches or
+  dirty local state. Do not reset those checkouts. Use clean git worktrees under
+  `/workspace/tribal_event_v1_<sha>` instead.
+
+Sandbox allocation:
+
+| Sandbox | Stage-1 allocation | Notes |
+| --- | --- | --- |
+| `relh-sandbox-1` | `event_v1`, `shared_frac=0.0`, seeds `0` and `1` | Main checkout is clean but on another branch; use a clean worktree. |
+| `relh-sandbox-2` | `event_v1`, `shared_frac=0.0`, seed `2` | Main checkout has dirty `MODULE.bazel.lock`; use a clean worktree. |
+
+Stage 1: short behavior discovery.
+
+- Run `event_v1`, `shared_frac=0.0`, seeds `0,1,2`.
+- Initial budget: `1,000,000` agent steps per seed.
+- Log to W&B if the sandbox is authenticated; otherwise write full local JSON
+  and checkpoint artifacts and continue with offline/local provenance.
+- After completion, run checkpoint rollouts with deterministic and stochastic
+  actions when feasible.
+- Compare against no-op/random/use-sweep baselines using the behavior summary
+  tooling.
+
+Stage-1 promotion gate:
+
+- At least one seed must show nonzero task events beyond invalid/no-op/action
+  attempts.
+- Behavior metrics must include resource, craft, deposit, handoff, combat, or
+  lantern events; one isolated accidental event is not enough.
+- Deterministic replay should not be a single fixed joint action loop.
+- Raw environment return and event counters should not contradict the shaped
+  reward story.
+
+Stage 2: longer single-condition ramp.
+
+- Promote only the best Stage-1 seed or seeds.
+- Budget: start with `10,000,000` agent steps, then consider `50,000,000` if
+  counters continue improving.
+- Before runs much larger than this, add or enable periodic checkpointing and
+  resume support. The current runner writes a final checkpoint; that is too
+  brittle for billion-step jobs.
+- Save behavior rollouts and summaries at each budget boundary.
+
+Stage 3: shared-fraction pilot.
+
+- Run `event_v1` with `shared_frac in {0.0, 0.8, 1.0}`.
+- Use two seeds per condition if Stage 2 behavior is meaningful.
+- Compare representation metrics and behavior metrics together; do not interpret
+  representation collapse if behavior is trivial.
+
+Stage 4: canonical-scale decision.
+
+- Do not launch billion-step or final canonical sweeps until:
+  - Stage 3 produces at least one behavior-valid condition;
+  - periodic checkpoints/resume are in place;
+  - replay and JSON artifacts are harvestable without manual reconstruction;
+  - W&B or equivalent local provenance is confirmed for every run.
+- If these pass, choose the final budget empirically from Stage 2 and Stage 3
+  learning curves. Billions of timesteps may be appropriate, but only after the
+  reward and infrastructure prove they are worth scaling.
+
+Live monitoring loop:
+
+- Poll SkyPilot queue state, remote process state, GPU utilization, local run
+  logs, and output JSON/checkpoint files.
+- Use direct SSH for tmux/process/log probes and `uv run sky` for queue/log
+  truth.
+- Keep temporary pilot details in this plan and local artifacts, not in the
+  Overleaf paper.
+- Update this section with concrete run names, artifact paths, and pass/fail
+  status as jobs finish.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
