@@ -1713,6 +1713,86 @@ V8 promotion criteria:
 - If deposits collapse, revert to v7 for representation work and treat off-chain
   cleanup as a separate curriculum problem.
 
+V8 Stage-1 outcome:
+
+- Implementation commit: `73b7910af`.
+- Remote worktrees were staged on both sandboxes at commit `73b7910af`.
+- Tiny native Tribal Village smokes passed on both sandboxes:
+  - sandbox 1 output:
+    `/workspace/tribal_event_mask_runs/smoke_v8_sandbox1.json`;
+  - sandbox 2 output:
+    `/workspace/tribal_event_mask_runs/smoke_v8_sandbox2.json`;
+  - both recorded `reward_design:
+    event_v8_clean_chain_compass_breadcrumbs`;
+  - both recorded `obs_shape: [26, 11, 11]`;
+  - both recorded `chain_compass_observation: true`.
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `--use-action-mask`, `--chain-compass-observation`, seeds `0,1,2`, and the
+  v8 clean-chain reward.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage1_v8_clean_chain_compass_1m`.
+- Result validation:
+  - `validate_canonical_reward_geometry_results.py --allow-smoke` passed for
+    all three result JSONs.
+- Final eval summary:
+  - seed `0`: raw `-7.5573`, shaping `124.2987`, total `116.7414`,
+    effrank/agent `0.1674`, JS action diversity `0.3160`, role probe `0.2466`;
+  - seed `1`: raw `-11.9144`, shaping `21.6363`, total `9.7218`,
+    effrank/agent `0.2616`, JS action diversity `0.3653`, role probe `0.3406`;
+  - seed `2`: raw `1.0826`, shaping `313.8023`, total `314.8849`,
+    effrank/agent `0.1306`, JS action diversity `0.3031`, role probe `0.3727`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v8_clean_chain_compass_73b7910af`.
+- Behavior-output validation passed:
+  - sandbox 1: `9` rollout files;
+  - sandbox 2: `2` rollout files.
+- Behavior gate summary:
+  - diagnostic `chain_oracle`: `52` heart deposits, `77` battery crafts,
+    `82` ore pickups;
+  - seed `0` deterministic checkpoint: `21` heart deposits, `50` battery
+    crafts, `51` ore pickups, but also `20` water pickups, `32` wheat pickups,
+    `151` wood pickups, `8` armor crafts, `8` lantern crafts, `8` spear crafts,
+    and `7` lantern plants;
+  - seed `0` stochastic checkpoint: `33` heart deposits, `50` battery crafts,
+    `79` ore pickups, but also `64` wheat pickups, `134` wood pickups,
+    `14` armor crafts, `6` bread crafts, `12` lantern crafts, `18` spear
+    crafts, and `12` lantern plants;
+  - seed `1` deterministic checkpoint: `0` heart deposits, `0` battery crafts,
+    `6` ore pickups, plus `55` water pickups, `55` wheat pickups, `127` wood
+    pickups, and `2` tumor kills;
+  - seed `1` stochastic checkpoint: `0` heart deposits, `4` battery crafts,
+    `33` ore pickups, plus `130` water pickups, `165` wheat pickups, `142` wood
+    pickups, `6` armor crafts, `4` bread crafts, `6` spear crafts, `13` tumor
+    kills, and `6` lantern plants;
+  - seed `2` deterministic checkpoint: `18` heart deposits, `32` battery
+    crafts, `78` ore pickups, plus `69` water pickups, `68` wheat pickups,
+    `151` wood pickups, `11` armor crafts, `15` spear crafts, `19` tumor
+    kills, `1` spawner kill, and `25` armor handoffs;
+  - seed `2` stochastic checkpoint: `24` heart deposits, `61` battery crafts,
+    `91` ore pickups, plus `55` water pickups, `62` wheat pickups, `170` wood
+    pickups, `16` armor crafts, `6` bread crafts, `1` lantern craft, `18` spear
+    crafts, `12` tumor kills, `1` agent kill, `1` lantern plant, `20` armor
+    handoffs, and `19` bread handoffs.
+- Decision: v8 does not pass the promotion criteria. It preserves the v7 chain
+  behavior for seeds `0` and `2`, but seed `1` loses heart deposits entirely,
+  and the small off-chain penalties do not reliably reduce the unwanted
+  water/wheat/wood, non-battery craft, combat, or handoff behaviors. In some
+  rollouts the off-chain behavior is worse than v7.
+- Interpretation: reward-side cleanup alone is not enough here. The small
+  penalties make the objective noisier without isolating the heart chain. Keep
+  v7 as the stronger representation-debug signal, and treat v8 as evidence
+  that off-chain cleanup needs either curriculum structure or affordance-level
+  control rather than another small coefficient tweak.
+- Next iteration if we continue past v8:
+  - do not simply increase the v8 penalty magnitudes first;
+  - instead test a v9 curriculum/affordance condition that removes or masks the
+    off-chain distractors during the chain-learning phase, or restricts
+    successful `use`/`put` affordances to the current chain target;
+  - keep the v7 chain-compass observation and v6 chain rewards unchanged while
+    varying only the curriculum/affordance intervention;
+  - require v9 to match v7 deposits while reducing off-chain resource and
+    non-battery craft counts before rerunning representation analyses.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
