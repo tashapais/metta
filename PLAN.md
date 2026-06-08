@@ -1,584 +1,677 @@
-# Canonical MAPPO Shared-Reward Geometry Plan
+# Behavioral Reward Redesign and MAPPO Geometry Rerun Plan
 
 ## Summary
 
-The paper section on MAPPO representation geometry under shared rewards should be
-rebuilt around one canonical result stream: 12-agent Tribal Village, fixed
-3-role assignment, shared MAPPO policy, and a reward-mixing sweep.
+We are pivoting the Tribal Village representation experiment from a provenance
+recovery rerun into a behavior-first reward redesign. The previous canonical
+reward-geometry rerun produced a clean monotonic geometry result across reward
+mixing levels, but replay and baseline audits showed that the learned policies
+were not doing meaningful Tribal Village work. The next phase is therefore:
 
-The current Overleaf Tribal Village numbers are pilot evidence only. They came
-from one training seed per condition and five eval trials, so they are useful for
-framing the hypothesis but not sufficient for final paper claims. The later
-`v3_experiments/results_reward_*.json` stream is also non-canonical for this
-paper section because it uses a binary top/bottom return probe rather than the
-fixed 3-way Tribal role probe.
+1. Redesign the shaped rewards so they are tied to successful task events rather
+   than passive observations.
+2. Add instrumentation that can prove agents are moving, using objects,
+   transferring resources, crafting, defending, and improving task score.
+3. Pass a behavioral validity gate against no-op, random, and simple scripted
+   baselines before running another expensive seed sweep.
+4. Once behavior is meaningful, rerun the shared-reward geometry analysis and
+   update the paper only from the new canonical result stream.
+
+The paper should not currently claim that MAPPO learned meaningful Tribal
+Village roles. The defensible current interpretation is narrower: under the
+old shaped rewards, shared reward mixing strongly affected representation
+geometry and action diversity metrics, but the policies failed the behavioral
+sanity check.
 
 ## Research Question
 
-Does increasing shared reward mixing in 12-agent Tribal Village reduce
-role-separable geometry and behavioral diversity in a shared MAPPO encoder?
+Can shared-parameter MAPPO learn task-relevant differentiated behavior in Tribal
+Village under event-based shaped rewards, and if it does, does increasing shared
+reward mixing reduce role-separable geometry and behavioral diversity?
 
 Primary hypothesis:
 
-- With fixed roles and a shared encoder, increasing `shared_frac` from `0.0` to
-  `0.8` to `1.0` should reduce role-probe accuracy, EffRank per agent, and
-  action-distribution diversity.
+- With event-based role shaping, the individual-reward condition
+  `shared_frac=0.0` should learn differentiated task behavior and role-separable
+  representations.
+- Increasing reward sharing from `0.0` to `0.8` to `1.0` should reduce
+  role-separable geometry and action-distribution diversity, but only after the
+  behavior gate confirms that the underlying policies are doing real work.
 
 Mechanism hypothesis:
 
-- If the effect is primarily shared-encoder gradient homogenization, then a
-  separate-encoder ablation should rescue role-probe accuracy, especially under
-  fully shared rewards.
+- The old passive shaping terms were exploitable because rewards could be earned
+  from what an agent observed rather than what it successfully did.
+- Event-based shaping should force reward to track actual environment progress:
+  resource pickup, resource delivery, crafting, handoffs, defense, survival, and
+  team score.
 
-Main confound to isolate:
+Main paper risk:
 
-- Role-specific shaping rewards are currently applied before reward mixing.
-  A no-role-shaping ablation is needed to separate reward-mixing effects from
-  hand-designed role-reward effects.
+- If behavior remains trivial after event-based shaping, the current Tribal
+  Village setup should be treated as a failed training environment for the paper,
+  not as positive evidence about role learning.
 
 ## Current Evidence
 
-- Overleaf pilot notes report one training seed per condition, 4M agent-steps,
-  and five eval trials per final checkpoint.
-- Pilot reward sweep:
-  - Individual `shared_frac=0.0`: EffRank/n `0.224 +/- 0.004`, `D_act=0.239 +/- 0.032`, role probe `1.000 +/- 0.000`.
-  - Mixed `shared_frac=0.8`: EffRank/n `0.118 +/- 0.001`, `D_act=0.004 +/- 0.000`, role probe `0.902 +/- 0.049`.
-  - Shared `shared_frac=1.0`: EffRank/n `0.092 +/- 0.001`, `D_act=0.000 +/- 0.000`, role probe `0.289 +/- 0.144`.
-- This monotonic pattern is promising but provisional because eval-trial
-  variation is weaker evidence than independent training-seed variation.
-- Existing `results_reward_*.json` files should not be used as fixed-role
-  evidence. Their stored probe baselines are incompatible with a 3-way role
-  probe, and several have negative lift against their own recorded baseline.
+The completed canonical rerun produced stable seed-level geometry trends:
 
-## Provenance Gate
+| Condition | EffRank/n | Action diversity | Role-probe accuracy |
+| --- | ---: | ---: | ---: |
+| `shared_frac=0.0` | `0.177 +/- 0.006` | `3.141 +/- 0.690` | `0.853 +/- 0.041` |
+| `shared_frac=0.8` | `0.0888 +/- 0.0006` | `0.056 +/- 0.011` | `0.678 +/- 0.016` |
+| `shared_frac=1.0` | `0.0836 +/- 0.0001` | `0.000057 +/- 0.000014` | `0.447 +/- 0.017` |
 
-Before rerunning or replacing paper tables, recover or reconstruct the exact
-training context:
+Those numbers are useful for diagnosing how reward mixing interacts with the
+encoder, but they are not enough for the paper because the behavioral audit
+failed:
 
-- Query W&B for candidate runs from `tashapais/representation-collapse`, using
-  names and config hints such as `tribal`, `reward`, `mixed80`, `shared`,
-  `individual`, `shared_frac`, `num_teams`, and `num_agents`.
-- Inspect git history and branches:
-  - `main`
-  - `origin/main`
-  - `origin/tashapais-gpu0-smac-experiments`
-  - `origin/tashapais-gpu1-craftax-experiments`
-  - `origin/tashapais-gpu2-mettagrid-experiments`
-  - `origin/tashapais-gpu3-ablation-experiments`
-- Recover or record:
-  - metta git SHA
-  - Tribal Village package/build SHA
-  - exact command
-  - map/team config
-  - action and observation dimensions
-  - seed list
-  - checkpoint paths
-  - W&B run IDs
-  - metric schema
-- If exact old provenance is not recoverable, rerun from the nearest reproducible
-  checkout that matches the pilot setup: 1 team x 12 agents, 80x80 map, fixed
-  roles `agent_id % 3`, and action space matching the pilot notes.
+- Deterministic rollouts often collapsed to a single repeated action.
+- Raw environment returns were flat or negative.
+- Shaped reward could be high even when task progress was poor.
+- No-op and random baselines were competitive with, or better than, trained
+  checkpoints on several sanity metrics.
+- Visual replays did not show robust gathering, crafting, defense, or team-level
+  task progress.
 
-Useful audit command:
+Current replay and audit artifacts:
 
-```bash
-uv run python v3_experiments/audit_reward_geometry.py --repo-root .
-```
+- Replay index:
+  `../canonical-reward-geometry-results/replays/index.html`
+- Deterministic checkpoint scan:
+  `../canonical-reward-geometry-results/replays/all_checkpoint_deterministic_scan_120steps.json`
 
-With W&B auth:
+Paper interpretation for now:
 
-```bash
-uv run python v3_experiments/audit_reward_geometry.py \
-  --repo-root . \
-  --include-wandb \
-  --output v3_experiments/canonical_reward_geometry_provenance.json
-```
+- Do not use the current rerun as positive MAPPO behavioral evidence.
+- Do not claim learned specialization, learned roles, or successful Tribal
+  Village task competence.
+- The current rerun can be cited internally as a failure mode: representation
+  and probe metrics can look coherent while behavior is not meaningful.
 
-## Preparation Before Reruns
+## Behavioral Validity Gate
 
-Do not launch the new sandbox jobs until the items in this section are handled.
-This branch now has protocol, metric helpers, audit helpers, a canonical
-training launcher, and an output validator for the fixed-role Tribal Village
-reward-mixing experiment. The later `paper_exp_reward_type.py` script should
-not be used for this paper section because it trains the non-canonical binary
-top/bottom return-probe stream.
+No full seed sweep should run until a candidate reward design passes this gate.
+The gate should be run for at least `shared_frac=0.0` before testing the full
+reward-mixing sweep.
 
-### 1. Finish The Provenance Recovery Decision
+Required baselines:
 
-First decide whether the pilot artifacts can be recovered or whether the rerun
-will be an explicit reconstruction from the nearest reproducible setup.
+- No-op policy.
+- Uniform random policy.
+- Simple scripted policy or policies, even if weak.
+- Current old-reward checkpoint as a negative-control reference when useful.
 
-Known pilot artifact names from Overleaf:
+Required rollout artifacts:
 
-- `train_condition.py`
-- `results_individual.json`
-- `results_mixed80.json`
-- `results_shared.json`
-- `log_individual.txt`
-- `log_mixed80.txt`
-- `log_shared.txt`
-- `best_model_{label}.pt`
-- `final_model_{label}.pt`
+- Per-policy JSON metrics.
+- Per-policy replay files.
+- At least three visually inspected replays for each candidate reward design.
+- A compact comparison table against no-op and random.
 
-Current audit state:
+Required metrics:
 
-- W&B auth works locally, but `tashapais/representation-collapse` may not be
-  visible to the currently authenticated account. If that remains true, record
-  this as a provenance gap rather than silently substituting another project.
-- The visible `tashapais/metta` and `metta-research/*` projects did not expose
-  the expected `paper_tribal_*` or `paper_reward_*` run names in the first audit.
-- The checked-in `results_reward_*.json` files are not canonical because their
-  probe schema is binary return top/bottom, not the fixed 3-way role probe.
-- The old pilot artifact names were not found in the fetched git refs checked so
-  far.
+- Raw environment reward or task score.
+- Shaped reward, logged separately from raw reward.
+- Movement distance and coverage.
+- Unique action count and action entropy.
+- Unique joint-action count.
+- Repeated-action streak length.
+- Successful action counts by verb.
+- Failed or invalid action counts by verb.
+- Resource collection counts.
+- Inventory deltas.
+- Resource delivery or deposit counts.
+- Handoff or put/give counts.
+- Crafting or conversion outputs.
+- Tumor attack, damage, and kill counts when available.
+- Lantern planting or equivalent protective action counts.
+- Agent health, death, and survival metrics when available.
+- Team score or cumulative objective progress.
 
-Decision rule:
+Minimum pass criteria:
 
-- If the old `train_condition.py`, result JSONs, logs, and model checkpoints are
-  recovered, use them only to reconstruct the exact runner and provenance. Do
-  not promote the one-seed pilot numbers to canonical results.
-- If they are not recovered, create a new canonical runner in this branch and
-  mark the experiments as reconstructed reruns that match the protocol below.
+- Trained policy beats no-op and random on raw task progress, not just shaped
+  reward.
+- Trained policy has nonzero successful task events across multiple categories.
+- Deterministic rollouts do not collapse into a single fixed action for the
+  whole episode.
+- Shaped reward correlates with raw task progress and event counters.
+- Visual replays show interpretable behavior: movement toward objects, object
+  interaction, resource flow, crafting or depositing, and defense where relevant.
+- The same checkpoint should not look good only because a passive reward term is
+  triggered repeatedly while the task state remains unchanged.
 
-### 2. Use The Canonical Runner
+## Reward Redesign
 
-Use the explicit canonical entrypoint:
+The new shaping should be event-based, success-gated, and capped. Avoid passive
+visibility rewards as primary shaping signals.
 
-```bash
-uv run python v3_experiments/train_canonical_reward_geometry.py \
-  --shared-frac 0.8 \
-  --seed 0 \
-  --total-agent-steps 4000000 \
-  --eval-trials 10 \
-  --output v3_experiments/canonical_results/primary_alpha0.8_seed0.json
-```
+### Global Principles
 
-The runner implements the canonical environment and policy contract:
-
-- Tribal Village, 1 team x 12 agents, 80x80 map.
-- Fixed roles from `agent_id % 3`: four gatherers, four explorers, four
-  guardians.
-- No role observation, role id feature, or agent-specific policy parameter.
-- One shared MAPPO encoder for the primary sweep.
-- Optional separate-encoder mode only for the mechanism ablation.
-- Role-specific shaping applied before reward mixing:
-  - gatherer: `0.3 * visible_gold_tiles`
-  - explorer: `0.5` if no gold or altar is visible
-  - guardian: `2.0 * visible_altar_tiles`
-- Reward mixing exactly:
+- Reward successful state changes, not observations alone.
+- Log raw task reward and shaped role reward separately.
+- Use potential or delta rewards where possible.
+- Cap dense shaping so it cannot dominate the task.
+- Decay or suppress repeated rewards for the same unchanged state.
+- Penalize invalid repeated action only if the behavior gate shows action
+  collapse after the main reward fix.
+- Keep role labels out of observations and policy inputs unless explicitly
+  running a role-observation ablation.
+- Keep the same reward-mixing formula:
 
 ```text
 r_i_alpha = (1 - alpha) * r_i_ind + alpha * mean_j(r_j_ind)
 ```
 
-The runner must also expose mechanism flags, but those flags should not change
-the primary sweep by accident:
+### Candidate Roles
 
-- `--disable-role-shaping` for the no-role-shaping ablation.
-- `--separate-encoders` for the separate-encoder ablation.
-- An explicit run name suffix such as `primary`, `no_role_shaping`, or
-  `separate_encoders`.
+The old experiment used three artificial labels from `agent_id % 3`:
+gatherer, explorer, guardian. That is still useful for continuity, but the
+reward semantics should change.
 
-Implementation guardrails:
+Candidate role definitions:
 
-- Reuse `v3_experiments/canonical_reward_geometry.py` for role labels, reward
-  mixing, ordered KL, JS diversity, and stale-probe audit behavior.
-- Keep the canonical runner separate from `paper_exp_reward_type.py` unless a
-  small shared helper is genuinely useful.
-- Do not add role labels to observations or training inputs. Role labels are for
-  reward shaping and final probe/eval only.
-- Record action and observation dimensions at runtime, because the pilot notes
-  require matching the old action space if possible.
+- Gatherer/harvester:
+  - successful pickup or harvest event;
+  - inventory increase for wood, ore, wheat, water, or equivalent resources;
+  - delivery of raw resources to a relevant building or teammate;
+  - movement toward known resource sites only as a weak auxiliary term.
+- Crafter/logistics:
+  - successful use of converter, assembler, forge, loom, oven, or equivalent
+    production station;
+  - creation of battery, spear, lantern, armor, bread, or equivalent item;
+  - successful handoff to a teammate;
+  - deposit or scoring event.
+- Guardian/defender:
+  - successful attack;
+  - tumor damage or tumor kill;
+  - lantern placement that changes the environment or improves protection;
+  - survival, healing, or protection-related events if exposed by the runtime.
 
-### 3. Define The Per-Seed Output Contract
+Explorer is the weakest old role because the previous reward encouraged
+"nothing useful visible." If we keep an explorer label, it should receive only
+capped novelty rewards:
 
-Every training seed must write one raw JSON file. Aggregation should only read
-these raw JSON files; it should not scrape W&B summaries as the source of truth.
+- first visit to a new local region;
+- discovery of resource, building, or threat tiles;
+- map coverage increase;
+- no reward for simply seeing an empty view repeatedly.
 
-Required per-seed fields:
+Preferred first implementation:
 
-- `schema_version`
-- `condition_group`: `primary`, `no_role_shaping`, or `separate_encoders`
-- `shared_frac`
-- `seed`
-- `num_agents`
-- `num_teams`
-- `map_width`
-- `map_height`
-- `role_assignment`
-- `role_shaping_enabled`
-- `separate_encoders`
-- `total_agent_steps`
-- `eval_trials`
-- `metta_git_sha`
-- `tribal_village_git_sha` or `tribal_village_build_id`
-- `command`
-- `wandb_entity`
-- `wandb_project`
-- `wandb_run_id`
-- `wandb_url`
-- `checkpoint_path`
-- `obs_shape`
-- `action_space_size`
-- `metric_schema`
-- `effrank_per_agent`
-- `d_act_ordered_kl`
-- `d_act_js`
-- `role_probe_acc`
-- `role_probe_chance`
-- `role_probe_cv`
-- `eval_trial_metrics`
+- Replace explorer with crafter/logistics for the controlled 3-role experiment.
+- Keep the 12-agent shape as four gatherers, four crafters/logistics agents, and
+  four guardians.
+- If we need strict continuity with the old paper text, call this a revised
+  three-role Tribal Village task and explicitly describe the role redesign.
 
-Metric requirements:
+## Instrumentation Plan
 
-- `role_probe_chance` must be exactly `1/3`.
-- `role_probe_acc` must be a 3-way fixed-role probe using labels
-  `agent_id % 3`.
-- `d_act_ordered_kl` must be normalized by `n_agents * (n_agents - 1)`.
-- `eval_trial_metrics` should store the 10 eval-trial values for traceability,
-  but table-level uncertainty must be across training seeds.
+The next implementation task is not just changing reward constants. We need
+event counters that make the behavior gate mechanically checkable.
 
-### 4. Prepare W&B And Artifact Logging
+Required instrumentation surfaces:
 
-Before launching any long run, confirm where the new canonical runs will log.
+- Environment step output should expose per-agent and team-level event counters.
+- Training logs should record raw task reward and shaped reward separately.
+- Rollout/eval scripts should save compact JSON summaries.
+- Replay generation should be part of the validation loop.
 
-Required decisions:
+Required event counters:
 
-- W&B entity and project for the new reruns. Prefer
-  `tashapais/representation-collapse` if access is restored; otherwise choose a
-  visible project and record the deviation in every per-seed JSON.
-- Run naming convention. Suggested:
-  `canonical_reward_geometry_{group}_alpha{alpha}_seed{seed}`.
-- Whether checkpoint files are uploaded to W&B artifacts, S3, or both.
+- `action_attempts_by_verb`
+- `action_successes_by_verb`
+- `invalid_actions_by_verb`
+- `movement_steps`
+- `unique_positions`
+- `coverage_tiles`
+- `resource_pickups_by_type`
+- `resource_drops_by_type`
+- `inventory_delta_by_type`
+- `crafting_outputs_by_type`
+- `handoffs_by_type`
+- `deposits_by_type`
+- `tumor_damage`
+- `tumor_kills`
+- `lantern_plants`
+- `health_delta`
+- `deaths`
+- `survival_steps`
+- `raw_env_reward`
+- `shaped_role_reward`
+- `team_score`
 
-Required W&B config fields:
+Implementation notes:
 
-- full CLI command
-- git SHA
-- sandbox name
-- seed
-- `shared_frac`
-- mechanism flags
-- environment dimensions
-- role-shaping coefficients
-- action/observation dimensions
-- checkpoint directory
+- Prefer extracting event counters from the Nim environment boundary rather than
+  inferring everything from pixels or observations.
+- If full event exposure is too large for the first pass, implement a smaller
+  event schema first: movement, successful verb counts, inventory deltas,
+  crafting outputs, tumor kills, and raw score.
+- Keep the metrics schema stable across no-op, random, scripted, and trained
+  policies.
+- Add an output validator that rejects missing keys, `NaN`, incompatible action
+  dimensions, or zero-length rollouts.
 
-Do not rely on committed or pasted W&B API keys in scripts. Use the sandbox
-environment, `wandb login`, or a secret manager mechanism.
+## Tribal Village Version Comparison
 
-### 5. Prepare The Sandboxes
+There are two relevant Tribal Village implementations. They are similar enough
+to compare conceptually but different enough that checkpoints and metrics should
+not be mixed without an explicit compatibility layer.
 
-Use the sandboxes only after SkyPilot reports them as `UP`.
+### A. Trained Metta Package
 
-Status checks:
+Location:
+
+- `packages/tribal_village` in this Metta branch.
+
+Observed contract:
+
+- The canonical reward-geometry setup uses `-d:canonicalRewardGeometry`.
+- Environment shape: 1 team x 12 agents.
+- Map size: 80 x 80.
+- Observation tensor: 21 layers, 11 x 11 local view.
+- Action space: 56 discrete actions from 7 verbs x 8 arguments.
+- Old role labels: `agent_id % 3`.
+- Old role shaping was implemented outside the core task as passive
+  observation-based terms.
+- Replay artifacts were generated for analysis, but this package does not have
+  the same Coworld browser/player/replay stack as the Metta-AI repository.
+
+Strengths for the paper:
+
+- Direct continuity with the already-run canonical geometry sweep.
+- Existing MAPPO runner and metrics are wired around this action and agent
+  contract.
+- Lowest-risk path for a controlled reward-redesign rerun.
+
+Weaknesses:
+
+- The old shaping failed the behavioral sanity check.
+- Event counters are currently insufficient for proving meaningful behavior.
+- Artificial 3-role labels are a paper construct, not the richer role structure
+  described by the standalone game.
+- Existing checkpoints are tied to the 56-action, 12-agent setup.
+
+### B. Metta-AI `coworld-tribal-village`
+
+Location:
+
+- `/Users/relh/Code/coworld-tribal-village`
+- Remote: `git@github.com:Metta-AI/coworld-tribal-village.git`
+- Local `main` observed at `7e43e806` on 2026-06-08 after fetching.
+
+Observed contract:
+
+- Public game shape: 48 player slots.
+- Team shape: 8 teams x 6 agents.
+- Observation tensor: 21 layers, 11 x 11 local view.
+- Action space: 64 discrete actions from 8 verbs x 8 arguments.
+- The extra verb is `plant_resource`.
+- Includes Coworld server/player/replay support.
+- Includes richer mechanics such as water, fertile ground, bridges, equipment,
+  health UI, and more explicit team scoring.
+- Contains richer scripted role logic for 6-agent teams, including farmer-like
+  and logistics/defense behaviors.
+- Has docs and protocol files that make browser replay and human inspection
+  easier.
+
+Strengths for the paper:
+
+- More complete Tribal Village game semantics.
+- Better aligned with the standalone game the paper text may be describing.
+- Better replay and inspection path for showing meaningful behavior.
+- Richer mechanics could support clearer task roles.
+
+Weaknesses:
+
+- Not checkpoint-compatible with the trained 12-agent, 56-action Metta package.
+- Team and agent counts differ from the canonical experiment.
+- Action space differs because of `plant_resource`.
+- Directly comparing old geometry numbers to this version would be invalid.
+- It may require either a new training runner or a compatibility mode.
+
+### Contrast Table
+
+| Dimension | Trained Metta package | Metta-AI Coworld repo |
+| --- | --- | --- |
+| Current research role | Controlled geometry rerun target | Richer game/reference target |
+| Agents | 12 | 48 |
+| Teams | 1 | 8 |
+| Agents per team | 12 in canonical mode | 6 |
+| Map | 80 x 80 in canonical mode | game-defined Coworld map |
+| Observation | 21 x 11 x 11 | 21 x 11 x 11 |
+| Actions | 56 = 7 verbs x 8 args | 64 = 8 verbs x 8 args |
+| Extra mechanics | smaller experimental package | water, fertile ground, bridges, equipment, richer UI |
+| Role structure | artificial 3-role labels | richer 6-agent team logic |
+| Replay/browser | analysis artifacts | Coworld server/player/replay |
+| Checkpoint compatibility | compatible with current rerun | incompatible without adaptation |
+| Paper risk | may be too artificial | requires new controlled protocol |
+
+### Version Decision
+
+Immediate path:
+
+- Implement event-based rewards and behavior instrumentation in the trained
+  Metta package first, because that preserves continuity with the existing
+  MAPPO geometry runner.
+- Use the Coworld repo as the reference implementation for richer mechanics,
+  replay expectations, and role semantics.
+- Do not mix numerical results across the two versions unless we build an
+  explicit compatibility mode and document it.
+
+Parallel comparison path:
+
+- Write a short environment-contract audit for both versions:
+  - agent/team count;
+  - action verbs and action-space size;
+  - observation shape;
+  - scoring definition;
+  - available event hooks;
+  - replay support;
+  - supported scripted policies.
+- Run the no-op/random/scripted baseline gate in both environments if feasible.
+- Decide whether the paper should describe:
+  - the reconstructed 12-agent Metta package experiment;
+  - the richer Coworld Tribal Village experiment;
+  - or both, with the Coworld version as an external validity check.
+
+Important compatibility rule:
+
+- Existing 56-action checkpoints from the trained package cannot be evaluated
+  directly in the 64-action Coworld environment.
+- Existing 12-agent geometry metrics cannot be interpreted as 48-agent Coworld
+  Tribal Village results.
+
+## Experimental Phases
+
+### Phase 0: Version and Baseline Audit
+
+Goal:
+
+- Lock down what environment is being trained and what behavior the baseline
+  policies achieve.
+
+Tasks:
+
+- Record the Metta git SHA and Tribal package state.
+- Record the Coworld repo SHA and action/observation/team contract.
+- Produce a one-page contrast summary from the table above.
+- Run no-op and random policies in the trained Metta package.
+- Run simple scripted policies if available.
+- Save metrics and replays.
+- Confirm the action and observation dimensions used by the runner at runtime.
+
+Exit criteria:
+
+- Baseline JSON files exist.
+- Replays can be opened.
+- The behavior metrics schema is stable.
+- We know whether the Coworld repo can be run locally or on a sandbox with the
+  same validation harness.
+
+### Phase 1: Event Instrumentation
+
+Goal:
+
+- Make behavior measurable before changing reward design.
+
+Tasks:
+
+- Add per-agent and team-level event counters.
+- Add a rollout metrics writer.
+- Add an output validator.
+- Add a replay-generation command that can be run for trained, no-op, random,
+  and scripted policies.
+- Ensure W&B logs include raw reward, shaped reward, and behavior counters.
+
+Exit criteria:
+
+- No-op/random/scripted rollouts produce comparable JSON.
+- Metrics do not require manual replay inspection to detect total collapse.
+- Replay inspection remains available as a final sanity check.
+
+### Phase 2: Reward Redesign
+
+Goal:
+
+- Replace passive shaping with event-based shaping.
+
+Tasks:
+
+- Implement gatherer reward from successful resource pickup and delivery.
+- Implement crafter/logistics reward from successful production, handoff, and
+  deposit events.
+- Implement guardian reward from successful defense and protection events.
+- Optionally implement capped explorer novelty if we keep explorer as a role.
+- Add config flags so old rewards can be run as a negative control.
+- Add reward component logging.
+
+Exit criteria:
+
+- Unit or smoke tests prove reward components only fire on successful events.
+- No repeated passive reward can be earned from an unchanged observation.
+- Rollout metrics show shaped reward and event counters move together.
+
+### Phase 3: Short Training Gate
+
+Goal:
+
+- Find out quickly whether the new reward design produces meaningful behavior.
+
+Initial run shape:
+
+- `shared_frac=0.0`.
+- 2 or 3 seeds.
+- Short horizon first, for example 0.5M to 1M agent steps.
+- Evaluate deterministic and stochastic policies.
+
+Tasks:
+
+- Train short candidate runs.
+- Generate no-op/random/scripted/trained comparisons.
+- Save replays for each seed.
+- Inspect at least three replays.
+- Compare raw task score, event counters, action entropy, and repeated-action
+  streaks.
+
+Exit criteria:
+
+- Trained policies beat no-op and random on raw task progress.
+- At least two major event categories are nonzero and visibly meaningful.
+- Deterministic policy does not collapse into a fixed action loop.
+- If this fails, revise rewards before any full sweep.
+
+### Phase 4: Reward-Mixing Pilot
+
+Goal:
+
+- Check whether the geometry effect survives once behavior is meaningful.
+
+Initial run shape:
+
+- `shared_frac in {0.0, 0.8, 1.0}`.
+- 2 seeds per condition.
+- Intermediate budget.
+- Same behavior gate for every condition.
+
+Tasks:
+
+- Run the three-condition pilot.
+- Aggregate behavior metrics.
+- Aggregate geometry metrics.
+- Compare raw reward, event success, EffRank/n, action diversity, and role-probe
+  accuracy.
+- Save replays for every seed and condition.
+
+Exit criteria:
+
+- At least the individual-reward condition passes the behavior gate.
+- Shared-reward conditions can be interpreted clearly as either collapsed
+  behavior, reduced differentiation, or both.
+- The metrics and replays agree.
+
+### Phase 5: Canonical Rerun
+
+Goal:
+
+- Produce final paper-quality numbers only after behavior is validated.
+
+Run shape:
+
+- `shared_frac in {0.0, 0.8, 1.0}`.
+- 5 independent seeds per condition.
+- 4M agent steps unless the short gate shows a better justified budget.
+- Fixed eval protocol.
+- Fixed replay protocol.
+
+Required outputs:
+
+- One raw JSON file per seed.
+- One W&B run per seed.
+- Checkpoint paths.
+- Replay artifacts.
+- Aggregated behavior table.
+- Aggregated geometry table.
+- Statistical summary with seed-level means and standard errors.
+
+Exit criteria:
+
+- Behavior gate passes for the relevant claim.
+- Aggregation reads raw JSON files, not W&B summaries as source of truth.
+- Every table row has provenance: git SHA, command, config, seed list, and
+  artifact path.
+
+### Phase 6: Paper Update
+
+Goal:
+
+- Update the paper only from the canonical result stream.
+
+Rules:
+
+- Do not mix pilot, temporary, failed-reward, and final canonical results in the
+  Overleaf text.
+- Keep temporary debugging details out of the paper.
+- Use the paper to report the final validated experiment and the relevant
+  caveats.
+- If the behavior redesign fails, report that as a limitation or remove the
+  positive Tribal Village MAPPO claim.
+
+Possible final claim if the redesigned runs pass:
+
+- "In a behavior-validated Tribal Village setting with event-based role rewards,
+  increasing shared reward mixing reduced role-separable representation geometry
+  and action diversity in a shared MAPPO encoder."
+
+Possible final claim if behavior still fails:
+
+- "In our Tribal Village reconstruction, reward mixing affected representation
+  metrics, but the policies failed behavioral validation; we therefore do not
+  interpret the probe results as evidence of learned task roles."
+
+## Candidate Commands
+
+These commands should be updated after the implementation lands, but this is
+the intended shape.
+
+Run the environment/version audit:
 
 ```bash
-uv run sky status relh-sandbox-1 --all-users
-uv run sky status relh-sandbox-2 --all-users
-uv run sky queue relh-sandbox-1 --all-users --skip-finished
-uv run sky queue relh-sandbox-2 --all-users --skip-finished
+uv run python v3_experiments/audit_tribal_versions.py \
+  --metta-root . \
+  --coworld-root /Users/relh/Code/coworld-tribal-village \
+  --output v3_experiments/behavioral_reward_results/tribal_version_audit.json
 ```
 
-Remote readiness checks for each sandbox:
+Run baseline rollouts:
 
 ```bash
-uv run sky exec <sandbox> -- env -C /workspace/metta git status --short --branch
-uv run sky exec <sandbox> -- env -C /workspace/metta git rev-parse HEAD
-uv run sky exec <sandbox> -- nvidia-smi
-ssh <sandbox> "pgrep -af '[t]orchrun|[t]rain_canonical_reward_geometry.py|[t]ools/run.py' || true"
+uv run python v3_experiments/run_tribal_behavior_rollouts.py \
+  --policy no_op \
+  --episodes 5 \
+  --steps 120 \
+  --output-dir v3_experiments/behavioral_reward_results/baselines/no_op
+
+uv run python v3_experiments/run_tribal_behavior_rollouts.py \
+  --policy random \
+  --episodes 5 \
+  --steps 120 \
+  --output-dir v3_experiments/behavioral_reward_results/baselines/random
 ```
 
-Remote setup checklist:
-
-- `/workspace/metta` is on the intended branch or a clean worktree at the
-  intended commit.
-- The checkout is not dirty. If it is dirty, do not reset it without explicit
-  approval; create a separate clean worktree for the experiment.
-- `uv run python -c "import wandb, torch, sklearn; print('OK')"` works.
-- Tribal Village dependencies and any native library build needed by the runner
-  are present.
-- The runner can create a 1 team x 12 agents, 80x80 environment and report
-  observation/action dimensions.
-- W&B login works from the sandbox and creates runs in the chosen project.
-- Checkpoint and output directories exist and have enough disk space.
-- Autostop behavior is understood before starting long runs.
-
-### 6. Run Short Smoke Tests Before 4M-Step Jobs
-
-Before launching the full matrix, run one very short local contract smoke per
-condition family:
+Run a short event-reward training gate:
 
 ```bash
 uv run python v3_experiments/train_canonical_reward_geometry.py \
-  --env-backend mock \
+  --reward-design event_v1 \
   --shared-frac 0.0 \
   --seed 0 \
-  --total-agent-steps 12000 \
-  --eval-trials 1 \
-  --output /tmp/canonical_reward_geometry_smoke.json \
-  --checkpoint-path /tmp/canonical_reward_geometry_smoke.pt
-
-uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
-  --allow-smoke \
-  /tmp/canonical_reward_geometry_smoke.json
+  --total-agent-steps 1000000 \
+  --eval-trials 10 \
+  --output v3_experiments/behavioral_reward_results/event_v1_alpha0_seed0.json
 ```
 
-Then run the same short smoke on the sandbox with the real Tribal backend and
-`--wandb-mode online` after W&B auth is confirmed.
-
-Smoke acceptance criteria:
-
-- The runner completes without traceback.
-- The JSON contains all required provenance fields.
-- `role_probe_chance` is `1/3`.
-- `obs_shape` and `action_space_size` are present and stable.
-- A checkpoint is written and loadable.
-- The sandbox Tribal smoke creates a W&B run with the expected config fields.
-- `d_act_ordered_kl`, `d_act_js`, and `effrank_per_agent` are finite numbers.
-
-Only after these pass should the long jobs start.
-
-### 7. Launch The Primary Matrix
-
-Primary matrix:
-
-- `shared_frac=0.0`, seeds `0..4`
-- `shared_frac=0.8`, seeds `0..4`
-- `shared_frac=1.0`, seeds `0..4`
-
-That is 15 primary training jobs. With two 4-GPU L4 sandboxes, launch at most
-eight jobs at once, one per visible GPU, then launch the remaining seven after
-the first batch clears.
-
-Suggested first wave:
-
-- `relh-sandbox-1`: alpha `0.0` seeds `0..3`
-- `relh-sandbox-2`: alpha `0.8` seeds `0..3`
-
-Suggested second wave:
-
-- alpha `0.0` seed `4`
-- alpha `0.8` seed `4`
-- alpha `1.0` seeds `0..4`
-
-For each detached launch, record:
-
-- sandbox name
-- GPU id
-- shell/tmux session name
-- command
-- log path
-- W&B URL
-- output JSON path
-- checkpoint path
-
-Use tmux or SkyPilot task logs, but verify that the process passes environment
-startup and begins training. Do not treat job submission alone as success.
-
-### 8. Validate Finished Runs Before Aggregation
-
-After each run finishes:
-
-- Confirm process exit status and final log lines.
-- Confirm the final checkpoint exists.
-- Confirm the per-seed JSON exists and validates against the output contract.
-- Confirm W&B has the matching run ID and final metrics.
-- Confirm `role_probe_chance == 1/3`.
-- Confirm `eval_trials == 10` for full runs.
-- Confirm no table summary has been computed from eval-trial std alone.
-
-Add a small validator if needed, for example:
+Generate replays for a checkpoint:
 
 ```bash
-uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
-  v3_experiments/canonical_results/*.json
+uv run python v3_experiments/run_tribal_behavior_rollouts.py \
+  --policy checkpoint \
+  --checkpoint-path /path/to/checkpoint.pt \
+  --episodes 5 \
+  --steps 240 \
+  --save-replays \
+  --output-dir v3_experiments/behavioral_reward_results/replays/event_v1_alpha0_seed0
 ```
 
-### 9. Run Mechanism Checks Only After Primary Health
-
-Do not start mechanism ablations until at least one full seed from each primary
-alpha has completed cleanly and passed validation.
-
-No-role-shaping ablation:
-
-- `shared_frac in {0.0, 1.0}`
-- seeds `0..2`
-- `--disable-role-shaping`
-
-Separate-encoder ablation:
-
-- `shared_frac in {0.0, 1.0}`
-- seeds `0..2`
-- `--separate-encoders`
-
-The mechanism ablations should use the same output contract and validation
-script as the primary runs.
-
-### 10. Aggregate And Prepare Paper Inputs
-
-Aggregation should produce a separate canonical summary file, not mutate the raw
-per-seed files.
-
-Required summary outputs:
-
-- mean/std across training seeds for each metric and condition
-- seed list included for each table cell
-- W&B run IDs included for each table cell
-- checkpoint paths included for each seed
-- explicit statement that uncertainty is across training seeds
-- copy-paste-ready table values for Overleaf
-
-The paper should not be updated until every primary table cell has five
-validated training seeds. If a condition fails to reproduce the pilot pattern,
-rewrite the paper around the reproduced result rather than preserving the pilot
-claim.
-
-## Canonical Experiment Protocol
-
-Environment and policy:
-
-- Environment: Tribal Village.
-- Team config: 1 team x 12 agents.
-- Map: 80x80.
-- Policy: one shared MAPPO policy.
-- No role input.
-- No agent-specific parameters.
-- Roles: `role = agent_id % 3`, giving four gatherers, four explorers, and four guardians.
-
-Role shaping before reward mixing:
-
-- Gatherer: `0.3 * visible_gold_tiles`.
-- Explorer: `0.5` if no gold or altar is visible.
-- Guardian: `2.0 * visible_altar_tiles`.
-
-Reward mixing:
-
-```text
-r_i_alpha = (1 - alpha) * r_i_ind + alpha * mean_j(r_j_ind)
-```
-
-Primary rerun:
-
-- `alpha in {0.0, 0.8, 1.0}`.
-- Training seeds `0..4` for each condition.
-- 4M agent-steps per seed.
-- 10 fixed eval trials per final checkpoint.
-- Table uncertainty is mean/std across independent training seeds, not eval trials.
-
-## Mechanism Checks
-
-No-role-shaping ablation:
-
-- Conditions: `alpha in {0.0, 1.0}`.
-- Seeds: `0..2`.
-- Disable role-specific shaping before reward mixing.
-- Purpose: determine whether the reward-mixing pattern survives without
-  hand-designed role rewards.
-
-Separate-encoder ablation:
-
-- Conditions: `alpha in {0.0, 1.0}`.
-- Seeds: `0..2`.
-- Give each agent its own encoder while keeping the rest of the training setup
-  matched.
-- Purpose: test whether shared-encoder gradient homogenization is the proximate
-  mechanism.
-
-Robustness metric:
-
-- Compute Jensen-Shannon action diversity offline as a secondary robustness
-  metric.
-- Keep ordered KL as the primary paper metric for continuity with the pilot.
-
-## Metric Contract
-
-Canonical metrics:
-
-- `effrank_per_agent`: effective rank over flattened eval embeddings
-  `[eval_steps * agents, embedding_dim]`, divided by `n_agents`.
-- `d_act_ordered_kl`: mean ordered off-diagonal KL over `n_agents * (n_agents - 1)` pairs.
-- `d_act_js`: unordered Jensen-Shannon action diversity for robustness.
-- `role_probe_acc`: 3-way fixed-role probe using `agent_id % 3`; chance is `1/3`.
-
-Non-canonical for this paper section:
-
-- `return_probe_acc` or `probe_accuracy` from binary top/bottom return labels.
-- Any probe result whose stored `probe_chance` is not `1/3`.
-- Any table cell mixing eval-trial std with training-seed std.
-
-## Paper Update Policy
-
-The Overleaf paper has already been updated to mark the Tribal table as pilot
-evidence and to fix the ordered-KL denominator.
-
-When primary reruns complete:
-
-- Replace the pilot Tribal table only with metrics traceable to per-seed JSON,
-  W&B run IDs, git SHA, exact command, and checkpoint paths.
-- If the monotonic pattern reproduces across seeds, claim that reward mixing
-  tracks reduced role geometry and behavioral diversity in this setup.
-- If it does not reproduce, rewrite the results around the stable finding and
-  state that the single-seed pilot was not sufficient evidence.
-- Keep SMACv2 as a boundary-condition section only if its provenance and metric
-  schema pass the same audit.
-
-## Acceptance Criteria
-
-The final results section is canonical only when:
-
-- Every table cell has raw per-seed JSON.
-- Every per-seed JSON has W&B run ID, git SHA, command, environment config, seed,
-  and checkpoint path.
-- Role-probe chance is exactly `1/3`.
-- `D_act` uses ordered off-diagonal KL normalized by `n * (n - 1)`.
-- Existing `results_reward_*.json` files are not cited as fixed-role evidence.
-- The paper clearly distinguishes pilot results, canonical reruns, and mechanism
-  ablations.
-
-## Implemented Support In This Branch
-
-- `v3_experiments/canonical_reward_geometry.py`
-  - role labels
-  - reward mixing
-  - role-shaping bonuses
-  - effective rank
-  - ordered-KL action diversity
-  - JS action diversity
-  - fixed 3-way role probe
-  - fixed-role probe audit
-- `v3_experiments/train_canonical_reward_geometry.py`
-  - canonical Tribal Village runner
-  - mock backend for local smoke tests
-  - W&B config/final-metric logging
-  - per-seed JSON and checkpoint output
-- `v3_experiments/validate_canonical_reward_geometry_results.py`
-  - per-seed output contract validation
-  - full-run and smoke-run validation modes
-- `packages/tribal_village`
-  - `canonicalRewardGeometry` Nim define for 1 team x 12 agents on an 80x80 map
-  - build helper tracks `TRIBAL_VILLAGE_NIM_DEFINES` changes and rebuilds the native library
-- `v3_experiments/audit_reward_geometry.py`
-  - local result audit
-  - git branch provenance audit
-  - optional W&B provenance query
-- `v3_experiments/canonical_reward_geometry_protocol.json`
-  - machine-readable protocol
-- `v3_experiments/README_canonical_reward_geometry.md`
-  - runbook for audit and reruns
-- `tests/v3_experiments/test_canonical_reward_geometry.py`
-  - tests for reward mixing, role labels, role shaping, effective rank,
-    fixed-role probe CV, `D_act`, JS, stale probe audits, validator behavior,
-    and mock-runner smoke
-
-Focused verification already run:
+Validate outputs:
 
 ```bash
-uv run pytest tests/v3_experiments/test_canonical_reward_geometry.py -q
+uv run python v3_experiments/validate_tribal_behavior_outputs.py \
+  --results-dir v3_experiments/behavioral_reward_results
 ```
 
-Result:
+## Implementation Checklist
 
-```text
-13 passed
-```
+- [ ] Write the Tribal version audit script.
+- [ ] Add or expose environment event counters.
+- [ ] Add rollout metrics JSON output.
+- [ ] Add no-op, random, and scripted baseline policies.
+- [ ] Add replay generation to the rollout harness.
+- [ ] Implement event-based reward components.
+- [ ] Add reward component logging.
+- [ ] Add output validation.
+- [ ] Run no-op/random/scripted baselines.
+- [ ] Run short `shared_frac=0.0` training gate.
+- [ ] Inspect replays and compare behavior metrics.
+- [ ] Iterate on rewards until behavior passes.
+- [ ] Run reward-mixing pilot.
+- [ ] Run canonical 5-seed sweep only after pilot success.
+- [ ] Update the paper from canonical outputs only.
+
+## Open Questions
+
+- Should the final paper target remain the 12-agent reconstructed Metta package,
+  or should we migrate to the richer Coworld Tribal Village version?
+- If we migrate, do we add a controlled 12-agent compatibility mode to Coworld,
+  or do we embrace the 48-agent, 8-team game as a new experiment?
+- Should the revised three roles be gatherer, crafter/logistics, guardian, or
+  should we match the Coworld repo's richer six-agent team roles?
+- What raw task score should be the primary behavioral success metric?
+- How much task reward should remain shared before applying the experimental
+  `shared_frac` mixing?
+- Do we want a separate-encoder ablation after behavior passes, or only the
+  shared-encoder sweep?
+
+## Non-Negotiables
+
+- Do not update the Overleaf paper from temporary or failed-reward outputs.
+- Do not compare the 56-action trained package directly against the 64-action
+  Coworld version as if they were the same environment.
+- Do not treat role-probe accuracy as meaningful unless the corresponding
+  policy passes the behavior gate.
+- Do not launch another expensive full sweep before no-op/random/scripted
+  baselines and replay inspection are in place.
+- Keep every final result tied to a git SHA, exact command, seed list,
+  checkpoint path, W&B run, raw JSON artifact, and replay artifact.
