@@ -1635,7 +1635,12 @@ def _chain_affordance_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
         if use_action is not None and base_mask[agent_id, use_action]:
             chain_mask[agent_id, use_action] = True
         if not chain_mask[agent_id].any():
-            chain_mask[agent_id] = base_mask[agent_id]
+            if base_mask[agent_id, 0]:
+                chain_mask[agent_id, 0] = True
+            else:
+                valid = np.flatnonzero(base_mask[agent_id])
+                if valid.size:
+                    chain_mask[agent_id, int(valid[0])] = True
 
     return chain_mask
 

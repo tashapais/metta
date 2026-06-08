@@ -2071,6 +2071,44 @@ V10 promotion criteria:
   decide that constrained affordance training is the experimental condition we
   want to claim.
 
+V10 first ramp outcome, commit `6b2442b2b4`:
+
+- Result validation passed for seeds `0`, `1`, and `2`; behavior-output
+  validation passed for 11 rollout files split across `relh-sandbox-1` and
+  `relh-sandbox-2`.
+- Training eval shaped returns improved, but raw env return stayed negative:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-1.483` | `173.838` | `0.474` | `0.245` | `0.345` |
+| `1` | `-1.819` | `144.540` | `0.463` | `0.215` | `0.333` |
+| `2` | `-7.994` | `114.768` | `0.496` | `0.171` | `0.227` |
+
+- Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Crafts | Deposits | Combat | Invalid frac. | Joint actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `8.000` | `74.7` | `91` | `81` | `52` | `0` | `0.2225` | `197.7` |
+| `random` | `-28.800` | `42.7` | `115` | `6` | `0` | `0` | `0.7237` | `240.0` |
+| `seed0_det` | `-30.467` | `112.0` | `106` | `5` | `0` | `0` | `0.0051` | `24.3` |
+| `seed0_stoch` | `0.600` | `242.0` | `226` | `96` | `42` | `0` | `0.0277` | `235.0` |
+| `seed1_det` | `-28.800` | `20.3` | `36` | `24` | `0` | `1` | `0.0035` | `8.0` |
+| `seed1_stoch` | `-41.697` | `112.3` | `261` | `16` | `0` | `5` | `0.0198` | `186.3` |
+| `seed2_det` | `-28.800` | `11.7` | `26` | `9` | `0` | `0` | `0.0021` | `6.0` |
+| `seed2_stoch` | `-28.800` | `23.7` | `52` | `10` | `0` | `0` | `0.0007` | `44.7` |
+
+- Interpretation: the first v10 ramp is not a clean promotion candidate. It
+  produced one strong learned chain mode (`seed0_stoch`) and proved the oracle
+  can complete the chain under the gate, but learned deposits were not robust
+  across seeds/modes and deterministic policies still collapsed.
+- Cleanup bug found after the gate: the per-agent chain-affordance mask fell
+  back to the full native action mask when no chain move/use was available.
+  That reopened noop and sometimes off-chain `put`, `attack`, and `plant`
+  actions. The strict follow-up should make that fallback noop-only instead of
+  full-mask before rerunning Stage 1.
+- Next action: rerun the v10 Stage-1 ramp after the strict fallback fix, using a
+  fresh result root that includes the new commit SHA.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2161,7 +2199,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Compare behavior metrics.
 - [ ] Inspect replays.
 - [ ] Iterate on rewards until behavior passes.
-- [ ] Run v10 chain-affordance cleanup ramp.
+- [x] Run first v10 chain-affordance cleanup ramp.
+- [ ] Rerun v10 after strict action-mask fallback fix.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.

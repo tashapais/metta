@@ -631,6 +631,22 @@ def test_chain_affordance_action_mask_allows_moves_and_current_target_use_only()
     assert not mask_without_use[0, use_east]
     assert mask_without_use[0].sum() == 8
 
+    no_chain_navigation = navigation.copy()
+    no_chain_navigation[0, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE]] = [0, 0, 0]
+    no_chain_base_mask = np.zeros((3, 56), dtype=bool)
+    no_chain_base_mask[:, 0] = True
+    no_chain_base_mask[0, 5 * ACTION_ARGUMENT_COUNT] = True
+    no_chain_env = _MaskEnv(no_chain_base_mask, no_chain_navigation)
+    no_chain_mask = _action_mask_array_from_flags(
+        no_chain_env,
+        use_action_mask=True,
+        chain_affordance_action_mask=True,
+    )
+    assert no_chain_mask is not None
+    assert no_chain_mask[0, 0]
+    assert not no_chain_mask[0, 5 * ACTION_ARGUMENT_COUNT]
+    assert no_chain_mask[0].sum() == 1
+
 
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)

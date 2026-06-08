@@ -130,3 +130,51 @@ Promotion question:
 
 - Does masking off-chain affordances keep v9's seed-1/seed-2 deposit signal
   while rescuing seed 0 and reducing off-chain resource/craft/combat counts?
+
+## V10 First Ramp Outcome
+
+Run date: 2026-06-08.
+
+- Commit: `6b2442b2b4`.
+- Stage-1 root:
+  `/workspace/tribal_event_mask_runs/stage1_v10_chain_affordance_compass_1m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v10_chain_affordance_compass_6b2442b2b4`.
+- Result JSON validation passed for all three seeds.
+- Behavior-output validation passed for 4 checkpoint files on
+  `relh-sandbox-1` and 7 baseline/seed-2 files on `relh-sandbox-2`.
+
+Training eval showed positive shaped returns but negative raw env returns:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-1.483` | `173.838` | `0.474` | `0.245` | `0.345` |
+| `1` | `-1.819` | `144.540` | `0.463` | `0.215` | `0.333` |
+| `2` | `-7.994` | `114.768` | `0.496` | `0.171` | `0.227` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Crafts | Deposits | Combat |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `8.000` | `74.7` | `91` | `81` | `52` | `0` |
+| `random` | `-28.800` | `42.7` | `115` | `6` | `0` | `0` |
+| `seed0_det` | `-30.467` | `112.0` | `106` | `5` | `0` | `0` |
+| `seed0_stoch` | `0.600` | `242.0` | `226` | `96` | `42` | `0` |
+| `seed1_det` | `-28.800` | `20.3` | `36` | `24` | `0` | `1` |
+| `seed1_stoch` | `-41.697` | `112.3` | `261` | `16` | `0` | `5` |
+| `seed2_det` | `-28.800` | `11.7` | `26` | `9` | `0` | `0` |
+| `seed2_stoch` | `-28.800` | `23.7` | `52` | `10` | `0` | `0` |
+
+Decision:
+
+- The first v10 ramp is useful but not promotable. It produced one strong
+  learned chain mode (`seed0_stoch`) and showed that the oracle can complete
+  the chain under the gate, but learned heart deposits were not robust across
+  seeds or deterministic/stochastic modes.
+- The gate exposed a cleanup bug: when an agent had no valid chain move/use,
+  the chain-affordance mask restored the full native action mask. That reopened
+  noop and sometimes off-chain `put`, `attack`, and `plant` actions.
+- The follow-up is a strict fallback fix: no valid chain move/use should fall
+  back to noop-only, not to the full native action surface. Then rerun Stage 1
+  before deciding whether to anneal the mask, add oracle warm starts, or move to
+  a reward-machine/curriculum setup.
