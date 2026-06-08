@@ -83,6 +83,11 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
     EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES,
     EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES,
+    EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+    EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_HOME_ASSEMBLER_X,
@@ -109,6 +114,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v7_chain_compass_reward_design_details,
     event_v8_clean_chain_compass_reward_design_details,
     event_v8_clean_chain_compass_role_shaping_bonuses,
+    event_v9_potential_chain_compass_reward_design_details,
+    event_v9_potential_chain_compass_role_shaping_bonuses,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -530,6 +537,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v6_oracle_chain_breadcrumbs",
             "event_v7_chain_compass_breadcrumbs",
             "event_v8_clean_chain_compass_breadcrumbs",
+            "event_v9_potential_chain_compass_breadcrumbs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -1177,6 +1185,17 @@ def _role_shaping_bonuses_for_design(
             action_mask=action_mask_before,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
+        return event_v9_potential_chain_compass_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            gamma=config.gamma,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1196,6 +1215,7 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
     return config.chain_compass_observation or config.reward_design in (
         "event_v7_chain_compass_breadcrumbs",
         "event_v8_clean_chain_compass_breadcrumbs",
+        "event_v9_potential_chain_compass_breadcrumbs",
     )
 
 
@@ -1336,6 +1356,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES)
     if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
         return list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES)
+    if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
+        return list(EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1415,6 +1437,23 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
+        return {
+            "common": {},
+            "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi(s') - Phi(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "run_gamma": config.gamma,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES),
+            },
+            "oracle_actions": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+            "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+            "negative_reward_coefficients": {},
+            "roles": {role: {} for role in EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES},
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1435,6 +1474,10 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v7_chain_compass_reward_design_details()
     if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
         return event_v8_clean_chain_compass_reward_design_details()
+    if config.reward_design == "event_v9_potential_chain_compass_breadcrumbs":
+        details = event_v9_potential_chain_compass_reward_design_details()
+        details["potential_shaping"]["run_gamma"] = config.gamma
+        return details
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

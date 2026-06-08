@@ -17,6 +17,7 @@ EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V6_ORACLE_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V7_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -398,6 +399,19 @@ EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "lantern_plant": -0.25,
 }
 
+EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA = 0.99
+EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE = 80.0
+EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS = {
+    "empty_to_mine": 0.0,
+    "ore_to_converter": 4.0,
+    "battery_to_home_assembler": 10.0,
+}
+EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES = {
+    "empty_to_mine": 0.04,
+    "ore_to_converter": 0.08,
+    "battery_to_home_assembler": 0.12,
+}
+
 ACTION_ARGUMENT_COUNT = 8
 MOVE_VERB = 1
 USE_VERB = 3
@@ -673,6 +687,35 @@ def event_v8_clean_chain_compass_role_shaping_bonuses(
     return bonuses
 
 
+def event_v9_potential_chain_compass_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v7 chain-compass rewards with potential-based chain progress.
+
+    This v9 debug design removes explicit noop/invalid and off-chain penalty
+    coefficients. Dense navigation shaping is instead the potential difference
+    ``gamma * Phi(s') - Phi(s)`` over the ore -> battery -> heart chain state.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    totals = _validate_event_stats_total(event_stats_total, num_agents)
+
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    if stats is not None:
+        _add_agent_coefficients(bonuses, stats, EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS)
+    _add_chain_potential_bonuses(bonuses, navigation_before, navigation_after, gamma=gamma)
+    _add_chain_oracle_action_bonuses(bonuses, navigation_before, actions, action_mask, totals)
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -842,6 +885,56 @@ def event_v8_clean_chain_compass_reward_design_details() -> dict[str, Any]:
     return details
 
 
+def event_v9_potential_chain_compass_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v9 potential-chain design."""
+
+    return {
+        "name": "event_v9_potential_chain_compass_breadcrumbs",
+        "summary": (
+            "Debug reward that keeps the chain-compass observation and positive "
+            "ore -> battery -> heart event rewards, removes explicit negative "
+            "event coefficients, and replaces clipped distance rewards with "
+            "potential-based chain progress."
+        ),
+        "role_names": list(EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES),
+        "common_coefficients": {},
+        "task_event_coefficients": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+        "potential_shaping": {
+            "formula": "F(s,s') = gamma * Phi(s') - Phi(s)",
+            "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+            "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+            "stage_offsets": dict(EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS),
+            "target_closeness_scales": dict(EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES),
+            "stages": [
+                "empty_to_mine",
+                "ore_to_converter",
+                "battery_to_home_assembler",
+            ],
+        },
+        "oracle_action_coefficients": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+        "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+        "negative_reward_coefficients": {},
+        "observation_breadcrumbs": {
+            "planes": [
+                "chain_target_dx_sign",
+                "chain_target_dy_sign",
+                "chain_inventory_stage",
+                "chain_target_closeness",
+                "chain_target_adjacent",
+            ],
+            "source": "navigation snapshot exposed by the canonical Tribal Village build",
+            "purpose": (
+                "Expose the currently shaped chain target to the feed-forward "
+                "policy while keeping final evaluation in the full Tribal world."
+            ),
+        },
+        "navigation_snapshot_columns": list(NAVIGATION_SNAPSHOT_COLUMNS),
+        "role_coefficients": {role: {} for role in EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES},
+        "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
+        "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+    }
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -956,6 +1049,57 @@ def _add_navigation_progress_bonuses(
             bonuses.shape[0],
         )
         bonuses[eligible & capped] += coefficients[name] * progress[eligible & capped]
+
+
+def _add_chain_potential_bonuses(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    *,
+    gamma: float,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    if before is None or after is None:
+        return
+
+    bonuses += gamma * _chain_potential_values(after) - _chain_potential_values(before)
+
+
+def _chain_potential_values(navigation: np.ndarray) -> np.ndarray:
+    potentials = np.zeros(navigation.shape[0], dtype=np.float64)
+    for agent_id, row in enumerate(navigation):
+        stage_name, distance = _chain_potential_stage_and_distance(row)
+        if stage_name is None or distance is None:
+            continue
+        clipped_distance = max(0.0, min(EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE, distance))
+        closeness = EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE - clipped_distance
+        potentials[agent_id] = (
+            EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS[stage_name]
+            + EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES[stage_name] * closeness
+        )
+    return potentials
+
+
+def _chain_potential_stage_and_distance(navigation_row: np.ndarray) -> tuple[str | None, float | None]:
+    if int(navigation_row[NAV_INVENTORY_BATTERY]) > 0:
+        return "battery_to_home_assembler", _valid_navigation_distance(
+            navigation_row,
+            NAV_DIST_HOME_ASSEMBLER,
+        )
+    if int(navigation_row[NAV_INVENTORY_ORE]) > 0:
+        return "ore_to_converter", _valid_navigation_distance(
+            navigation_row,
+            NAV_DIST_NEAREST_CONVERTER,
+        )
+    return "empty_to_mine", _valid_navigation_distance(navigation_row, NAV_DIST_NEAREST_MINE)
+
+
+def _valid_navigation_distance(navigation_row: np.ndarray, column: int) -> float | None:
+    distance = float(navigation_row[column])
+    if distance < 0:
+        return None
+    return distance
 
 
 def _add_chain_oracle_action_bonuses(

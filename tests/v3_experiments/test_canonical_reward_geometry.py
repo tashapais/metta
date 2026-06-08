@@ -40,6 +40,10 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
     EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES,
     EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES,
+    EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_DIST_HOME_ASSEMBLER,
@@ -69,6 +73,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v7_chain_compass_reward_design_details,
     event_v8_clean_chain_compass_reward_design_details,
     event_v8_clean_chain_compass_role_shaping_bonuses,
+    event_v9_potential_chain_compass_reward_design_details,
+    event_v9_potential_chain_compass_role_shaping_bonuses,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -476,6 +482,60 @@ def test_event_v8_clean_chain_compass_reward_design_details_are_serializable():
     assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
     assert details["off_chain_penalty_coefficients"]["resource_water"] < 0
     assert details["off_chain_penalty_coefficients"]["craft_armor"] < 0
+
+
+def test_event_v9_potential_chain_compass_removes_explicit_event_penalties():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    before = np.zeros((12, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = -1
+    after[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = -1
+
+    stats[0, stat_index["resource_ore"]] = 1
+    stats[0, stat_index["craft_battery"]] = 1
+    stats[0, stat_index["deposit_heart"]] = 1
+    before[0, NAV_DIST_NEAREST_MINE] = 10
+    after[0, NAV_DIST_NEAREST_MINE] = 8
+
+    stats[1, stat_index["resource_water"]] = 2
+    stats[1, stat_index["resource_wheat"]] = 3
+    stats[1, stat_index["resource_wood"]] = 4
+    stats[1, stat_index["craft_armor"]] = 1
+    stats[1, stat_index["action_noop"]] = 8
+    stats[1, stat_index["action_invalid"]] = 9
+
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    before[2, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[2, NAV_INVENTORY_BATTERY] = 1
+    after[2, NAV_DIST_HOME_ASSEMBLER] = 4
+
+    bonuses = event_v9_potential_chain_compass_role_shaping_bonuses(
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+    )
+
+    mine_phi_before = _test_v9_potential("empty_to_mine", 10)
+    mine_phi_after = _test_v9_potential("empty_to_mine", 8)
+    expected_chain = 1.0 + 8.0 + 40.0 + EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA * mine_phi_after - mine_phi_before
+    assert bonuses[0] == pytest.approx(expected_chain)
+    assert bonuses[1] == pytest.approx(0.0)
+
+    home_phi_before = _test_v9_potential("battery_to_home_assembler", 2)
+    home_phi_after = _test_v9_potential("battery_to_home_assembler", 4)
+    assert bonuses[2] == pytest.approx(EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA * home_phi_after - home_phi_before)
+
+
+def test_event_v9_potential_chain_compass_reward_design_details_are_serializable():
+    details = event_v9_potential_chain_compass_reward_design_details()
+
+    assert details["name"] == "event_v9_potential_chain_compass_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES)
+    assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
+    assert details["potential_shaping"]["formula"] == "F(s,s') = gamma * Phi(s') - Phi(s)"
+    assert details["negative_reward_coefficients"] == {}
+    assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
 
 
 def test_chain_compass_observation_tracks_inventory_conditioned_target():
@@ -1067,6 +1127,71 @@ def test_train_canonical_reward_geometry_event_v8_clean_chain_compass_mock_smoke
     assert record["role_shaping_coefficients"]["off_chain_penalties"]["craft_armor"] < 0
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def test_train_canonical_reward_geometry_event_v9_potential_chain_compass_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v9_result.json"
+    checkpoint_path = tmp_path / "event_v9_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v9_potential_chain_compass_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v9_potential_chain_compass_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES)
+    assert record["chain_compass_observation"] is True
+    assert record["obs_shape"] == [26, 11, 11]
+    assert record["reward_design_details"]["negative_reward_coefficients"] == {}
+    assert record["role_shaping_coefficients"]["common"] == {}
+    assert record["role_shaping_coefficients"]["negative_reward_coefficients"] == {}
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def _test_v9_potential(stage_name: str, distance: float) -> float:
+    closeness = 80.0 - min(80.0, max(0.0, distance))
+    return EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS[stage_name] + (
+        EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES[stage_name] * closeness
+    )
 
 
 def _valid_record(checkpoint_path):

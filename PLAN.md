@@ -1863,6 +1863,80 @@ Practical rules for v9:
   - the final evaluation must run in the full Tribal Village with distractors
     restored.
 
+### Reward-Debug Continuation: `event_v9_potential_chain_compass_breadcrumbs`
+
+Source log:
+
+- Keep `v3_experiments/REWARD_SHAPING_NOTES.md` as the compact reference list
+  and reward-design work log for later paper updates.
+- Treat v8 as a diagnostic failure of explicit negative reward coefficients,
+  not as a reason to add stronger penalties.
+
+V9 design:
+
+- Preserve the successful v7 intervention:
+  - canonical Tribal Village observations plus the five chain-compass planes;
+  - action masking;
+  - positive chain events only: `resource_ore`, `craft_battery`, and
+    `deposit_heart`;
+  - positive mask-valid oracle-action breadcrumbs for moving toward or using
+    the current chain target.
+- Remove explicit negative reward coefficients:
+  - no noop penalty;
+  - no invalid-action penalty;
+  - no off-chain successful-event penalty.
+- Replace the v6/v7 clipped distance-progress bonuses with potential-based
+  chain progress:
+
+```text
+F(s, s') = gamma * Phi(s') - Phi(s)
+```
+
+- Define `Phi` over the inventory-conditioned heart-chain state:
+  - empty agent -> nearest mine;
+  - ore carrier -> nearest converter;
+  - battery carrier -> home assembler.
+- Keep `Phi` modest so the terminal chain events remain dominant. A heart
+  deposit should still be strongly positive even when the potential resets to
+  the next ore-search cycle.
+
+Important interpretation:
+
+- The potential-difference term may be signed because that is how
+  potential-based shaping works. It is not a new independent punishment for
+  water, wheat, wood, armor, bread, combat, invalid actions, or no-op actions.
+- If v9 reduces off-chain behavior, the explanation should be that the chain
+  path became easier to discover and maintain, not that exploration was
+  punished.
+
+V9 Stage-1 ramp:
+
+- Reward design: `event_v9_potential_chain_compass_breadcrumbs`.
+- Shared fraction: `0.0`.
+- Seeds: `0,1,2`.
+- Budget: `1,000,000` agent steps per seed.
+- Use `--use-action-mask`.
+- Chain-compass observation is auto-enabled by the reward design and should
+  appear in result JSON as `chain_compass_observation: true` and
+  `obs_shape: [26, 11, 11]`.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage1_v9_potential_chain_compass_1m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage1_v9_potential_chain_compass_<sha>`.
+
+V9 promotion criteria:
+
+- Match v7's core signal: every seed should produce nonzero heart deposits in
+  deterministic or stochastic checkpoint rollouts.
+- Preferably match or exceed the v7 deterministic deposit range of `9-35`
+  hearts over the 3-episode behavior gate.
+- Reduce off-chain water/wheat/wood collection and non-battery crafts relative
+  to v7 without using off-chain penalties.
+- Raw return should not degrade relative to v7.
+- If v9 does not match v7 deposits, do not promote it; return to v7 for
+  representation debugging and pursue curriculum, affordance masking, or
+  short oracle warm starts as the next intervention.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -1946,6 +2020,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Implement event-based reward components.
 - [x] Add reward component logging.
 - [x] Add output validation.
+- [x] Record reward-shaping source notes for the v9 correction.
 - [x] Run tiny native no-op/random/scripted baseline smoke.
 - [ ] Run full no-op/random/scripted baseline gate.
 - [ ] Run short `shared_frac=0.0` training gate.
