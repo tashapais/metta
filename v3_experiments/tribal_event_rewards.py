@@ -11,6 +11,7 @@ from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
 
 EVENT_V1_ROLE_NAMES = ("supplier", "crafter_logistics", "defender_territory")
 EVENT_V2_BREADCRUMB_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V3_NAVIGATION_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 EVENT_V1_COMMON_COEFFICIENTS = {
     "action_attack": 0.02,
@@ -119,6 +120,65 @@ EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS = {
     },
 }
 
+EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS = {
+    "action_move": 0.004,
+    "action_use": 0.05,
+    "action_put": 0.05,
+    "action_attack": 0.05,
+    "action_plant": 0.05,
+    "action_swap": 0.005,
+    "action_noop": -0.004,
+    "action_invalid": -0.004,
+}
+
+EVENT_V3_NAVIGATION_COMMON_CAPS = {
+    "action_move": 40,
+}
+
+EVENT_V3_NAVIGATION_TASK_COEFFICIENTS = {
+    "resource_water": 0.45,
+    "resource_wheat": 0.45,
+    "resource_wood": 0.45,
+    "resource_ore": 0.45,
+    "craft_battery": 1.00,
+    "craft_spear": 1.00,
+    "craft_lantern": 1.00,
+    "craft_armor": 1.00,
+    "craft_bread": 1.00,
+    "deposit_heart": 2.00,
+    "put_armor": 0.75,
+    "put_bread": 0.75,
+    "tumor_kill": 2.00,
+    "spawner_kill": 2.00,
+    "agent_kill": 0.75,
+    "lantern_plant": 1.00,
+}
+
+EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_water": 0.20,
+        "resource_wheat": 0.20,
+        "resource_wood": 0.20,
+        "resource_ore": 0.20,
+    },
+    "crafter_logistics": {
+        "craft_battery": 0.35,
+        "craft_spear": 0.35,
+        "craft_lantern": 0.35,
+        "craft_armor": 0.35,
+        "craft_bread": 0.35,
+        "deposit_heart": 0.50,
+        "put_armor": 0.25,
+        "put_bread": 0.25,
+    },
+    "defender_territory": {
+        "tumor_kill": 0.50,
+        "spawner_kill": 0.50,
+        "agent_kill": 0.25,
+        "lantern_plant": 0.30,
+    },
+}
+
 _STAT_INDEX = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
 
 
@@ -173,6 +233,50 @@ def event_v2_breadcrumb_role_shaping_bonuses(
     return bonuses
 
 
+def event_v3_navigation_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return navigation-first breadcrumbs that reject blind invalid use spam.
+
+    ``event_v2_breadcrumbs`` proved that task-event rewards can fire, but PPO
+    found a bad local optimum: repeat one ``use`` direction forever and collect
+    the rare accidental resource pickup. This design keeps the task-event
+    breadcrumbs, adds a capped successful-movement bonus so agents can discover
+    objects, and makes invalid actions expensive enough that fixed use spam is
+    not competitive.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is None:
+        return np.zeros(num_agents, dtype=np.float64)
+    totals = _validate_event_stats_total(event_stats_total, num_agents)
+
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    uncapped_common = {
+        name: coefficient
+        for name, coefficient in EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS.items()
+        if name not in EVENT_V3_NAVIGATION_COMMON_CAPS
+    }
+    capped_common = {
+        name: coefficient
+        for name, coefficient in EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS.items()
+        if name in EVENT_V3_NAVIGATION_COMMON_CAPS
+    }
+    _add_agent_coefficients(bonuses, stats, uncapped_common)
+    _add_capped_agent_coefficients(bonuses, stats, totals, capped_common, EVENT_V3_NAVIGATION_COMMON_CAPS)
+    _add_agent_coefficients(bonuses, stats, EVENT_V3_NAVIGATION_TASK_COEFFICIENTS)
+    _add_role_coefficients(
+        bonuses,
+        stats,
+        EVENT_V3_NAVIGATION_ROLE_NAMES,
+        EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -205,6 +309,25 @@ def event_v2_breadcrumb_reward_design_details() -> dict[str, Any]:
     }
 
 
+def event_v3_navigation_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the navigation reward design."""
+
+    return {
+        "name": "event_v3_navigation_breadcrumbs",
+        "summary": (
+            "Exploratory reward with capped successful movement, stronger task-event "
+            "breadcrumbs, and a larger invalid-action penalty to avoid fixed use spam."
+        ),
+        "role_names": list(EVENT_V3_NAVIGATION_ROLE_NAMES),
+        "common_coefficients": dict(EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS),
+        "common_caps": dict(EVENT_V3_NAVIGATION_COMMON_CAPS),
+        "task_event_coefficients": dict(EVENT_V3_NAVIGATION_TASK_COEFFICIENTS),
+        "role_coefficients": {role: dict(coeffs) for role, coeffs in EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS.items()},
+        "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
+        "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+    }
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -219,6 +342,20 @@ def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents
     return np.maximum(stats, 0.0)
 
 
+def _validate_event_stats_total(event_stats_total: np.ndarray | None, num_agents: int) -> np.ndarray | None:
+    if event_stats_total is None:
+        return None
+
+    stats = np.asarray(event_stats_total, dtype=np.float64)
+    if stats.ndim != 2:
+        raise ValueError("event_stats_total must have shape [agents, stat_columns]")
+    if stats.shape[0] != num_agents:
+        raise ValueError(f"event_stats_total has {stats.shape[0]} agents, expected {num_agents}")
+    if stats.shape[1] != len(SIMULATOR_STAT_COLUMNS):
+        raise ValueError(f"event_stats_total has {stats.shape[1]} columns, expected {len(SIMULATOR_STAT_COLUMNS)}")
+    return np.maximum(stats, 0.0)
+
+
 def _add_agent_coefficients(
     bonuses: np.ndarray,
     stats: np.ndarray,
@@ -226,6 +363,23 @@ def _add_agent_coefficients(
 ) -> None:
     for stat_name, coefficient in coefficients.items():
         bonuses += coefficient * stats[:, _STAT_INDEX[stat_name]]
+
+
+def _add_capped_agent_coefficients(
+    bonuses: np.ndarray,
+    stats: np.ndarray,
+    totals: np.ndarray | None,
+    coefficients: dict[str, float],
+    caps: dict[str, int],
+) -> None:
+    if totals is None:
+        _add_agent_coefficients(bonuses, stats, coefficients)
+        return
+
+    for stat_name, coefficient in coefficients.items():
+        index = _STAT_INDEX[stat_name]
+        eligible = totals[:, index] <= caps[stat_name]
+        bonuses[eligible] += coefficient * stats[eligible, index]
 
 
 def _add_role_coefficients(

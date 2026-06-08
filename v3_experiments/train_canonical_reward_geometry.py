@@ -55,10 +55,17 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS,
     EVENT_V2_BREADCRUMB_ROLE_NAMES,
     EVENT_V2_BREADCRUMB_TASK_COEFFICIENTS,
+    EVENT_V3_NAVIGATION_COMMON_CAPS,
+    EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS,
+    EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS,
+    EVENT_V3_NAVIGATION_ROLE_NAMES,
+    EVENT_V3_NAVIGATION_TASK_COEFFICIENTS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
     event_v2_breadcrumb_role_shaping_bonuses,
+    event_v3_navigation_reward_design_details,
+    event_v3_navigation_role_shaping_bonuses,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -314,7 +321,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument(
         "--reward-design",
-        choices=("passive_v0", "event_v1", "event_v2_breadcrumbs"),
+        choices=("passive_v0", "event_v1", "event_v2_breadcrumbs", "event_v3_navigation_breadcrumbs"),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
     )
@@ -456,6 +463,7 @@ def _train_policy(
                 env_rewards,
                 config,
                 event_stats_delta=event_stats.delta(env),
+                event_stats_total=event_stats.current,
             )
             shaped_rewards = reward_components["mixed_rewards"]
 
@@ -639,6 +647,7 @@ def _evaluate_policy(
                     rewards,
                     config,
                     event_stats_delta=event_stats.delta(env),
+                    event_stats_total=event_stats.current,
                 )
                 returns += reward_components["mixed_rewards"]
                 raw_env_returns += reward_components["raw_env_rewards"]
@@ -792,10 +801,17 @@ def _canonical_reward_components(
     config: RunnerConfig,
     *,
     event_stats_delta: np.ndarray | None = None,
+    event_stats_total: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     raw_env_rewards = np.asarray(env_rewards, dtype=np.float64)
     if not config.disable_role_shaping:
-        bonuses = _role_shaping_bonuses_for_design(obs, raw_env_rewards.shape[-1], config, event_stats_delta)
+        bonuses = _role_shaping_bonuses_for_design(
+            obs,
+            raw_env_rewards.shape[-1],
+            config,
+            event_stats_delta,
+            event_stats_total,
+        )
     else:
         bonuses = np.zeros_like(raw_env_rewards, dtype=np.float64)
     individual_rewards = raw_env_rewards + bonuses
@@ -813,12 +829,14 @@ def _canonical_rewards(
     config: RunnerConfig,
     *,
     event_stats_delta: np.ndarray | None = None,
+    event_stats_total: np.ndarray | None = None,
 ) -> np.ndarray:
     return _canonical_reward_components(
         obs,
         env_rewards,
         config,
         event_stats_delta=event_stats_delta,
+        event_stats_total=event_stats_total,
     )["mixed_rewards"]
 
 
@@ -827,6 +845,7 @@ def _role_shaping_bonuses_for_design(
     num_agents: int,
     config: RunnerConfig,
     event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
 ) -> np.ndarray:
     if config.reward_design == "passive_v0":
         return role_shaping_bonuses(
@@ -838,6 +857,12 @@ def _role_shaping_bonuses_for_design(
         return event_v1_role_shaping_bonuses(event_stats_delta, num_agents=num_agents)
     if config.reward_design == "event_v2_breadcrumbs":
         return event_v2_breadcrumb_role_shaping_bonuses(event_stats_delta, num_agents=num_agents)
+    if config.reward_design == "event_v3_navigation_breadcrumbs":
+        return event_v3_navigation_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -849,13 +874,20 @@ def _make_env(config: RunnerConfig) -> CanonicalEnv:
 
 class _EventStatsTracker:
     def __init__(self, env: CanonicalEnv) -> None:
-        self._previous = _copy_action_stats(env)
+        self._current = _copy_action_stats(env)
+        self._previous = None if self._current is None else self._current.copy()
 
     def reset(self, env: CanonicalEnv) -> None:
-        self._previous = _copy_action_stats(env)
+        self._current = _copy_action_stats(env)
+        self._previous = None if self._current is None else self._current.copy()
+
+    @property
+    def current(self) -> np.ndarray | None:
+        return None if self._current is None else self._current.copy()
 
     def delta(self, env: CanonicalEnv) -> np.ndarray | None:
         current = _copy_action_stats(env)
+        self._current = current
         if current is None:
             self._previous = None
             return None
@@ -951,6 +983,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V1_ROLE_NAMES)
     if config.reward_design == "event_v2_breadcrumbs":
         return list(EVENT_V2_BREADCRUMB_ROLE_NAMES)
+    if config.reward_design == "event_v3_navigation_breadcrumbs":
+        return list(EVENT_V3_NAVIGATION_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -966,6 +1000,13 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "task_events": dict(EVENT_V2_BREADCRUMB_TASK_COEFFICIENTS),
             "roles": {role: dict(coefficients) for role, coefficients in EVENT_V2_BREADCRUMB_ROLE_COEFFICIENTS.items()},
         }
+    if config.reward_design == "event_v3_navigation_breadcrumbs":
+        return {
+            "common": dict(EVENT_V3_NAVIGATION_COMMON_COEFFICIENTS),
+            "common_caps": dict(EVENT_V3_NAVIGATION_COMMON_CAPS),
+            "task_events": dict(EVENT_V3_NAVIGATION_TASK_COEFFICIENTS),
+            "roles": {role: dict(coefficients) for role, coefficients in EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS.items()},
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -974,6 +1015,8 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v1_reward_design_details()
     if config.reward_design == "event_v2_breadcrumbs":
         return event_v2_breadcrumb_reward_design_details()
+    if config.reward_design == "event_v3_navigation_breadcrumbs":
+        return event_v3_navigation_reward_design_details()
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

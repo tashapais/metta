@@ -881,6 +881,99 @@ Ramp rules for `event_v2_breadcrumbs`:
 - If `event_v2_breadcrumbs` still fails, the next step should be curriculum or
   scripted/imitation warm starts, not larger budgets.
 
+### Reward-Debug Continuation: `event_v3_navigation_breadcrumbs`
+
+`event_v2_breadcrumbs` was implemented and tested on the same Stage-1 ramp.
+
+Run date:
+
+- 2026-06-08.
+
+Sandbox staging:
+
+- `relh-sandbox-1` and `relh-sandbox-2` used clean detached worktrees at
+  `/workspace/tribal_event_v2_66b093eaf`.
+- Exact commit: `66b093eafcb8bcb637eb47118238307f07e9bd43`.
+- Local smoke and sandbox GPU smokes succeeded with
+  `--reward-design event_v2_breadcrumbs`.
+
+Stage-1 `event_v2_breadcrumbs` runs:
+
+| Seed | Sandbox | Run directory | Steps | Status |
+| ---: | --- | --- | ---: | --- |
+| `0` | `relh-sandbox-1` | `/workspace/tribal_event_v2_runs/stage1/stage1_event_v2_breadcrumbs_alpha0_seed0_1m_66b093eaf` | `1,000,008` | complete |
+| `1` | `relh-sandbox-1` | `/workspace/tribal_event_v2_runs/stage1/stage1_event_v2_breadcrumbs_alpha0_seed1_1m_66b093eaf` | `1,000,008` | complete |
+| `2` | `relh-sandbox-2` | `/workspace/tribal_event_v2_runs/stage1/stage1_event_v2_breadcrumbs_alpha0_seed2_1m_66b093eaf` | `1,000,008` | complete |
+
+Stage-1 `event_v2_breadcrumbs` training summary:
+
+| Seed | EffRank/n | Ordered KL | JS diversity | Role probe | Eval raw return | Eval shaping return | Train shaping return |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `0.0937` | `0.000088` | `0.000022` | `0.425` | `-10.33` | `-0.982` | `0.00092` |
+| `1` | `0.0902` | `0.000168` | `0.000042` | `0.565` | `-10.33` | `-0.933` | `0.00274` |
+| `2` | `0.0920` | `0.000249` | `0.000062` | `0.351` | `-10.82` | `-0.981` | `0.02108` |
+
+Behavior-gate artifacts:
+
+- Baselines and seed-0/seed-1 checkpoint rollouts:
+  `/workspace/tribal_event_v2_runs/behavior_gate` on `relh-sandbox-1`.
+- Seed-2 checkpoint rollouts:
+  `/workspace/tribal_event_v2_runs/behavior_gate` on `relh-sandbox-2`.
+- Replays are JSONL files under each rollout directory's `replays/`
+  subdirectory.
+
+Behavior summary:
+
+| Policy | Raw reward | Task events | Resources | Crafts | Deposits | Combat | Unique joint actions | Invalid frac | Flags |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `no_op` | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `1.0` | `0.00` | `no_task_events,single_joint_action,mostly_noop` |
+| `random` | `-17.733` | `15.0` | `37` | `5` | `0` | `1` | `120.0` | `0.75` | `mostly_invalid` |
+| `move_sweep` | `-16.067` | `0.0` | `0` | `0` | `0` | `0` | `8.0` | `0.07` | `no_task_events` |
+| `use_sweep` | `-14.400` | `9.3` | `21` | `7` | `0` | `0` | `8.0` | `0.99` | `mostly_invalid` |
+| seed-0 deterministic checkpoint | `-14.400` | `0.7` | `2` | `0` | `0` | `0` | `1.0` | `1.00` | `single_joint_action,mostly_invalid` |
+| seed-0 stochastic checkpoint | `-14.333` | `25.0` | `74` | `1` | `0` | `0` | `120.0` | `0.77` | `mostly_invalid` |
+| seed-1 deterministic checkpoint | `-14.400` | `1.7` | `5` | `0` | `0` | `0` | `1.0` | `1.00` | `single_joint_action,mostly_invalid` |
+| seed-1 stochastic checkpoint | `-16.033` | `30.3` | `88` | `3` | `0` | `0` | `120.0` | `0.78` | `mostly_invalid` |
+| seed-2 deterministic checkpoint | `-14.400` | `1.3` | `4` | `0` | `0` | `0` | `1.0` | `1.00` | `single_joint_action,mostly_invalid` |
+| seed-2 stochastic checkpoint | `-16.067` | `50.0` | `135` | `7` | `0` | `0` | `120.0` | `0.77` | `mostly_invalid` |
+
+Interpretation:
+
+- Training did attempt to discover the shaped rewards. `event_v1` gave zero
+  deterministic shaping return, and `event_v2_breadcrumbs` found only a bad
+  local optimum.
+- The deterministic `event_v2` checkpoints always collapsed to one repeated
+  `use` action: seed 0 used action `27`, seed 1 used action `28`, and seed 2
+  used action `29`.
+- Those fixed `use` policies occasionally collect a resource by accident, but
+  almost every action is invalid. This is not meaningful Tribal Village
+  behavior and does not pass the behavior gate.
+- Stochastic checkpoint rollouts produce task events only because they are noisy
+  and random-like; the invalid fraction remains about `0.77`, so these are not
+  behavior-valid policies either.
+
+Next reward-debug design:
+
+- Add `event_v3_navigation_breadcrumbs`.
+- Keep all reward terms tied to simulator event deltas.
+- Add a small successful-movement breadcrumb capped per agent per episode. This
+  is an exploration scaffold, not a final task reward.
+- Increase task-event rewards so resource/craft/deposit/defense events dominate
+  blind action spam.
+- Increase the invalid-action penalty relative to `event_v2`, because the
+  observed failure mode is repeated invalid `use`.
+
+Promotion rule:
+
+- Do not promote `event_v3_navigation_breadcrumbs` only because shaped return is
+  positive.
+- Promote only if deterministic checkpoint rollouts no longer collapse to a
+  single joint action, invalid fraction drops materially below random/use-sweep,
+  and task-event counts beat no-op plus the fixed sweep baselines.
+- If `event_v3_navigation_breadcrumbs` still collapses, stop reward-only
+  debugging and switch to a curriculum, action masking, or scripted/imitation
+  warm start.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
