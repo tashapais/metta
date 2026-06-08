@@ -619,11 +619,15 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
         train_metrics = _train_policy(policy, optimizer, env, config, device, wandb_run)
         eval_summary = _evaluate_policy(policy, env, config, device)
 
+        checkpoint_config = asdict(config)
+        checkpoint_config["chain_affordance_action_mask"] = _uses_chain_affordance_action_mask(config)
+        checkpoint_config["chain_compass_observation"] = _uses_chain_compass_observation(config)
+
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
                 "model_state_dict": policy.state_dict(),
-                "config": asdict(config),
+                "config": checkpoint_config,
                 "env": _env_metadata(env),
                 "train_metrics": train_metrics,
                 "eval_summary": eval_summary,

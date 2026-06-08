@@ -439,7 +439,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
 
     separate_encoders = bool(config.get("separate_encoders", False))
     use_action_mask = bool(config.get("use_action_mask", False))
-    chain_affordance_action_mask = bool(config.get("chain_affordance_action_mask", False))
+    chain_affordance_action_mask = _checkpoint_uses_chain_affordance_action_mask(config)
     policy = ActorCritic(
         env.obs_shape,
         env.action_space_size,
@@ -455,6 +455,12 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         separate_encoders=separate_encoders,
         use_action_mask=use_action_mask,
         chain_affordance_action_mask=chain_affordance_action_mask,
+    )
+
+
+def _checkpoint_uses_chain_affordance_action_mask(config: dict[str, Any]) -> bool:
+    return bool(config.get("chain_affordance_action_mask", False)) or (
+        config.get("reward_design") == "event_v10_chain_affordance_compass_breadcrumbs"
     )
 
 

@@ -2,6 +2,7 @@ import json
 
 import numpy as np
 import pytest
+import torch
 
 from v3_experiments.canonical_reward_geometry import (
     ROLE_PROBE_CV,
@@ -16,6 +17,7 @@ from v3_experiments.canonical_reward_geometry import (
     role_shaping_bonuses,
     summarize_probe_audit,
 )
+from v3_experiments.run_tribal_behavior_rollouts import _checkpoint_uses_chain_affordance_action_mask
 from v3_experiments.train_canonical_reward_geometry import (
     CHAIN_COMPASS_CENTER_VALUE,
     CHAIN_COMPASS_NEGATIVE_VALUE,
@@ -1316,6 +1318,26 @@ def test_train_canonical_reward_geometry_event_v10_chain_affordance_mock_smoke(t
     assert record["reward_design_details"]["action_affordance_curriculum"]["enabled"] is True
     assert record["role_shaping_coefficients"]["chain_affordance_action_mask"]["reward_penalties_added"] is False
     assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    assert checkpoint["config"]["chain_affordance_action_mask"] is True
+    assert checkpoint["config"]["chain_compass_observation"] is True
+
+
+def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v10_chain_affordance_compass_breadcrumbs",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask({"chain_affordance_action_mask": True})
+    assert not _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v9_potential_chain_compass_breadcrumbs",
+            "chain_affordance_action_mask": False,
+        }
+    )
 
 
 def _test_v9_potential(stage_name: str, distance: float) -> float:
