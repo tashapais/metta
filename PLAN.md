@@ -1671,6 +1671,48 @@ V7 Stage-1 outcome:
     chain-compass/curriculum condition rather than the original MAPPO-only
     reward-shaping condition.
 
+### Reward-Debug Continuation: `event_v8_clean_chain_compass_breadcrumbs`
+
+Purpose:
+
+- Preserve the v7 result that made the heart chain trainable.
+- Test whether the remaining off-chain activity is incidental exploration or a
+  stable local optimum.
+- Keep v8 as a debug/curriculum condition, not a final paper condition.
+
+Design:
+
+- Reuse the v7 observation intervention:
+  - canonical local observation plus five chain-compass planes;
+  - checkpoint observation contract remains `[26, 11, 11]`.
+- Reuse v7/v6 chain rewards:
+  - `resource_ore`: `1.00`;
+  - `craft_battery`: `8.00`;
+  - `deposit_heart`: `40.00`;
+  - inventory-conditioned progress and mask-valid oracle-action bonuses
+    unchanged.
+- Add small negative coefficients for successful off-chain events seen in v7:
+  - water/wheat/wood pickups: `-0.10`;
+  - armor/bread/lantern/spear crafts: `-1.00`;
+  - armor/bread handoffs: `-0.50`;
+  - tumor/spawner/agent kills and lantern plants: `-0.25`.
+- The penalties are intentionally much smaller than chain rewards, so a clean
+  deposit trajectory should remain strongly preferred over avoiding all action.
+
+V8 promotion criteria:
+
+- Do not regress the v7 deposit gate:
+  - every seed should still have nonzero deposits in deterministic or
+    stochastic behavior rollouts;
+  - ideally deterministic deposits stay near the v7 range of `9-35` hearts over
+    the 3-episode behavior gate.
+- Off-chain events should decrease relative to v7:
+  - fewer water/wheat/wood pickups;
+  - fewer non-battery crafts;
+  - less combat.
+- If deposits collapse, revert to v7 for representation work and treat off-chain
+  cleanup as a separate curriculum problem.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

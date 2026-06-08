@@ -81,6 +81,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
     EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS,
     EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES,
+    EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_HOME_ASSEMBLER_X,
@@ -105,6 +107,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v6_oracle_chain_reward_design_details,
     event_v6_oracle_chain_role_shaping_bonuses,
     event_v7_chain_compass_reward_design_details,
+    event_v8_clean_chain_compass_reward_design_details,
+    event_v8_clean_chain_compass_role_shaping_bonuses,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -525,6 +529,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v5_navigation_chain_breadcrumbs",
             "event_v6_oracle_chain_breadcrumbs",
             "event_v7_chain_compass_breadcrumbs",
+            "event_v8_clean_chain_compass_breadcrumbs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -1162,6 +1167,16 @@ def _role_shaping_bonuses_for_design(
             action_mask=action_mask_before,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
+        return event_v8_clean_chain_compass_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1178,7 +1193,10 @@ def _make_env(config: RunnerConfig) -> CanonicalEnv:
 
 
 def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
-    return config.chain_compass_observation or config.reward_design == "event_v7_chain_compass_breadcrumbs"
+    return config.chain_compass_observation or config.reward_design in (
+        "event_v7_chain_compass_breadcrumbs",
+        "event_v8_clean_chain_compass_breadcrumbs",
+    )
 
 
 class _EventStatsTracker:
@@ -1316,6 +1334,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V6_ORACLE_CHAIN_ROLE_NAMES)
     if config.reward_design == "event_v7_chain_compass_breadcrumbs":
         return list(EVENT_V7_CHAIN_COMPASS_ROLE_NAMES)
+    if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
+        return list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1382,6 +1402,19 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
+        return {
+            "common": dict(EVENT_V6_ORACLE_CHAIN_COMMON_COEFFICIENTS),
+            "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
+            "navigation_progress": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_COEFFICIENTS),
+            "navigation_progress_caps": dict(EVENT_V6_ORACLE_CHAIN_PROGRESS_CAPS),
+            "oracle_actions": dict(EVENT_V6_ORACLE_CHAIN_ACTION_COEFFICIENTS),
+            "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
+            "off_chain_penalties": dict(EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES),
+            "roles": {
+                role: dict(coefficients) for role, coefficients in EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1400,6 +1433,8 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v6_oracle_chain_reward_design_details()
     if config.reward_design == "event_v7_chain_compass_breadcrumbs":
         return event_v7_chain_compass_reward_design_details()
+    if config.reward_design == "event_v8_clean_chain_compass_breadcrumbs":
+        return event_v8_clean_chain_compass_reward_design_details()
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

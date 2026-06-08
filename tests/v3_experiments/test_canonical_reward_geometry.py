@@ -38,6 +38,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES,
     EVENT_V6_ORACLE_CHAIN_ROLE_NAMES,
     EVENT_V7_CHAIN_COMPASS_ROLE_NAMES,
+    EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES,
+    EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES,
     NAV_AGENT_X,
     NAV_AGENT_Y,
     NAV_DIST_HOME_ASSEMBLER,
@@ -65,6 +67,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v6_oracle_chain_reward_design_details,
     event_v6_oracle_chain_role_shaping_bonuses,
     event_v7_chain_compass_reward_design_details,
+    event_v8_clean_chain_compass_reward_design_details,
+    event_v8_clean_chain_compass_role_shaping_bonuses,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -422,6 +426,56 @@ def test_event_v7_chain_compass_reward_design_details_are_serializable():
     assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
     assert details["oracle_action_coefficients"]["use_chain_target"] > 0
     assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
+
+
+def test_event_v8_clean_chain_compass_penalizes_off_chain_task_events():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+
+    stats[0, stat_index["resource_ore"]] = 1
+    stats[0, stat_index["craft_battery"]] = 1
+    stats[0, stat_index["deposit_heart"]] = 1
+
+    stats[1, stat_index["resource_water"]] = 2
+    stats[1, stat_index["resource_wheat"]] = 3
+    stats[1, stat_index["resource_wood"]] = 4
+    stats[1, stat_index["craft_armor"]] = 1
+    stats[1, stat_index["craft_bread"]] = 1
+    stats[1, stat_index["craft_lantern"]] = 1
+    stats[1, stat_index["craft_spear"]] = 1
+    stats[1, stat_index["put_armor"]] = 1
+    stats[1, stat_index["put_bread"]] = 1
+    stats[1, stat_index["tumor_kill"]] = 1
+    stats[1, stat_index["spawner_kill"]] = 1
+    stats[1, stat_index["agent_kill"]] = 1
+    stats[1, stat_index["lantern_plant"]] = 1
+
+    stats[2, stat_index["resource_ore"]] = 1
+    stats[2, stat_index["resource_water"]] = 1
+    stats[2, stat_index["craft_armor"]] = 1
+
+    bonuses = event_v8_clean_chain_compass_role_shaping_bonuses(stats)
+
+    assert bonuses[0] == pytest.approx(1.0 + 8.0 + 40.0)
+    off_chain_total = sum(
+        stats[1, stat_index[name]] * coefficient
+        for name, coefficient in EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES.items()
+    )
+    assert bonuses[1] == pytest.approx(off_chain_total)
+    assert bonuses[2] == pytest.approx(1.0 - 0.10 - 1.00)
+    np.testing.assert_allclose(event_v8_clean_chain_compass_role_shaping_bonuses(None), np.zeros(12))
+
+
+def test_event_v8_clean_chain_compass_reward_design_details_are_serializable():
+    details = event_v8_clean_chain_compass_reward_design_details()
+
+    assert details["name"] == "event_v8_clean_chain_compass_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES)
+    assert set(details["task_event_coefficients"]) == {"craft_battery", "deposit_heart", "resource_ore"}
+    assert details["oracle_action_coefficients"]["use_chain_target"] > 0
+    assert details["observation_breadcrumbs"]["planes"] == list(CHAIN_COMPASS_OBSERVATION_PLANES)
+    assert details["off_chain_penalty_coefficients"]["resource_water"] < 0
+    assert details["off_chain_penalty_coefficients"]["craft_armor"] < 0
 
 
 def test_chain_compass_observation_tracks_inventory_conditioned_target():
@@ -954,6 +1008,63 @@ def test_train_canonical_reward_geometry_event_v7_chain_compass_mock_smoke(tmp_p
     assert record["reward_design_details"]["observation_breadcrumbs"]["planes"] == list(
         CHAIN_COMPASS_OBSERVATION_PLANES
     )
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def test_train_canonical_reward_geometry_event_v8_clean_chain_compass_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v8_result.json"
+    checkpoint_path = tmp_path / "event_v8_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v8_clean_chain_compass_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v8_clean_chain_compass_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES)
+    assert record["chain_compass_observation"] is True
+    assert record["obs_shape"] == [26, 11, 11]
+    assert record["reward_design_details"]["off_chain_penalty_coefficients"]["resource_water"] < 0
+    assert record["role_shaping_coefficients"]["off_chain_penalties"]["craft_armor"] < 0
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 

@@ -16,6 +16,7 @@ EVENT_V4_HEART_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V5_NAVIGATION_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V6_ORACLE_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V7_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -381,6 +382,22 @@ EVENT_V6_ORACLE_CHAIN_ACTION_CAPS = {
 
 EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS = {role: {} for role in EVENT_V6_ORACLE_CHAIN_ROLE_NAMES}
 
+EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
+    "resource_water": -0.10,
+    "resource_wheat": -0.10,
+    "resource_wood": -0.10,
+    "craft_spear": -1.00,
+    "craft_lantern": -1.00,
+    "craft_armor": -1.00,
+    "craft_bread": -1.00,
+    "put_armor": -0.50,
+    "put_bread": -0.50,
+    "tumor_kill": -0.25,
+    "spawner_kill": -0.25,
+    "agent_kill": -0.25,
+    "lantern_plant": -0.25,
+}
+
 ACTION_ARGUMENT_COUNT = 8
 MOVE_VERB = 1
 USE_VERB = 3
@@ -622,6 +639,40 @@ def event_v6_oracle_chain_role_shaping_bonuses(
     return bonuses
 
 
+def event_v8_clean_chain_compass_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v7 chain-compass rewards with small off-chain event penalties.
+
+    ``event_v7_chain_compass_breadcrumbs`` produced real heart deposits, but
+    behavior gates still showed frequent water/wheat/wood collection, non-chain
+    crafting, and combat. This v8 debug design keeps the successful chain
+    incentives intact while charging bounded penalties for those off-chain
+    successful task events.
+    """
+
+    bonuses = event_v6_oracle_chain_role_shaping_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=num_agents,
+    )
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is not None:
+        _add_agent_coefficients(bonuses, stats, EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES)
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -767,6 +818,25 @@ def event_v7_chain_compass_reward_design_details() -> dict[str, Any]:
                     "feed-forward policy instead of relying on hidden global map state."
                 ),
             },
+        }
+    )
+    return details
+
+
+def event_v8_clean_chain_compass_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the clean chain-compass design."""
+
+    details = event_v7_chain_compass_reward_design_details()
+    details.update(
+        {
+            "name": "event_v8_clean_chain_compass_breadcrumbs",
+            "summary": (
+                "Debug reward that keeps the v7 chain-compass intervention "
+                "and adds small negative coefficients for successful off-chain "
+                "task events observed in v7 behavior gates."
+            ),
+            "role_names": list(EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES),
+            "off_chain_penalty_coefficients": dict(EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES),
         }
     )
     return details
