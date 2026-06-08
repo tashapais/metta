@@ -740,6 +740,99 @@ Live monitoring loop:
 - Update this section with concrete run names, artifact paths, and pass/fail
   status as jobs finish.
 
+### Stage-1 Status: Failed Behavior Gate
+
+Run date:
+
+- 2026-06-08.
+
+Sandbox staging:
+
+- `relh-sandbox-1` and `relh-sandbox-2` were both up and SSH reachable.
+- Both sandboxes used clean detached worktrees at
+  `/workspace/tribal_event_v1_0741537b`.
+- Exact commit: `0741537b6d231640382307f3dbf294dbbe0afa32`.
+- `/workspace/metta` was not reset. This mattered because `relh-sandbox-2`
+  had a dirty `MODULE.bazel.lock`.
+
+Launch note:
+
+- W&B online launch failed with a 404 for project
+  `tashapais/representation-collapse`.
+- Stage-1 runs were relaunched with `--wandb-mode offline`.
+- Offline W&B directories were written under each run directory and can be
+  synced later if the project/access issue is fixed.
+
+Stage-1 training runs:
+
+| Seed | Sandbox | Run directory | Steps | Status |
+| ---: | --- | --- | ---: | --- |
+| `0` | `relh-sandbox-1` | `/workspace/tribal_event_v1_runs/stage1/event_v1_stage1_alpha0_seed0_1m_0741537b_offline` | `1,000,008` | complete |
+| `1` | `relh-sandbox-1` | `/workspace/tribal_event_v1_runs/stage1/event_v1_stage1_alpha0_seed1_1m_0741537b_offline` | `1,000,008` | complete |
+| `2` | `relh-sandbox-2` | `/workspace/tribal_event_v1_runs/stage1/event_v1_stage1_alpha0_seed2_1m_0741537b_offline` | `1,000,008` | complete |
+
+Stage-1 training summary:
+
+| Seed | EffRank/n | Ordered KL | JS diversity | Role probe | Eval raw return | Eval shaping return |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `0.0847` | `0.00112` | `0.000279` | `0.412` | `-11.07` | `0.0` |
+| `1` | `0.0840` | `0.000121` | `0.000030` | `0.395` | `-10.90` | `0.0` |
+| `2` | `0.0842` | `0.000224` | `0.000056` | `0.290` | `-10.03` | `0.0` |
+
+Interpretation:
+
+- Representation and action-diversity metrics are already collapsed-looking at
+  this budget.
+- More importantly, `mean_role_shaping_return` is zero in deterministic eval for
+  all three seeds. The event reward is not being discovered by the learned
+  policy.
+
+Behavior-gate rollouts:
+
+- Baselines and checkpoint rollouts were saved under
+  `/workspace/tribal_event_v1_runs/behavior_gate`.
+- Replays were saved as JSONL files under each rollout directory's `replays/`
+  subdirectory.
+- Baselines were run on `relh-sandbox-1`; seed-2 checkpoint rollouts were run on
+  `relh-sandbox-2`.
+
+Behavior summary:
+
+| Policy | Raw reward | Task events | Resources | Crafts | Deposits | Combat | Unique joint actions | Flags |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `no_op` | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `1.0` | `no_task_events,single_joint_action,mostly_noop` |
+| `random` | `-17.733` | `16.7` | `45` | `3` | `0` | `0` | `120.0` | `mostly_invalid` |
+| `move_sweep` | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `8.0` | `no_task_events` |
+| `use_sweep` | `-14.400` | `10.3` | `23` | `8` | `0` | `0` | `8.0` | `mostly_invalid` |
+| seed-0 deterministic checkpoint | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `1.0` | `no_task_events,single_joint_action` |
+| seed-0 stochastic checkpoint | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `120.0` | `no_task_events` |
+| seed-1 deterministic checkpoint | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `1.0` | `no_task_events,single_joint_action` |
+| seed-1 stochastic checkpoint | `-16.067` | `0.0` | `0` | `0` | `0` | `0` | `120.0` | `no_task_events` |
+| seed-2 deterministic checkpoint | `-16.067` | `0.0` | `0` | `0` | `0` | `0` | `1.0` | `no_task_events,single_joint_action` |
+| seed-2 stochastic checkpoint | `-14.400` | `0.0` | `0` | `0` | `0` | `0` | `120.0` | `no_task_events` |
+
+Stage-1 decision:
+
+- Failed. Do not promote these runs to Stage 2, Stage 3, or billion-step
+  experiments.
+- The counters are working: `random` and `use_sweep` can trigger resource and
+  craft events.
+- The learned policy is not discovering those event rewards under the current
+  sparse `event_v1` setup.
+
+Immediate next research action:
+
+- Do not spend more compute on the current `event_v1` reward alone.
+- Add a discovery aid before the next ramp. The likely candidates are:
+  - a curriculum or scripted-start distribution that places agents near useful
+    resource/building interactions;
+  - a weak dense auxiliary for valid `use`/resource-proximity that decays after
+    event discovery;
+  - scripted or imitation warm starts from the Coworld AI role logic;
+  - or a short behavior-cloning/pretraining phase followed by MAPPO.
+- Re-run Stage 1 only after at least one of those changes makes task events
+  discoverable by learning, not only by random/use-sweep baselines.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
