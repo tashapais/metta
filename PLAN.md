@@ -94,6 +94,336 @@ uv run python v3_experiments/audit_reward_geometry.py \
   --output v3_experiments/canonical_reward_geometry_provenance.json
 ```
 
+## Preparation Before Reruns
+
+Do not launch the new sandbox jobs until the items in this section are handled.
+The current branch has protocol, metric helpers, and audit helpers, but it does
+not yet have a canonical training launcher for the fixed-role Tribal Village
+reward-mixing experiment. The later `paper_exp_reward_type.py` script should not
+be used for this paper section because it trains the non-canonical binary
+top/bottom return-probe stream.
+
+### 1. Finish The Provenance Recovery Decision
+
+First decide whether the pilot artifacts can be recovered or whether the rerun
+will be an explicit reconstruction from the nearest reproducible setup.
+
+Known pilot artifact names from Overleaf:
+
+- `train_condition.py`
+- `results_individual.json`
+- `results_mixed80.json`
+- `results_shared.json`
+- `log_individual.txt`
+- `log_mixed80.txt`
+- `log_shared.txt`
+- `best_model_{label}.pt`
+- `final_model_{label}.pt`
+
+Current audit state:
+
+- W&B auth works locally, but `tashapais/representation-collapse` may not be
+  visible to the currently authenticated account. If that remains true, record
+  this as a provenance gap rather than silently substituting another project.
+- The visible `tashapais/metta` and `metta-research/*` projects did not expose
+  the expected `paper_tribal_*` or `paper_reward_*` run names in the first audit.
+- The checked-in `results_reward_*.json` files are not canonical because their
+  probe schema is binary return top/bottom, not the fixed 3-way role probe.
+- The old pilot artifact names were not found in the fetched git refs checked so
+  far.
+
+Decision rule:
+
+- If the old `train_condition.py`, result JSONs, logs, and model checkpoints are
+  recovered, use them only to reconstruct the exact runner and provenance. Do
+  not promote the one-seed pilot numbers to canonical results.
+- If they are not recovered, create a new canonical runner in this branch and
+  mark the experiments as reconstructed reruns that match the protocol below.
+
+### 2. Build Or Recover The Canonical Runner
+
+Add or recover a runner with an explicit entrypoint, tentatively:
+
+```bash
+uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --shared-frac 0.8 \
+  --seed 0 \
+  --total-agent-steps 4000000 \
+  --eval-trials 10 \
+  --output v3_experiments/canonical_results/primary_alpha0.8_seed0.json
+```
+
+The runner must implement the canonical environment and policy contract:
+
+- Tribal Village, 1 team x 12 agents, 80x80 map.
+- Fixed roles from `agent_id % 3`: four gatherers, four explorers, four
+  guardians.
+- No role observation, role id feature, or agent-specific policy parameter.
+- One shared MAPPO encoder for the primary sweep.
+- Optional separate-encoder mode only for the mechanism ablation.
+- Role-specific shaping applied before reward mixing:
+  - gatherer: `0.3 * visible_gold_tiles`
+  - explorer: `0.5` if no gold or altar is visible
+  - guardian: `2.0 * visible_altar_tiles`
+- Reward mixing exactly:
+
+```text
+r_i_alpha = (1 - alpha) * r_i_ind + alpha * mean_j(r_j_ind)
+```
+
+The runner must also expose mechanism flags, but those flags should not change
+the primary sweep by accident:
+
+- `--disable-role-shaping` for the no-role-shaping ablation.
+- `--separate-encoders` for the separate-encoder ablation.
+- An explicit run name suffix such as `primary`, `no_role_shaping`, or
+  `separate_encoders`.
+
+Implementation guardrails:
+
+- Reuse `v3_experiments/canonical_reward_geometry.py` for role labels, reward
+  mixing, ordered KL, JS diversity, and stale-probe audit behavior.
+- Keep the canonical runner separate from `paper_exp_reward_type.py` unless a
+  small shared helper is genuinely useful.
+- Do not add role labels to observations or training inputs. Role labels are for
+  reward shaping and final probe/eval only.
+- Record action and observation dimensions at runtime, because the pilot notes
+  require matching the old action space if possible.
+
+### 3. Define The Per-Seed Output Contract
+
+Every training seed must write one raw JSON file. Aggregation should only read
+these raw JSON files; it should not scrape W&B summaries as the source of truth.
+
+Required per-seed fields:
+
+- `schema_version`
+- `condition_group`: `primary`, `no_role_shaping`, or `separate_encoders`
+- `shared_frac`
+- `seed`
+- `num_agents`
+- `num_teams`
+- `map_width`
+- `map_height`
+- `role_assignment`
+- `role_shaping_enabled`
+- `separate_encoders`
+- `total_agent_steps`
+- `eval_trials`
+- `metta_git_sha`
+- `tribal_village_git_sha` or `tribal_village_build_id`
+- `command`
+- `wandb_entity`
+- `wandb_project`
+- `wandb_run_id`
+- `wandb_url`
+- `checkpoint_path`
+- `obs_shape`
+- `action_space_size`
+- `metric_schema`
+- `effrank_per_agent`
+- `d_act_ordered_kl`
+- `d_act_js`
+- `role_probe_acc`
+- `role_probe_chance`
+- `role_probe_cv`
+- `eval_trial_metrics`
+
+Metric requirements:
+
+- `role_probe_chance` must be exactly `1/3`.
+- `role_probe_acc` must be a 3-way fixed-role probe using labels
+  `agent_id % 3`.
+- `d_act_ordered_kl` must be normalized by `n_agents * (n_agents - 1)`.
+- `eval_trial_metrics` should store the 10 eval-trial values for traceability,
+  but table-level uncertainty must be across training seeds.
+
+### 4. Prepare W&B And Artifact Logging
+
+Before launching any long run, confirm where the new canonical runs will log.
+
+Required decisions:
+
+- W&B entity and project for the new reruns. Prefer
+  `tashapais/representation-collapse` if access is restored; otherwise choose a
+  visible project and record the deviation in every per-seed JSON.
+- Run naming convention. Suggested:
+  `canonical_reward_geometry_{group}_alpha{alpha}_seed{seed}`.
+- Whether checkpoint files are uploaded to W&B artifacts, S3, or both.
+
+Required W&B config fields:
+
+- full CLI command
+- git SHA
+- sandbox name
+- seed
+- `shared_frac`
+- mechanism flags
+- environment dimensions
+- role-shaping coefficients
+- action/observation dimensions
+- checkpoint directory
+
+Do not rely on committed or pasted W&B API keys in scripts. Use the sandbox
+environment, `wandb login`, or a secret manager mechanism.
+
+### 5. Prepare The Sandboxes
+
+Use the sandboxes only after SkyPilot reports them as `UP`.
+
+Status checks:
+
+```bash
+uv run sky status relh-sandbox-1 --all-users
+uv run sky status relh-sandbox-2 --all-users
+uv run sky queue relh-sandbox-1 --all-users --skip-finished
+uv run sky queue relh-sandbox-2 --all-users --skip-finished
+```
+
+Remote readiness checks for each sandbox:
+
+```bash
+uv run sky exec <sandbox> -- env -C /workspace/metta git status --short --branch
+uv run sky exec <sandbox> -- env -C /workspace/metta git rev-parse HEAD
+uv run sky exec <sandbox> -- nvidia-smi
+ssh <sandbox> "pgrep -af '[t]orchrun|[t]rain_canonical_reward_geometry.py|[t]ools/run.py' || true"
+```
+
+Remote setup checklist:
+
+- `/workspace/metta` is on the intended branch or a clean worktree at the
+  intended commit.
+- The checkout is not dirty. If it is dirty, do not reset it without explicit
+  approval; create a separate clean worktree for the experiment.
+- `uv run python -c "import wandb, torch, sklearn; print('OK')"` works.
+- Tribal Village dependencies and any native library build needed by the runner
+  are present.
+- The runner can create a 1 team x 12 agents, 80x80 environment and report
+  observation/action dimensions.
+- W&B login works from the sandbox and creates runs in the chosen project.
+- Checkpoint and output directories exist and have enough disk space.
+- Autostop behavior is understood before starting long runs.
+
+### 6. Run Short Smoke Tests Before 4M-Step Jobs
+
+Before launching the full matrix, run one very short smoke per condition family:
+
+```bash
+uv run python v3_experiments/train_canonical_reward_geometry.py \
+  --shared-frac 0.0 \
+  --seed 0 \
+  --total-agent-steps 12000 \
+  --eval-trials 1 \
+  --output /tmp/canonical_reward_geometry_smoke.json
+```
+
+Smoke acceptance criteria:
+
+- The runner completes without traceback.
+- The JSON contains all required provenance fields.
+- `role_probe_chance` is `1/3`.
+- `obs_shape` and `action_space_size` are present and stable.
+- A checkpoint is written and loadable.
+- A W&B run is created with the expected config fields.
+- `d_act_ordered_kl`, `d_act_js`, and `effrank_per_agent` are finite numbers.
+
+Only after these pass should the long jobs start.
+
+### 7. Launch The Primary Matrix
+
+Primary matrix:
+
+- `shared_frac=0.0`, seeds `0..4`
+- `shared_frac=0.8`, seeds `0..4`
+- `shared_frac=1.0`, seeds `0..4`
+
+That is 15 primary training jobs. With two 4-GPU L4 sandboxes, launch at most
+eight jobs at once, one per visible GPU, then launch the remaining seven after
+the first batch clears.
+
+Suggested first wave:
+
+- `relh-sandbox-1`: alpha `0.0` seeds `0..3`
+- `relh-sandbox-2`: alpha `0.8` seeds `0..3`
+
+Suggested second wave:
+
+- alpha `0.0` seed `4`
+- alpha `0.8` seed `4`
+- alpha `1.0` seeds `0..4`
+
+For each detached launch, record:
+
+- sandbox name
+- GPU id
+- shell/tmux session name
+- command
+- log path
+- W&B URL
+- output JSON path
+- checkpoint path
+
+Use tmux or SkyPilot task logs, but verify that the process passes environment
+startup and begins training. Do not treat job submission alone as success.
+
+### 8. Validate Finished Runs Before Aggregation
+
+After each run finishes:
+
+- Confirm process exit status and final log lines.
+- Confirm the final checkpoint exists.
+- Confirm the per-seed JSON exists and validates against the output contract.
+- Confirm W&B has the matching run ID and final metrics.
+- Confirm `role_probe_chance == 1/3`.
+- Confirm `eval_trials == 10` for full runs.
+- Confirm no table summary has been computed from eval-trial std alone.
+
+Add a small validator if needed, for example:
+
+```bash
+uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
+  v3_experiments/canonical_results/*.json
+```
+
+### 9. Run Mechanism Checks Only After Primary Health
+
+Do not start mechanism ablations until at least one full seed from each primary
+alpha has completed cleanly and passed validation.
+
+No-role-shaping ablation:
+
+- `shared_frac in {0.0, 1.0}`
+- seeds `0..2`
+- `--disable-role-shaping`
+
+Separate-encoder ablation:
+
+- `shared_frac in {0.0, 1.0}`
+- seeds `0..2`
+- `--separate-encoders`
+
+The mechanism ablations should use the same output contract and validation
+script as the primary runs.
+
+### 10. Aggregate And Prepare Paper Inputs
+
+Aggregation should produce a separate canonical summary file, not mutate the raw
+per-seed files.
+
+Required summary outputs:
+
+- mean/std across training seeds for each metric and condition
+- seed list included for each table cell
+- W&B run IDs included for each table cell
+- checkpoint paths included for each seed
+- explicit statement that uncertainty is across training seeds
+- copy-paste-ready table values for Overleaf
+
+The paper should not be updated until every primary table cell has five
+validated training seeds. If a condition fails to reproduce the pilot pattern,
+rewrite the paper around the reproduced result rather than preserving the pilot
+claim.
+
 ## Canonical Experiment Protocol
 
 Environment and policy:
