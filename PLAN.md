@@ -2162,6 +2162,38 @@ Decision:
   `use` after stable chain progress -> allow `put`/`attack`/`plant` only after
   behavior remains deposit-positive.
 
+V10 Stage-2 strict-mask ramp plan:
+
+- Purpose: test whether the constrained v10 behavior remains stable at a longer
+  budget before changing the action surface.
+- Reward design: `event_v10_chain_affordance_compass_breadcrumbs`.
+- Shared fraction: `0.0`.
+- Seeds: `0,1,2`.
+- Budget: `10,000,008` agent steps per seed.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage2_v10_chain_affordance_compass_10m`.
+- Run naming:
+  `stage2_v10_chain_affordance_compass_alpha0_seed<seed>_10m_<sha>`.
+- Sandbox split:
+  - `relh-sandbox-1`: seeds `0` and `1`, one process per GPU slot.
+  - `relh-sandbox-2`: seed `2`.
+- Keep the strict v10 action mask and chain-compass observation. Do not start a
+  representation sweep from this result unless the behavior gate remains
+  deposit-positive and cleaner than v9/v10 Stage 1.
+
+Stage-2 promotion criteria:
+
+- Every deterministic checkpoint has heart deposits in the 3-episode behavior
+  gate.
+- Deterministic raw reward remains better than no-op and random.
+- Checkpoint action attempts stay limited to `move`, `noop`, and chain-target
+  `use` under the strict mask.
+- Invalid-action fraction does not increase materially from the Stage-1 strict
+  masked gate.
+- If Stage 2 passes, the next run should be an annealing/transfer experiment,
+  not a final paper sweep: start from the Stage-2 checkpoint and relax only one
+  affordance family at a time.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2255,6 +2287,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run first v10 chain-affordance cleanup ramp.
 - [x] Rerun v10 after strict action-mask fallback fix.
 - [x] Fix v10 checkpoint metadata so behavior rollouts use the effective mask.
+- [ ] Run v10 Stage-2 strict-mask 10M ramp.
+- [ ] Run v10 Stage-2 behavior gate.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
