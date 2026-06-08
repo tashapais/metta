@@ -1331,6 +1331,77 @@ Next ramp:
   be either a short scripted/imitation warm start for the home-assembler leg or
   a curriculum map with shorter mine -> converter -> assembler distances.
 
+V5 Stage-1 outcome:
+
+- Stage-1 ran at `shared_frac=0.0` for `1,000,008` agent steps with
+  `event_v5_navigation_chain_breadcrumbs`, `--use-action-mask`, and offline
+  W&B.
+- Branch/worktree commit: `44e889d63d6474f4286315aacd8a3afc4cfac3f0`.
+- Run directories:
+  - `/workspace/tribal_event_mask_runs/stage1_v5_navigation_chain_1m/seed0`
+  - `/workspace/tribal_event_mask_runs/stage1_v5_navigation_chain_1m/seed1`
+  - `/workspace/tribal_event_mask_runs/stage1_v5_navigation_chain_1m/seed2`
+- Result JSON validation passed with `--allow-smoke` for all three seeds.
+
+V5 Stage-1 final eval summary:
+
+| Seed | Eval raw return | Eval role shaping | Eval total return | EffRank/n | JS diversity | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-10.66` | `2.07` | `-8.58` | `0.138` | `0.295` | `0.377` |
+| `1` | `-10.23` | `2.30` | `-7.93` | `0.128` | `0.378` | `0.388` |
+| `2` | `-10.52` | `1.72` | `-8.80` | `0.146` | `0.420` | `0.321` |
+
+V5 Stage-1 behavior gate:
+
+- Behavior artifacts:
+  - `relh-sandbox-1:/workspace/tribal_event_mask_runs/behavior_gate_stage1_v5_navigation_chain_44e889d63`
+  - `relh-sandbox-2:/workspace/tribal_event_mask_runs/behavior_gate_stage1_v5_navigation_chain_44e889d63`
+- Rollout shape: `3` episodes x `240` steps, with JSONL replays and periodic
+  rendered/inventory/world/navigation snapshots.
+- Baselines on `relh-sandbox-1`:
+  - no-op: `0` task events;
+  - move-sweep: `0` task events, invalid fraction `0.07`;
+  - random: `43.3` mean task events, invalid fraction `0.73`;
+  - use-sweep: `6.7` mean task events, invalid fraction `1.00`.
+- Deterministic checkpoints:
+  - seed 0: `117.0` mean task events, invalid fraction `0.28`,
+    `0` battery crafts, `0` deposits;
+  - seed 1: `33.0` mean task events, invalid fraction `0.20`,
+    `0` battery crafts, `0` deposits;
+  - seed 2: `89.7` mean task events, invalid fraction `0.39`,
+    `0` battery crafts, `0` deposits.
+- Stochastic checkpoints:
+  - seed 0: `172.0` mean task events, invalid fraction `0.02`,
+    `5` battery crafts, `0` deposits;
+  - seed 1: `137.3` mean task events, invalid fraction `0.03`,
+    `0` battery crafts, `0` deposits;
+  - seed 2: `82.3` mean task events, invalid fraction `0.14`,
+    `3` battery crafts, `1` deposit.
+- Replay evidence for the deposit:
+  - seed 2 stochastic, episode `1`, step `10`: agent `10` crafted a battery
+    via `use`, receiving raw reward `0.79` after the step cost;
+  - seed 2 stochastic, episode `1`, step `57`: agent `10` used the assembler
+    and received raw reward `0.99`, confirming a heart deposit.
+
+V5 Stage-1 decision:
+
+- V5 is the first reward-debug setup to produce a nonzero heart deposit.
+- Do not promote to shared-fraction representation sweeps yet. The behavior is
+  still weak: deposits occurred only once, only under stochastic sampling, and
+  deterministic rollouts still did not craft batteries or deposit hearts.
+- Promote v5 to a `10M`-agent-step Stage-2 debug run at `shared_frac=0.0` for
+  seeds `0,1,2`.
+- Stage-2 promotion criteria:
+  - nonzero deposits in deterministic or repeatable stochastic gates;
+  - more than isolated one-off battery crafts;
+  - invalid fraction remains below random/use-sweep;
+  - raw return improves relative to no-op/move-sweep, not just shaped return.
+- If Stage 2 does not increase deposits, switch to either:
+  - a short scripted/imitation warm start for the ore -> converter -> assembler
+    chain; or
+  - a curriculum/debug map with shorter mine -> converter -> assembler
+    distances before returning to the full canonical map.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
