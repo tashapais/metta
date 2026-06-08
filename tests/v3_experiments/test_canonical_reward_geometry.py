@@ -22,12 +22,15 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V1_ROLE_NAMES,
     EVENT_V2_BREADCRUMB_ROLE_NAMES,
     EVENT_V3_NAVIGATION_ROLE_NAMES,
+    EVENT_V4_HEART_CHAIN_ROLE_NAMES,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
     event_v2_breadcrumb_role_shaping_bonuses,
     event_v3_navigation_reward_design_details,
     event_v3_navigation_role_shaping_bonuses,
+    event_v4_heart_chain_reward_design_details,
+    event_v4_heart_chain_role_shaping_bonuses,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -173,6 +176,46 @@ def test_event_v3_navigation_reward_design_details_are_serializable():
     assert details["role_names"] == list(EVENT_V3_NAVIGATION_ROLE_NAMES)
     assert details["common_caps"]["action_move"] == 40
     assert details["task_event_coefficients"]["deposit_heart"] > details["task_event_coefficients"]["resource_ore"]
+
+
+def test_event_v4_heart_chain_prioritizes_deposits_over_handoffs():
+    stats = np.zeros((12, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    totals = np.zeros_like(stats)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    stats[0, stat_index["action_move"]] = 1
+    totals[0, stat_index["action_move"]] = 80
+    stats[0, stat_index["action_use"]] = 1
+    stats[0, stat_index["resource_ore"]] = 1
+    stats[1, stat_index["action_use"]] = 2
+    stats[1, stat_index["action_put"]] = 1
+    stats[1, stat_index["craft_battery"]] = 1
+    stats[1, stat_index["deposit_heart"]] = 1
+    stats[1, stat_index["put_armor"]] = 1
+    stats[2, stat_index["action_attack"]] = 1
+    stats[2, stat_index["tumor_kill"]] = 1
+    stats[3, stat_index["action_move"]] = 1
+    totals[3, stat_index["action_move"]] = 81
+    stats[4, stat_index["action_invalid"]] = 2
+
+    bonuses = event_v4_heart_chain_role_shaping_bonuses(stats, totals)
+
+    assert bonuses[0] == pytest.approx(0.003 + 0.03 + 1.20 + 0.80)
+    assert bonuses[1] == pytest.approx(0.03 * 2 + 0.005 + 6.00 + 20.00 + 0.02 + 4.00 + 10.00 + 0.02)
+    assert bonuses[2] == pytest.approx(0.03 + 1.00 + 0.50)
+    assert bonuses[3] == pytest.approx(0.0)
+    assert bonuses[4] == pytest.approx(-0.012)
+    assert bonuses[1] > 15 * bonuses[0]
+    np.testing.assert_allclose(event_v4_heart_chain_role_shaping_bonuses(None), np.zeros(12))
+
+
+def test_event_v4_heart_chain_reward_design_details_are_serializable():
+    details = event_v4_heart_chain_reward_design_details()
+
+    assert details["name"] == "event_v4_heart_chain_breadcrumbs"
+    assert details["role_names"] == list(EVENT_V4_HEART_CHAIN_ROLE_NAMES)
+    assert details["common_caps"]["action_move"] == 80
+    assert details["task_event_coefficients"]["deposit_heart"] > 3 * details["task_event_coefficients"]["craft_battery"]
+    assert details["task_event_coefficients"]["craft_battery"] > details["task_event_coefficients"]["craft_armor"]
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -495,6 +538,62 @@ def test_train_canonical_reward_geometry_event_v3_navigation_mock_smoke(tmp_path
     assert record["role_names"] == list(EVENT_V3_NAVIGATION_ROLE_NAMES)
     assert record["use_action_mask"] is True
     assert record["reward_design_details"]["common_caps"]["action_move"] == 40
+    assert record["mean_role_shaping_return"] == pytest.approx(0.0)
+    assert validate_record(record, path=output_path, allow_smoke=True) == []
+
+
+def test_train_canonical_reward_geometry_event_v4_heart_chain_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    output_path = tmp_path / "event_v4_result.json"
+    checkpoint_path = tmp_path / "event_v4_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v4_heart_chain_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(output_path),
+                "--checkpoint-path",
+                str(checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(output_path.read_text())
+    assert record["reward_design"] == "event_v4_heart_chain_breadcrumbs"
+    assert record["role_names"] == list(EVENT_V4_HEART_CHAIN_ROLE_NAMES)
+    assert record["use_action_mask"] is True
+    assert record["reward_design_details"]["common_caps"]["action_move"] == 80
+    assert record["reward_design_details"]["task_event_coefficients"]["craft_battery"] == pytest.approx(6.0)
     assert record["mean_role_shaping_return"] == pytest.approx(0.0)
     assert validate_record(record, path=output_path, allow_smoke=True) == []
 

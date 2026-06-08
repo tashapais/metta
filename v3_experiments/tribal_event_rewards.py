@@ -12,6 +12,7 @@ from v3_experiments.tribal_behavior import SIMULATOR_STAT_COLUMNS
 EVENT_V1_ROLE_NAMES = ("supplier", "crafter_logistics", "defender_territory")
 EVENT_V2_BREADCRUMB_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V3_NAVIGATION_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V4_HEART_CHAIN_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 
 EVENT_V1_COMMON_COEFFICIENTS = {
     "action_attack": 0.02,
@@ -179,6 +180,65 @@ EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS = {
     },
 }
 
+EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS = {
+    "action_move": 0.003,
+    "action_use": 0.03,
+    "action_put": 0.005,
+    "action_attack": 0.03,
+    "action_plant": 0.02,
+    "action_swap": 0.001,
+    "action_noop": -0.006,
+    "action_invalid": -0.006,
+}
+
+EVENT_V4_HEART_CHAIN_COMMON_CAPS = {
+    "action_move": 80,
+}
+
+EVENT_V4_HEART_CHAIN_TASK_COEFFICIENTS = {
+    "resource_water": 0.08,
+    "resource_wheat": 0.08,
+    "resource_wood": 0.08,
+    "resource_ore": 1.20,
+    "craft_battery": 6.00,
+    "craft_spear": 0.10,
+    "craft_lantern": 0.10,
+    "craft_armor": 0.10,
+    "craft_bread": 0.10,
+    "deposit_heart": 20.00,
+    "put_armor": 0.02,
+    "put_bread": 0.02,
+    "tumor_kill": 1.00,
+    "spawner_kill": 1.00,
+    "agent_kill": 0.20,
+    "lantern_plant": 0.20,
+}
+
+EVENT_V4_HEART_CHAIN_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_water": 0.05,
+        "resource_wheat": 0.05,
+        "resource_wood": 0.05,
+        "resource_ore": 0.80,
+    },
+    "crafter_logistics": {
+        "craft_battery": 4.00,
+        "craft_spear": 0.10,
+        "craft_lantern": 0.10,
+        "craft_armor": 0.10,
+        "craft_bread": 0.10,
+        "deposit_heart": 10.00,
+        "put_armor": 0.02,
+        "put_bread": 0.02,
+    },
+    "defender_territory": {
+        "tumor_kill": 0.50,
+        "spawner_kill": 0.50,
+        "agent_kill": 0.10,
+        "lantern_plant": 0.10,
+    },
+}
+
 _STAT_INDEX = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
 
 
@@ -277,6 +337,48 @@ def event_v3_navigation_role_shaping_bonuses(
     return bonuses
 
 
+def event_v4_heart_chain_role_shaping_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return heart-chain breadcrumbs for ore -> battery -> assembler deposits.
+
+    ``event_v3_navigation_breadcrumbs`` plus action masking made agents produce
+    task events, but long runs plateaued on resource pickup and easy handoff
+    loops with zero heart deposits. This design keeps capped movement and low
+    invalid-action tolerance while making the heart chain dominate shaping.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    if stats is None:
+        return np.zeros(num_agents, dtype=np.float64)
+    totals = _validate_event_stats_total(event_stats_total, num_agents)
+
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    uncapped_common = {
+        name: coefficient
+        for name, coefficient in EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS.items()
+        if name not in EVENT_V4_HEART_CHAIN_COMMON_CAPS
+    }
+    capped_common = {
+        name: coefficient
+        for name, coefficient in EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS.items()
+        if name in EVENT_V4_HEART_CHAIN_COMMON_CAPS
+    }
+    _add_agent_coefficients(bonuses, stats, uncapped_common)
+    _add_capped_agent_coefficients(bonuses, stats, totals, capped_common, EVENT_V4_HEART_CHAIN_COMMON_CAPS)
+    _add_agent_coefficients(bonuses, stats, EVENT_V4_HEART_CHAIN_TASK_COEFFICIENTS)
+    _add_role_coefficients(
+        bonuses,
+        stats,
+        EVENT_V4_HEART_CHAIN_ROLE_NAMES,
+        EVENT_V4_HEART_CHAIN_ROLE_COEFFICIENTS,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -323,6 +425,25 @@ def event_v3_navigation_reward_design_details() -> dict[str, Any]:
         "common_caps": dict(EVENT_V3_NAVIGATION_COMMON_CAPS),
         "task_event_coefficients": dict(EVENT_V3_NAVIGATION_TASK_COEFFICIENTS),
         "role_coefficients": {role: dict(coeffs) for role, coeffs in EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS.items()},
+        "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
+        "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+    }
+
+
+def event_v4_heart_chain_reward_design_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the heart-chain reward design."""
+
+    return {
+        "name": "event_v4_heart_chain_breadcrumbs",
+        "summary": (
+            "Exploratory reward that keeps capped navigation but prioritizes "
+            "the ore -> battery -> assembler-heart chain over easy handoff loops."
+        ),
+        "role_names": list(EVENT_V4_HEART_CHAIN_ROLE_NAMES),
+        "common_coefficients": dict(EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS),
+        "common_caps": dict(EVENT_V4_HEART_CHAIN_COMMON_CAPS),
+        "task_event_coefficients": dict(EVENT_V4_HEART_CHAIN_TASK_COEFFICIENTS),
+        "role_coefficients": {role: dict(coeffs) for role, coeffs in EVENT_V4_HEART_CHAIN_ROLE_COEFFICIENTS.items()},
         "coworld_role_sources": {role: list(sources) for role, sources in EVENT_V1_COWORLD_ROLE_SOURCES.items()},
         "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
     }

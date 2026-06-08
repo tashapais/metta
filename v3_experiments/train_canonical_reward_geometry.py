@@ -60,12 +60,19 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS,
     EVENT_V3_NAVIGATION_ROLE_NAMES,
     EVENT_V3_NAVIGATION_TASK_COEFFICIENTS,
+    EVENT_V4_HEART_CHAIN_COMMON_CAPS,
+    EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS,
+    EVENT_V4_HEART_CHAIN_ROLE_COEFFICIENTS,
+    EVENT_V4_HEART_CHAIN_ROLE_NAMES,
+    EVENT_V4_HEART_CHAIN_TASK_COEFFICIENTS,
     event_v1_reward_design_details,
     event_v1_role_shaping_bonuses,
     event_v2_breadcrumb_reward_design_details,
     event_v2_breadcrumb_role_shaping_bonuses,
     event_v3_navigation_reward_design_details,
     event_v3_navigation_role_shaping_bonuses,
+    event_v4_heart_chain_reward_design_details,
+    event_v4_heart_chain_role_shaping_bonuses,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -336,7 +343,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument(
         "--reward-design",
-        choices=("passive_v0", "event_v1", "event_v2_breadcrumbs", "event_v3_navigation_breadcrumbs"),
+        choices=(
+            "passive_v0",
+            "event_v1",
+            "event_v2_breadcrumbs",
+            "event_v3_navigation_breadcrumbs",
+            "event_v4_heart_chain_breadcrumbs",
+        ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
     )
@@ -897,6 +910,12 @@ def _role_shaping_bonuses_for_design(
             event_stats_total,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v4_heart_chain_breadcrumbs":
+        return event_v4_heart_chain_role_shaping_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1019,6 +1038,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V2_BREADCRUMB_ROLE_NAMES)
     if config.reward_design == "event_v3_navigation_breadcrumbs":
         return list(EVENT_V3_NAVIGATION_ROLE_NAMES)
+    if config.reward_design == "event_v4_heart_chain_breadcrumbs":
+        return list(EVENT_V4_HEART_CHAIN_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1041,6 +1062,15 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "task_events": dict(EVENT_V3_NAVIGATION_TASK_COEFFICIENTS),
             "roles": {role: dict(coefficients) for role, coefficients in EVENT_V3_NAVIGATION_ROLE_COEFFICIENTS.items()},
         }
+    if config.reward_design == "event_v4_heart_chain_breadcrumbs":
+        return {
+            "common": dict(EVENT_V4_HEART_CHAIN_COMMON_COEFFICIENTS),
+            "common_caps": dict(EVENT_V4_HEART_CHAIN_COMMON_CAPS),
+            "task_events": dict(EVENT_V4_HEART_CHAIN_TASK_COEFFICIENTS),
+            "roles": {
+                role: dict(coefficients) for role, coefficients in EVENT_V4_HEART_CHAIN_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1051,6 +1081,8 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         return event_v2_breadcrumb_reward_design_details()
     if config.reward_design == "event_v3_navigation_breadcrumbs":
         return event_v3_navigation_reward_design_details()
+    if config.reward_design == "event_v4_heart_chain_breadcrumbs":
+        return event_v4_heart_chain_reward_design_details()
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",

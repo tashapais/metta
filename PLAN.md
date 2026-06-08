@@ -1102,6 +1102,116 @@ Next ramp:
   add a targeted heart/deposit curriculum or stronger pre-deposit breadcrumb
   rather than scaling directly to billion-step representation experiments.
 
+Masked Stage-2 outcome:
+
+- Stage-2 ran at `shared_frac=0.0` for `10,000,008` agent steps with
+  `event_v3_navigation_breadcrumbs`, `--use-action-mask`, and offline W&B.
+- Branch/worktree commit: `5af510995562d229d34815b2bce0b4dbf59d0692`.
+- Run directories:
+  - `/workspace/tribal_event_mask_runs/stage2_10m/seed0`
+  - `/workspace/tribal_event_mask_runs/stage2_10m/seed1`
+  - `/workspace/tribal_event_mask_runs/stage2_10m/seed2`
+- Result JSON validation passed with `--allow-smoke` for all three seeds.
+
+Stage-2 final eval summary:
+
+| Seed | Eval raw return | Eval role shaping | Eval total return | EffRank/n | JS diversity | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-10.35` | `66.13` | `55.78` | `0.144` | `0.196` | `0.342` |
+| `1` | `-10.85` | `30.16` | `19.31` | `0.134` | `0.351` | `0.377` |
+| `2` | `-9.92` | `23.01` | `13.08` | `0.177` | `0.089` | `0.431` |
+
+Stage-2 behavior gate:
+
+- Behavior artifacts:
+  - `relh-sandbox-1:/workspace/tribal_event_mask_runs/behavior_gate_stage2_10m_5af510995`
+  - `relh-sandbox-2:/workspace/tribal_event_mask_runs/behavior_gate_stage2_10m_5af510995`
+- Rollout shape: `3` episodes x `240` steps, with JSONL replays and periodic
+  rendered/snapshot frames.
+- Baselines on `relh-sandbox-1`:
+  - no-op: `0` task events;
+  - move-sweep: `0` task events, invalid fraction `0.06`;
+  - random: `28.3` mean task events, invalid fraction `0.73`;
+  - use-sweep: `21.0` mean task events, invalid fraction `0.99`.
+- Deterministic checkpoints:
+  - seed 0: `364.7` mean task events, invalid fraction `0.03`,
+    `56.0` unique joint actions;
+  - seed 1: `149.7` mean task events, invalid fraction `0.17`,
+    `79.7` unique joint actions;
+  - seed 2: `219.0` mean task events, invalid fraction `0.01`,
+    `71.3` unique joint actions.
+- Stochastic checkpoints:
+  - seed 0: `235.3` mean task events, invalid fraction `0.04`;
+  - seed 1: `263.7` mean task events, invalid fraction `0.15`;
+  - seed 2: `295.0` mean task events, invalid fraction `0.02`.
+- Detailed counters showed:
+  - resource pickup, crafting, handoff, and combat are present;
+  - seed 0 deterministic crafted only `1` battery across the gate;
+  - seed 1 and seed 2 deterministic crafted `0` batteries;
+  - all Stage-2 checkpoint gates produced `0` heart deposits.
+
+Stage-2 decision:
+
+- Do not promote this reward to reward-mixing or representation sweeps yet.
+- The mask plus `event_v3_navigation_breadcrumbs` is meaningfully training
+  low-invalid task-event behavior, but it is not yet achieving the core
+  high-level objective.
+- The next reward-debug phase needs more explicit breadcrumbs for the heart
+  chain: ore pickup, converter use to craft battery, and battery use at the
+  home assembler to deposit a heart.
+
+### Reward-Debug Continuation: `event_v4_heart_chain_breadcrumbs`
+
+Reason:
+
+- `event_v3_navigation_breadcrumbs` over-rewards easy loops relative to the
+  actual score chain. In Stage 2, policies learned resource pickup, armor/bread
+  handoff, and tumor kills, but not battery production or heart deposits.
+- The simulator contract for the score chain is:
+  - `use` a mine to collect ore;
+  - `use` a converter while carrying ore to craft a battery;
+  - `use` the home assembler while carrying a battery to deposit a heart.
+
+Design:
+
+- Keep action masking and capped movement.
+- Reduce easy handoff shaping:
+  - `put_armor` and `put_bread` become small breadcrumbs, not dominant reward.
+- Strongly prioritize the heart chain:
+  - `resource_ore` is larger than other resource pickups;
+  - `craft_battery` is much larger than other crafting events;
+  - `deposit_heart` dominates all other shaped rewards.
+- Keep small defense rewards so agents do not ignore tumors completely.
+- Keep penalties for no-op and invalid actions so the mask cannot become a
+  reason to park.
+
+Implementation status:
+
+- `event_v4_heart_chain_breadcrumbs` was added locally after the Stage-2
+  analysis.
+- Focused unit tests and a mock training smoke passed.
+- A tiny native Tribal Village smoke passed:
+  - output: `/tmp/event_v4_heart_chain_native_smoke.json`;
+  - checkpoint: `/tmp/event_v4_heart_chain_native_smoke.pt`;
+  - shaped return was positive on the smoke path.
+
+Next ramp:
+
+- Commit and push `event_v4_heart_chain_breadcrumbs`.
+- Update the sandbox worktrees to the new commit.
+- Run a short Stage-1 v4 masked ramp before scaling:
+  - `shared_frac=0.0`;
+  - seeds `0,1,2`;
+  - `1,000,008` agent steps;
+  - same behavior gate as Stage 1 and Stage 2.
+- Promotion criteria are stricter than the Stage-1 v3 mask gate:
+  - invalid fraction stays below random/use-sweep;
+  - task events beat baselines;
+  - at least one deterministic or stochastic checkpoint crafts batteries
+    consistently;
+  - promotion to a longer run requires nonzero heart deposits or a clear
+    monotonic increase in battery production over Stage 2.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
