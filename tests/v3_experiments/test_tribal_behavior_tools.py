@@ -4,9 +4,24 @@ import numpy as np
 import pytest
 
 from v3_experiments.audit_tribal_versions import audit_package_contract, compare_contracts
+from v3_experiments.run_tribal_behavior_rollouts import _chain_oracle_action_for_agent
 from v3_experiments.run_tribal_behavior_rollouts import main as rollout_main
 from v3_experiments.summarize_tribal_behavior_outputs import summarize_record
 from v3_experiments.tribal_behavior import summarize_behavior_rollout, validate_behavior_record
+from v3_experiments.tribal_event_rewards import (
+    NAV_AGENT_X,
+    NAV_AGENT_Y,
+    NAV_DIST_HOME_ASSEMBLER,
+    NAV_HOME_ASSEMBLER_X,
+    NAV_HOME_ASSEMBLER_Y,
+    NAV_INVENTORY_BATTERY,
+    NAV_INVENTORY_ORE,
+    NAV_NEAREST_CONVERTER_X,
+    NAV_NEAREST_CONVERTER_Y,
+    NAV_NEAREST_MINE_X,
+    NAV_NEAREST_MINE_Y,
+    NAVIGATION_SNAPSHOT_COLUMNS,
+)
 
 
 def test_summarize_behavior_rollout_tracks_actions_rewards_and_simulator_stats():
@@ -161,6 +176,38 @@ def test_run_tribal_behavior_rollouts_mock_noop_writes_valid_record(tmp_path):
     assert metrics["world_stats_final"] is None
     summary = summarize_record(output_dir / "rollout_metrics.json", record)
     assert summary["flags"] == ["no_task_events", "single_joint_action", "mostly_noop"]
+
+
+def test_chain_oracle_follows_current_inventory_target():
+    row = np.zeros(len(NAVIGATION_SNAPSHOT_COLUMNS), dtype=np.int64)
+    row[[NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    row[[NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 6]
+    row[[NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y]] = [2, 5]
+    row[[NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y]] = [7, 4]
+    row[NAV_DIST_HOME_ASSEMBLER] = 3
+
+    assert _chain_oracle_action_for_agent(row) == 13  # move NE toward mine.
+
+    row[NAV_INVENTORY_ORE] = 1
+    assert _chain_oracle_action_for_agent(row) == 10  # move W toward converter.
+
+    row[NAV_INVENTORY_BATTERY] = 1
+    row[NAV_INVENTORY_ORE] = 0
+    assert _chain_oracle_action_for_agent(row) == 14  # move SW toward home assembler.
+
+
+def test_chain_oracle_uses_adjacent_target_when_valid():
+    row = np.zeros(len(NAVIGATION_SNAPSHOT_COLUMNS), dtype=np.int64)
+    row[[NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    row[[NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 6]
+    row[NAV_DIST_HOME_ASSEMBLER] = 1
+    row[NAV_INVENTORY_BATTERY] = 1
+
+    assert _chain_oracle_action_for_agent(row) == 30  # use SW at home assembler.
+
+    mask = np.ones(56, dtype=bool)
+    mask[30] = False
+    assert _chain_oracle_action_for_agent(row, mask) == 0
 
 
 def _write_minimal_tribal_sources(root, *, action_verbs, houses, agents_per_house, canonical):

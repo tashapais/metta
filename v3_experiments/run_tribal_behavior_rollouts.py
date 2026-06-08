@@ -34,6 +34,34 @@ from v3_experiments.tribal_behavior import (  # noqa: E402
     world_stats_to_dict,
     write_json,
 )
+from v3_experiments.tribal_event_rewards import (  # noqa: E402
+    NAV_AGENT_X,
+    NAV_AGENT_Y,
+    NAV_DIST_HOME_ASSEMBLER,
+    NAV_HOME_ASSEMBLER_X,
+    NAV_HOME_ASSEMBLER_Y,
+    NAV_INVENTORY_BATTERY,
+    NAV_INVENTORY_ORE,
+    NAV_NEAREST_CONVERTER_X,
+    NAV_NEAREST_CONVERTER_Y,
+    NAV_NEAREST_MINE_X,
+    NAV_NEAREST_MINE_Y,
+)
+
+ACTION_ARGUMENT_COUNT = 8
+MOVE_VERB = 1
+USE_VERB = 3
+ORIENTATION_DELTAS = (
+    (0, -1),  # N
+    (0, 1),  # S
+    (-1, 0),  # W
+    (1, 0),  # E
+    (-1, -1),  # NW
+    (1, -1),  # NE
+    (-1, 1),  # SW
+    (1, 1),  # SE
+)
+ORIENTATION_BY_DELTA = {delta: index for index, delta in enumerate(ORIENTATION_DELTAS)}
 
 
 @dataclass
@@ -57,7 +85,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--policy", choices=("no_op", "random", "move_sweep", "use_sweep", "checkpoint"), required=True)
+    parser.add_argument(
+        "--policy",
+        choices=("no_op", "random", "move_sweep", "use_sweep", "chain_oracle", "checkpoint"),
+        required=True,
+    )
     parser.add_argument("--checkpoint-path")
     parser.add_argument("--env-backend", choices=("tribal", "mock"), default="tribal")
     parser.add_argument("--episodes", type=int, default=5)
@@ -231,6 +263,8 @@ def _policy_actions(
         return np.array([8 + ((step + agent_id) % 8) for agent_id in range(env.num_agents)], dtype=np.int64)
     if args.policy == "use_sweep":
         return np.array([24 + ((step + agent_id) % 8) for agent_id in range(env.num_agents)], dtype=np.int64)
+    if args.policy == "chain_oracle":
+        return _chain_oracle_actions(env)
     if args.policy == "checkpoint":
         if checkpoint_policy is None:
             raise ValueError("checkpoint policy was not loaded")
@@ -245,6 +279,128 @@ def _policy_actions(
             )
         return actions.cpu().numpy().astype(np.int64)
     raise ValueError(f"unknown policy {args.policy}")
+
+
+def _chain_oracle_actions(env: Any) -> np.ndarray:
+    """Follow the ore -> battery -> home-assembler chain from debug snapshots."""
+
+    get_snapshot = getattr(env, "get_navigation_snapshot", None)
+    if get_snapshot is None:
+        return np.zeros(env.num_agents, dtype=np.int64)
+    snapshot = get_snapshot()
+    if snapshot is None:
+        return np.zeros(env.num_agents, dtype=np.int64)
+
+    mask = _optional_action_mask(env)
+    navigation = np.asarray(snapshot, dtype=np.int64)
+    actions = np.zeros(env.num_agents, dtype=np.int64)
+    for agent_id, row in enumerate(navigation):
+        mask_row = None if mask is None else mask[agent_id]
+        actions[agent_id] = _chain_oracle_action_for_agent(row, mask_row)
+    return actions
+
+
+def _chain_oracle_action_for_agent(
+    navigation_row: np.ndarray,
+    action_mask: np.ndarray | None = None,
+) -> int:
+    target = _chain_target(navigation_row)
+    if target is None:
+        return _masked_noop_or_first_valid(action_mask)
+
+    agent_x = int(navigation_row[NAV_AGENT_X])
+    agent_y = int(navigation_row[NAV_AGENT_Y])
+    target_x, target_y = target
+    dx = _sign(target_x - agent_x)
+    dy = _sign(target_y - agent_y)
+    if dx == 0 and dy == 0:
+        return _masked_noop_or_first_valid(action_mask)
+
+    if max(abs(target_x - agent_x), abs(target_y - agent_y)) == 1:
+        action = _encode_action(USE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+        if action_mask is None or bool(action_mask[action]):
+            return action
+        return _masked_noop_or_first_valid(action_mask)
+
+    preferred = _best_masked_move_toward(agent_x, agent_y, target_x, target_y, action_mask)
+    if preferred is not None:
+        return preferred
+    return _encode_action(MOVE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+
+
+def _chain_target(navigation_row: np.ndarray) -> tuple[int, int] | None:
+    if int(navigation_row[NAV_INVENTORY_BATTERY]) > 0:
+        return _target_if_valid(navigation_row, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER)
+    if int(navigation_row[NAV_INVENTORY_ORE]) > 0:
+        return _target_if_valid(navigation_row, NAV_NEAREST_CONVERTER_X, NAV_NEAREST_CONVERTER_Y)
+    return _target_if_valid(navigation_row, NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y)
+
+
+def _target_if_valid(
+    navigation_row: np.ndarray,
+    x_index: int,
+    y_index: int,
+    distance_index: int | None = None,
+) -> tuple[int, int] | None:
+    target_x = int(navigation_row[x_index])
+    target_y = int(navigation_row[y_index])
+    if target_x < 0 or target_y < 0:
+        return None
+    if distance_index is not None and int(navigation_row[distance_index]) < 0:
+        return None
+    return target_x, target_y
+
+
+def _best_masked_move_toward(
+    agent_x: int,
+    agent_y: int,
+    target_x: int,
+    target_y: int,
+    action_mask: np.ndarray | None,
+) -> int | None:
+    if action_mask is None:
+        return None
+
+    best_action = None
+    best_distance = None
+    for orientation, (delta_x, delta_y) in enumerate(ORIENTATION_DELTAS):
+        action = _encode_action(MOVE_VERB, orientation)
+        if not bool(action_mask[action]):
+            continue
+        distance = abs(target_x - (agent_x + delta_x)) + abs(target_y - (agent_y + delta_y))
+        if best_distance is None or distance < best_distance:
+            best_action = action
+            best_distance = distance
+    return best_action
+
+
+def _optional_action_mask(env: Any) -> np.ndarray | None:
+    get_mask = getattr(env, "get_action_mask", None)
+    if get_mask is None:
+        return None
+    mask = get_mask()
+    if mask is None:
+        return None
+    return np.asarray(mask, dtype=bool)
+
+
+def _masked_noop_or_first_valid(action_mask: np.ndarray | None) -> int:
+    if action_mask is None or bool(action_mask[0]):
+        return 0
+    valid = np.flatnonzero(action_mask)
+    return int(valid[0]) if valid.size else 0
+
+
+def _encode_action(verb: int, argument: int) -> int:
+    return int(verb * ACTION_ARGUMENT_COUNT + argument)
+
+
+def _sign(value: int) -> int:
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
 
 
 def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpointPolicy:
