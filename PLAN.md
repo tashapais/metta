@@ -2438,6 +2438,63 @@ V10 Stage-4 transfer/annealing plan:
     budget, lower the learning rate, or relax only one verb family with a custom
     mask instead of the full environment-valid action set.
 
+V10 Stage-4 relaxed-env-mask transfer outcome, commit `7e5adc4a50`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `136`: seeds `0` and `1`.
+  - `relh-sandbox-2` job `135`: seed `2`.
+- Result JSON validation passed for all three transfer outputs.
+- Behavior-output validation passed for 11 rollout files split across
+  `relh-sandbox-1` and `relh-sandbox-2`.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage4_v10_transfer_relaxed_envmask`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage4_v10_transfer_relaxed_envmask_7e5adc4a50`.
+
+Training eval:
+
+| Seed | Init checkpoint | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | EffRank/n | Role probe | Strict mask |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `0` | `stage3...seed0_2m_69e6627267` | `-3.129` | `90.139` | `93.268` | `0.432` | `0.299` | `0.359` | `false` |
+| `1` | `stage3...seed1_2m_69e6627267` | `-3.200` | `118.559` | `121.759` | `0.491` | `0.261` | `0.287` | `false` |
+| `2` | `stage3...seed2_2m_69e6627267` | `-5.917` | `-18.254` | `-12.338` | `0.423` | `0.296` | `0.362` | `false` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Off-chain attempts |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-9.830` | `58.7` | `75` | `57` | `41` | `630` | `0` |
+| `no_op` | `-30.467` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-28.800` | `29.7` | `0` | `0` | `0` | `6306` | `4944` |
+| `move_sweep` | `-34.877` | `0.0` | `0` | `0` | `0` | `552` | `0` |
+| `use_sweep` | `-37.133` | `4.0` | `0` | `0` | `0` | `8628` | `0` |
+| `seed0_det` | `19.567` | `83.0` | `95` | `92` | `62` | `717` | `0` |
+| `seed1_det` | `5.700` | `62.0` | `75` | `65` | `44` | `1442` | `0` |
+| `seed2_det` | `-11.233` | `37.7` | `45` | `44` | `18` | `1639` | `0` |
+| `seed0_stoch` | `-0.500` | `58.7` | `73` | `62` | `38` | `789` | `0` |
+| `seed1_stoch` | `-16.400` | `84.7` | `96` | `87` | `63` | `959` | `0` |
+| `seed2_stoch` | `-1.633` | `50.3` | `63` | `54` | `32` | `680` | `0` |
+
+Decision:
+
+- The relaxed-env-mask transfer passes the minimum written behavior gate: all
+  deterministic seeds still make heart deposits, and seeds `0` and `1` remain
+  within 25% of their 2M strict-v10 deposit counts.
+- The result is not clean enough to promote to reward mixing:
+  - seed `2` drops from `58` strict 2M deterministic deposits to `18`;
+  - seed `2` also has negative eval shaped/individual return;
+  - none of the checkpoint rollouts attempted `put`, `attack`, `plant`, or
+    `swap`, despite those actions being available under the relaxed environment
+    mask.
+- Interpretation: the first relaxation did not produce richer off-chain
+  behavior. The main risk is policy drift under continued PPO updates after the
+  action surface expands.
+- Next diagnostic before more training: evaluate the original 2M strict
+  checkpoints under the relaxed environment mask with no additional training.
+  If those replay gates remain strong, then the problem is transfer update
+  drift; if they fail immediately, then the strict mask is still doing essential
+  inference-time control.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

@@ -1445,6 +1445,13 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
             "chain_affordance_action_mask": False,
         }
     )
+    assert not _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v10_chain_affordance_compass_breadcrumbs",
+            "chain_affordance_action_mask": True,
+        },
+        disable_override=True,
+    )
 
 
 def _test_v9_potential(stage_name: str, distance: float) -> float:

@@ -104,6 +104,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--stochastic", action="store_true", help="Sample checkpoint actions instead of argmax.")
     parser.add_argument(
+        "--disable-checkpoint-chain-affordance-action-mask",
+        action="store_true",
+        help=(
+            "When evaluating a checkpoint, ignore its strict v10 chain-affordance "
+            "mask and use the environment action mask instead."
+        ),
+    )
+    parser.add_argument(
         "--chain-compass-observation",
         action="store_true",
         help="Use the v7 chain-compass observation planes when loading/evaluating checkpoints.",
@@ -148,6 +156,11 @@ def run_rollouts(args: argparse.Namespace, argv: list[str]) -> dict[str, Any]:
             "schema_version": BEHAVIOR_SCHEMA_VERSION,
             "policy": args.policy,
             "checkpoint_path": args.checkpoint_path,
+            "disable_checkpoint_chain_affordance_action_mask": args.disable_checkpoint_chain_affordance_action_mask,
+            "checkpoint_uses_action_mask": None if checkpoint_policy is None else checkpoint_policy.use_action_mask,
+            "checkpoint_chain_affordance_action_mask": (
+                None if checkpoint_policy is None else checkpoint_policy.chain_affordance_action_mask
+            ),
             "environment_backend": args.env_backend,
             "chain_compass_observation": args.chain_compass_observation,
             "seed": args.seed,
@@ -439,7 +452,10 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
 
     separate_encoders = bool(config.get("separate_encoders", False))
     use_action_mask = bool(config.get("use_action_mask", False))
-    chain_affordance_action_mask = _checkpoint_uses_chain_affordance_action_mask(config)
+    chain_affordance_action_mask = _checkpoint_uses_chain_affordance_action_mask(
+        config,
+        disable_override=args.disable_checkpoint_chain_affordance_action_mask,
+    )
     policy = ActorCritic(
         env.obs_shape,
         env.action_space_size,
@@ -458,7 +474,13 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
     )
 
 
-def _checkpoint_uses_chain_affordance_action_mask(config: dict[str, Any]) -> bool:
+def _checkpoint_uses_chain_affordance_action_mask(
+    config: dict[str, Any],
+    *,
+    disable_override: bool = False,
+) -> bool:
+    if disable_override:
+        return False
     return bool(config.get("chain_affordance_action_mask", False)) or (
         config.get("reward_design") == "event_v10_chain_affordance_compass_breadcrumbs"
     )
