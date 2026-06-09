@@ -131,6 +131,16 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
 CANONICAL_ENV_DEFINE = "canonicalRewardGeometry"
 CHAIN_COMPASS_OBS_LAYERS = 5
+ATTACK_VERB = 2
+SWAP_VERB = 4
+PUT_VERB = 5
+PLANT_VERB = 6
+CHAIN_AFFORDANCE_EXTRA_VERB_IDS = {
+    "attack": ATTACK_VERB,
+    "swap": SWAP_VERB,
+    "put": PUT_VERB,
+    "plant": PLANT_VERB,
+}
 CHAIN_COMPASS_OBSERVATION_PLANES = {
     "chain_target_dx_sign": 0,
     "chain_target_dy_sign": 1,
@@ -198,6 +208,7 @@ class RunnerConfig:
     use_action_mask: bool
     chain_affordance_action_mask: bool
     disable_chain_affordance_action_mask: bool
+    chain_affordance_extra_verbs: str
     chain_compass_observation: bool
     env_backend: str
     allow_noncanonical_env: bool
@@ -573,6 +584,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Disable the v10 move/current-use-only affordance mask while keeping "
             "the environment action mask. Use for transfer/annealing diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--chain-affordance-extra-verbs",
+        default="",
+        help=(
+            "Comma-separated extra verb families to allow on top of the strict "
+            "v10 move/current-use mask. Valid values: attack, swap, put, plant."
         ),
     )
     parser.add_argument(
@@ -1414,6 +1433,7 @@ def _validate_config(config: RunnerConfig) -> None:
         raise ValueError("--eval-steps must be positive")
     if config.chain_affordance_action_mask and config.disable_chain_affordance_action_mask:
         raise ValueError("--chain-affordance-action-mask and --disable-chain-affordance-action-mask conflict")
+    _chain_affordance_extra_verb_names_from_value(config.chain_affordance_extra_verbs)
 
 
 def _validate_env_contract(env: CanonicalEnv, config: RunnerConfig) -> None:
@@ -1603,6 +1623,7 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
         }
     if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
         chain_affordance_enabled = _uses_chain_affordance_action_mask(config)
+        extra_verbs = list(_chain_affordance_extra_verb_names(config))
         return {
             "common": {},
             "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
@@ -1620,8 +1641,11 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "chain_affordance_action_mask": {
                 "enabled": chain_affordance_enabled,
                 "allowed_verbs": (
-                    ["move", "use_current_chain_target"] if chain_affordance_enabled else ["environment_valid_actions"]
+                    ["move", "use_current_chain_target", *extra_verbs]
+                    if chain_affordance_enabled
+                    else ["environment_valid_actions"]
                 ),
+                "extra_verbs": extra_verbs,
                 "reward_penalties_added": False,
             },
             "roles": {role: {} for role in EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES},
@@ -1654,7 +1678,18 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
         details = event_v10_chain_affordance_compass_reward_design_details()
         details["potential_shaping"]["run_gamma"] = config.gamma
         chain_affordance_enabled = _uses_chain_affordance_action_mask(config)
+        extra_verbs = list(_chain_affordance_extra_verb_names(config))
         details["action_affordance_curriculum"]["enabled"] = chain_affordance_enabled
+        details["action_affordance_curriculum"]["extra_verbs"] = extra_verbs
+        if chain_affordance_enabled and extra_verbs:
+            details["action_affordance_curriculum"]["allowed_verbs"] = [
+                "move",
+                "use_current_chain_target",
+                *extra_verbs,
+            ]
+            details["action_affordance_curriculum"]["purpose"] = (
+                "Relax one off-chain verb family while preserving the v10 chain-affordance curriculum."
+            )
         if not chain_affordance_enabled:
             details["action_affordance_curriculum"]["allowed_verbs"] = ["environment_valid_actions"]
             details["action_affordance_curriculum"]["blocked_successes"] = []
@@ -1701,6 +1736,7 @@ def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.d
         env,
         use_action_mask=config.use_action_mask,
         chain_affordance_action_mask=_uses_chain_affordance_action_mask(config),
+        chain_affordance_extra_verbs=_chain_affordance_extra_verb_names(config),
     )
     if mask_arr is None:
         return None
@@ -1712,6 +1748,7 @@ def _action_mask_array_from_flags(
     *,
     use_action_mask: bool,
     chain_affordance_action_mask: bool,
+    chain_affordance_extra_verbs: tuple[str, ...] = (),
 ) -> np.ndarray | None:
     if not use_action_mask and not chain_affordance_action_mask:
         return None
@@ -1726,11 +1763,20 @@ def _action_mask_array_from_flags(
     if mask_arr.shape != (env.num_agents, env.action_space_size):
         raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
     if chain_affordance_action_mask:
-        mask_arr = _chain_affordance_action_mask(env, mask_arr)
+        mask_arr = _chain_affordance_action_mask(
+            env,
+            mask_arr,
+            extra_verbs=chain_affordance_extra_verbs,
+        )
     return mask_arr
 
 
-def _chain_affordance_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> np.ndarray:
+def _chain_affordance_action_mask(
+    env: CanonicalEnv,
+    base_mask: np.ndarray,
+    *,
+    extra_verbs: tuple[str, ...] = (),
+) -> np.ndarray:
     navigation = env.get_navigation_snapshot()
     if navigation is None:
         return base_mask
@@ -1746,6 +1792,12 @@ def _chain_affordance_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
     valid_move_actions = [action for action in move_actions if action < env.action_space_size]
     if valid_move_actions:
         chain_mask[:, valid_move_actions] = base_mask[:, valid_move_actions]
+    for verb_name in extra_verbs:
+        verb_id = CHAIN_AFFORDANCE_EXTRA_VERB_IDS[verb_name]
+        extra_actions = [_encode_action(verb_id, orientation) for orientation in range(len(ORIENTATION_DELTAS))]
+        valid_extra_actions = [action for action in extra_actions if action < env.action_space_size]
+        if valid_extra_actions:
+            chain_mask[:, valid_extra_actions] = base_mask[:, valid_extra_actions]
 
     for agent_id, row in enumerate(navigation_arr):
         use_action = _chain_affordance_use_action(row, env.action_space_size)
@@ -1760,6 +1812,24 @@ def _chain_affordance_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
                     chain_mask[agent_id, int(valid[0])] = True
 
     return chain_mask
+
+
+def _chain_affordance_extra_verb_names(config: RunnerConfig) -> tuple[str, ...]:
+    if not _uses_chain_affordance_action_mask(config):
+        return ()
+    return _chain_affordance_extra_verb_names_from_value(config.chain_affordance_extra_verbs)
+
+
+def _chain_affordance_extra_verb_names_from_value(value: str | None) -> tuple[str, ...]:
+    if value is None or not value.strip():
+        return ()
+    names = tuple(name.strip() for name in value.split(",") if name.strip())
+    unknown = sorted(set(names) - set(CHAIN_AFFORDANCE_EXTRA_VERB_IDS))
+    if unknown:
+        raise ValueError(
+            "--chain-affordance-extra-verbs contains unknown verb families: " + ", ".join(unknown)
+        )
+    return names
 
 
 def _chain_affordance_use_action(navigation_row: np.ndarray, action_space_size: int) -> int | None:

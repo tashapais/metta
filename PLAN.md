@@ -2495,6 +2495,61 @@ Decision:
   drift; if they fail immediately, then the strict mask is still doing essential
   inference-time control.
 
+V10 Stage-4 source-checkpoint relaxed-mask replay diagnostic, commit
+`f22c6ed1a1`:
+
+- No training was run. This gate evaluated the Stage-3 2M source checkpoints
+  with `--disable-checkpoint-chain-affordance-action-mask`.
+- Behavior-output validation passed for 11 rollout files.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage4_source2m_relaxed_eval_f22c6ed1a1`.
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Put attempts | Other off-chain attempts |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-12.530` | `55.7` | `70` | `57` | `39` | `1048` | `0` | `0` |
+| `random` | `-43.383` | `30.3` | `0` | `0` | `0` | `5913` | `1130` | `3467` |
+| `seed0_det` | `-18.133` | `323.0` | `76` | `50` | `20` | `379` | `517` | `3` |
+| `seed1_det` | `-22.767` | `91.7` | `58` | `12` | `5` | `255` | `7` | `1` |
+| `seed2_det` | `-23.443` | `155.0` | `57` | `26` | `19` | `1497` | `102` | `7` |
+| `seed0_stoch` | `-10.500` | `374.0` | `78` | `58` | `41` | `637` | `522` | `15` |
+| `seed1_stoch` | `10.100` | `192.0` | `115` | `92` | `58` | `633` | `144` | `7` |
+| `seed2_stoch` | `-10.600` | `180.7` | `88` | `79` | `42` | `1224` | `129` | `4` |
+
+Decision:
+
+- Removing the strict mask at inference time materially disrupts deterministic
+  behavior before any transfer update. The source checkpoint policies start
+  selecting many `put` actions, and deterministic deposits fall sharply for all
+  seeds.
+- The 1M relaxed-env-mask transfer therefore did repair some inference-time
+  mask-removal damage for seeds `0` and `1`, but did not recover seed `2`.
+- Next ramp should not use the full environment-valid action surface. It should
+  allow exactly one off-chain verb family while preserving the strict
+  move/current-chain-use curriculum.
+
+V10 Stage-5 one-family relaxation plan:
+
+- First one-family condition: `put` only.
+- Purpose: test whether handoff-style actions can be exposed without the broad
+  relaxed-mask instability seen in Stage 4.
+- Command change from Stage 4:
+  - remove `--disable-chain-affordance-action-mask`;
+  - add `--chain-affordance-extra-verbs put`;
+  - keep `--init-checkpoint-path <2m strict checkpoint>`.
+- Initial budget: `1,000,008` agent steps for seeds `0,1,2`.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage5_v10_transfer_put_only`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage5_v10_transfer_put_only_<sha>`.
+- Pass criteria:
+  - deterministic deposits remain nonzero for all seeds;
+  - deterministic seed `2` improves over the Stage-4 relaxed-env-mask transfer
+    deposit count of `18`;
+  - `put` attempts may occur, but task-chain progress must remain near the 2M
+    strict source behavior rather than collapsing into handoff spam.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

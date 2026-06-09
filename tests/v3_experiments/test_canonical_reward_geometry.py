@@ -650,6 +650,36 @@ def test_chain_affordance_action_mask_allows_moves_and_current_target_use_only()
     assert no_chain_mask[0].sum() == 1
 
 
+def test_chain_affordance_action_mask_can_allow_one_extra_verb_family():
+    navigation = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    navigation[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    navigation[0, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    navigation[0, [NAV_NEAREST_MINE_X, NAV_NEAREST_MINE_Y, NAV_DIST_NEAREST_MINE]] = [6, 5, 1]
+
+    base_mask = np.ones((3, 56), dtype=bool)
+    env = _MaskEnv(base_mask, navigation)
+    mask = _action_mask_array_from_flags(
+        env,
+        use_action_mask=True,
+        chain_affordance_action_mask=True,
+        chain_affordance_extra_verbs=("put",),
+    )
+    assert mask is not None
+
+    move_actions = [MOVE_VERB * ACTION_ARGUMENT_COUNT + orientation for orientation in range(8)]
+    put_actions = [5 * ACTION_ARGUMENT_COUNT + orientation for orientation in range(8)]
+    use_east = USE_VERB * ACTION_ARGUMENT_COUNT + 3
+    attack_north = 2 * ACTION_ARGUMENT_COUNT
+    plant_north = 6 * ACTION_ARGUMENT_COUNT
+
+    assert mask[0, move_actions].all()
+    assert mask[0, put_actions].all()
+    assert mask[0, use_east]
+    assert not mask[0, attack_north]
+    assert not mask[0, plant_north]
+    assert mask[0].sum() == 17
+
+
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)
 
