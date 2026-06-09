@@ -45,23 +45,29 @@ This goal has three hard gates:
 
 Current uncertainty:
 
-- The 1M strict-v10 condition is behavior-valid under a constrained
-  affordance/curriculum mask.
+- The strict-v10 `shared_frac=0.0` condition is behavior-valid at `2M` under a
+  constrained affordance/curriculum mask.
 - The 10M strict-v10 condition degraded, so longer training alone is not the
   right answer.
-- We do not yet know whether v10 needs early stopping, a shorter stable budget,
-  or transfer/annealing from the clean 1M checkpoint into a less constrained
-  action surface.
+- Action-surface transfer did not yet create useful `put`/handoff behavior.
+- A from-scratch strict-v10 reward-mixing pilot did not pass the behavior gate:
+  `shared_frac=0.8` was seed-fragile and `shared_frac=1.0` collapsed.
+- We do not yet know whether high reward sharing blocks behavior acquisition
+  from scratch, or actively destroys already-learned chain behavior.
 
 Immediate operating plan:
 
-- Phase A: run a strict-v10 budget ladder at `2M` and `4M` agent steps for
-  seeds `0,1,2`, then behavior-gate each budget.
-- Phase B: if a budget is stable, use that checkpoint as the transfer source
-  and relax one affordance family at a time.
-- Phase C: only if the transfer condition remains behavior-valid, run a small
-  reward-mixing pilot.
-- Phase D: only if the pilot preserves behavior, run the canonical paper sweep.
+- Phase A: completed. The strict-v10 budget ladder identified `2M` alpha0 as
+  the cleanest behavior source.
+- Phase B: completed for broad mask relaxation and `put`-only relaxation; neither
+  is a promotion candidate.
+- Phase C: completed the from-scratch `shared_frac in {0.8,1.0}` pilot; it
+  failed the behavior gate and should not update the paper.
+- Phase D: run one warm-start reward-mixing diagnostic from the behavior-valid
+  strict alpha0 2M checkpoints to distinguish acquisition failure from
+  reward-sharing-induced behavior destruction.
+- Phase E: only if a reward-mixing condition preserves behavior across seeds,
+  run the canonical paper sweep.
 
 ## Research Question
 
@@ -2623,6 +2629,118 @@ V10 Stage-6 strict-mask reward-mixing pilot plan:
     diversity, and replay behavior against the Stage-3 `shared_frac=0.0`
     baseline as a pilot, not yet as final paper evidence.
 
+V10 Stage-6 strict-mask reward-mixing pilot outcome, commit `450cfb15a3`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `138`: `shared_frac=0.8` seeds `0,1` and
+    `shared_frac=1.0` seeds `0,1`.
+  - `relh-sandbox-2` job `137`: `shared_frac=0.8` seed `2` and
+    `shared_frac=1.0` seed `2`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `139`: eight deterministic/stochastic checkpoint
+    rollouts for seeds `0,1`.
+  - `relh-sandbox-2` job `138`: five baselines plus four
+    deterministic/stochastic checkpoint rollouts for seed `2`.
+- Result JSON validation passed for all six training outputs.
+- Behavior-output validation passed for all Stage-6 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage6_v10_strict_reward_mixing_pilot`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage6_v10_strict_reward_mixing_pilot_450cfb15a3`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage6_v10_strict_reward_mixing_pilot_sandbox1_450cfb15a3.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage6_v10_strict_reward_mixing_pilot_sandbox2_450cfb15a3.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage6_behavior_gate_sandbox1_450cfb15a3.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage6_behavior_gate_sandbox2_450cfb15a3.sh`
+
+Training eval:
+
+| Shared frac | Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0.8` | `0` | `-2.999` | `129.604` | `132.603` | `0.524` | `13.840` | `0.275` | `0.324` |
+| `0.8` | `1` | `-3.028` | `151.705` | `154.733` | `0.488` | `12.572` | `0.254` | `0.323` |
+| `0.8` | `2` | `-11.597` | `-56.380` | `-44.783` | `0.502` | `15.447` | `0.222` | `0.383` |
+| `1.0` | `0` | `-11.476` | `-31.779` | `-20.302` | `0.576` | `20.614` | `0.112` | `0.351` |
+| `1.0` | `1` | `-11.433` | `-33.136` | `-21.704` | `0.559` | `20.418` | `0.143` | `0.352` |
+| `1.0` | `2` | `-12.299` | `-39.858` | `-27.559` | `0.498` | `17.019` | `0.125` | `0.331` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-32.133` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-35.467` | `39.3` | `0` | `0` | `0` | `6307` | `111` |
+| `move_sweep` | `-28.800` | `0.0` | `0` | `0` | `0` | `626` | `0` |
+| `use_sweep` | `-33.800` | `18.7` | `0` | `0` | `0` | `8584` | `56` |
+| `chain_oracle` | `-15.867` | `69.7` | `86` | `74` | `46` | `1482` | `209` |
+| `alpha0.8_seed0_det` | `13.800` | `79.0` | `90` | `86` | `60` | `2098` | `237` |
+| `alpha0.8_seed0_stoch` | `7.533` | `75.3` | `84` | `77` | `59` | `1908` | `226` |
+| `alpha0.8_seed1_det` | `-15.257` | `38.7` | `53` | `38` | `22` | `1043` | `116` |
+| `alpha0.8_seed1_stoch` | `-23.497` | `45.3` | `65` | `40` | `27` | `623` | `136` |
+| `alpha0.8_seed2_det` | `-41.030` | `7.7` | `23` | `0` | `0` | `1577` | `23` |
+| `alpha0.8_seed2_stoch` | `-27.467` | `9.3` | `24` | `2` | `0` | `2672` | `28` |
+| `alpha1.0_seed0_det` | `-34.303` | `3.7` | `8` | `1` | `0` | `2981` | `11` |
+| `alpha1.0_seed0_stoch` | `-28.733` | `1.0` | `2` | `0` | `0` | `3887` | `3` |
+| `alpha1.0_seed1_det` | `-28.667` | `1.3` | `4` | `0` | `0` | `3702` | `4` |
+| `alpha1.0_seed1_stoch` | `-35.367` | `1.3` | `3` | `0` | `0` | `3504` | `4` |
+| `alpha1.0_seed2_det` | `-34.197` | `3.7` | `8` | `0` | `0` | `912` | `11` |
+| `alpha1.0_seed2_stoch` | `-39.867` | `6.0` | `18` | `0` | `0` | `2245` | `18` |
+
+Decision:
+
+- Stage 6 does not pass the reward-mixing behavior gate.
+- `shared_frac=0.8` is seed-fragile:
+  - seed `0` beats the chain-oracle baseline on deposits and raw reward;
+  - seed `1` has nonzero deposits but negative raw reward;
+  - seed `2` fails the deposit criterion entirely.
+- `shared_frac=1.0` collapses under both deterministic and stochastic gates:
+  every seed has zero heart deposits and very low task-event counts.
+- Representation/probe metrics from Stage 6 are not paper evidence because the
+  behavior precondition failed.
+- The immediate next diagnostic is a warm-start reward-mixing test from the
+  behavior-valid strict-v10 alpha0 2M checkpoints. This distinguishes whether
+  high sharing prevents chain-behavior acquisition from scratch, or destroys
+  the learned behavior after acquisition.
+
+V10 Stage-7 warm-start reward-mixing diagnostic plan:
+
+- Purpose: separate acquisition failure from reward-sharing-induced behavior
+  destruction.
+- Source checkpoints:
+  - seed `0`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed0_2m_69e6627267/final_model.pt`
+  - seed `1`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed1_2m_69e6627267/final_model.pt`
+  - seed `2`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed2_2m_69e6627267/final_model.pt`
+- Arms:
+  - `shared_frac=0.8`, seeds `0,1,2`, `500,004` fine-tuning agent steps.
+  - `shared_frac=1.0`, seeds `0,1,2`, `500,004` fine-tuning agent steps.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - per-seed `--init-checkpoint-path` from the Stage-3 strict 2M source.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage7_v10_warmstart_reward_mixing`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage7_v10_warmstart_reward_mixing_<sha>`.
+- Pass criteria:
+  - every deterministic checkpoint arm has nonzero heart deposits;
+  - at least two of three seeds per shared fraction stay within 25% of their
+    Stage-3 strict 2M deterministic heart-deposit count;
+  - raw behavior remains above no-op/random and does not collapse to the
+    Stage-6 alpha1 pattern.
+- Interpretation rule:
+  - If warm-started alpha0.8 preserves behavior but alpha1.0 collapses, the
+    likely claim is a behavioral threshold for reward sharing, not a clean
+    monotone representation result.
+  - If both preserve behavior, run a longer behavior-gated reward-mixing sweep.
+  - If both collapse, high reward sharing is incompatible with the current
+    reconstructed reward/task setup and the MAPPO reward-mixing paper claim
+    remains unsupported.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2718,7 +2836,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Fix v10 checkpoint metadata so behavior rollouts use the effective mask.
 - [x] Run v10 Stage-2 strict-mask 10M ramp.
 - [x] Run v10 Stage-2 behavior gate.
-- [ ] Run reward-mixing pilot.
+- [x] Run from-scratch strict-v10 reward-mixing pilot.
+- [x] Run Stage-6 reward-mixing behavior gate.
+- [ ] Run Stage-7 warm-start reward-mixing diagnostic.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
