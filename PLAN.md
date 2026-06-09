@@ -103,6 +103,10 @@ Current uncertainty:
   do not separate by ore/battery/heart stage. This supports revising the paper
   away from a learned-role claim rather than searching for a behavior-derived
   role label to rescue it.
+- Stage-18 updated the Overleaf paper from the behavior-backed canonical
+  evidence stream. The paper now states the negative result: reward redesign
+  recovers meaningful chain behavior, but the reconstructed setup does not
+  support the original MAPPO fixed-role specialization claim.
 
 Immediate operating plan:
 
@@ -155,7 +159,8 @@ Immediate operating plan:
   original fixed `agent_id % 3` MAPPO role-probe claim. Completed Stage-17
   behavior-derived role audit: the behavior itself is not role-specialized.
 - Phase O: update the paper only after the Stage-16 interpretation and any
-  necessary follow-up analyses are stable.
+  necessary follow-up analyses are stable. Completed in Overleaf commit
+  `eef90a1`.
 
 ## Research Question
 
@@ -3994,6 +3999,40 @@ Stage-17 interpretation:
   shaping recovering meaningful chain behavior, but it does not support the
   original MAPPO learned-role/specialization claim.
 
+V10 Stage-18 paper update:
+
+- Purpose: update the paper only after behavior validation, representation
+  readout, and behavior-derived role audit were complete.
+- Overleaf checkout:
+  `/Users/relh/Code/overleaf/representation-collapse-paper`.
+- Overleaf commit:
+  `eef90a1` (`Revise Tribal Village result after behavior audit`).
+- Files updated:
+  - `samples/main.tex`;
+  - `runs.md`.
+- Paper changes:
+  - replaces the old positive Tribal Village role-separable MAPPO claim with a
+    behavior-first reconstruction narrative;
+  - removes the old PCA teaser claim and old five-seed monotonic Tribal table
+    from the paper body;
+  - adds the behavior-backed Stage-16 representation table:
+    alpha0 source probe `0.348 +/- 0.022`, alpha0-to-alpha0.6 probe
+    `0.309 +/- 0.021`;
+  - adds the Stage-17 behavior-derived role audit:
+    `0/6` fixed-role separated rollouts for both alpha0 and alpha0-to-alpha0.6;
+  - marks the old passive-shaping five-seed rerun as superseded provenance in
+    `runs.md`.
+- Validation:
+
+```bash
+cd /Users/relh/Code/overleaf/representation-collapse-paper/samples
+latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+```
+
+- Validation result: build completed successfully and wrote `main.pdf`. Local
+  build products were removed before commit, leaving only source/provenance
+  changes.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -4114,8 +4153,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
 - [x] Run representation/probe analysis only after a strict behavior gate passes.
 - [x] Run Stage-17 behavior-derived role audit after the fixed-role probe failed.
-- [ ] Run canonical 5-seed sweep only after pilot success.
-- [ ] Update the paper from canonical outputs only.
+- [x] Resolve the canonical sweep decision after behavior-backed role audit.
+- [x] Update the paper from canonical outputs only.
 
 ## Open Questions
 
