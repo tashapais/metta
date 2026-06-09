@@ -65,6 +65,9 @@ Current uncertainty:
   deterministic behavior from `3` to `34` heart deposits, but still missed the
   all-seed preservation gate, so alpha0.6 is budget-sensitive rather than
   canonical.
+- Linear alpha0-to-alpha0.6 annealed transfer passed the 3-seed deterministic
+  behavior gate with heart deposits `63,40,63`, making it the first
+  behavior-valid mixed-reward candidate in this reconstruction.
 
 Immediate operating plan:
 
@@ -90,8 +93,11 @@ Immediate operating plan:
   better than `250k` for seed1 but still misses the strict gate.
 - Phase H: run an alpha0-to-alpha0.6 annealed-transfer diagnostic to test
   whether gradual reward sharing preserves the chain better than fixed alpha.
-- Phase I: only if a reward-mixing condition preserves behavior across seeds,
-  run the canonical paper sweep.
+  Completed: annealing passed the 3-seed deterministic behavior gate.
+- Phase I: promote annealed alpha0.6 into a canonical follow-up: expand seeds,
+  preserve behavior gates, and run representation/probe analysis from the
+  behavior-valid checkpoints.
+- Phase J: update the paper only after the canonical follow-up is complete.
 
 ## Research Question
 
@@ -3210,6 +3216,100 @@ V10 Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic plan:
     behavior-valid enough for deterministic MAPPO role-learning claims in this
     reconstruction.
 
+V10 Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic outcome, commit
+`284d19ddb`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `149`: seeds `0,1`.
+  - `relh-sandbox-2` job `148`: seed `2`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `150`: deterministic/stochastic checkpoint rollouts
+    for seeds `0,1`.
+  - `relh-sandbox-2` job `149`: five baselines plus deterministic/stochastic
+    checkpoint rollouts for seed `2`.
+- Result JSON and checkpoint files were present and nonempty for all three
+  training runs.
+- Result metadata confirmed `shared_frac=0.6`, `shared_frac_start=0.0`, and
+  `shared_frac_schedule=linear` for all three seeds.
+- Behavior-output validation passed for all Stage-11 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage11_v10_alpha0_to_alpha0p6_anneal`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage11_v10_alpha0_to_alpha0p6_anneal_284d19ddb`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage11_v10_alpha0_to_alpha0p6_anneal_sandbox1_284d19ddb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage11_v10_alpha0_to_alpha0p6_anneal_sandbox2_284d19ddb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage11_behavior_gate_sandbox1_284d19ddb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage11_behavior_gate_sandbox2_284d19ddb.sh`
+- Offline W&B run IDs:
+  - seed `0`: `nt50m4xe`;
+  - seed `1`: `c89gvm59`;
+  - seed `2`: `8n4sgyoa`.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-6.194` | `146.546` | `152.741` | `0.529` | `14.218` | `0.275` | `0.330` |
+| `1` | `-0.148` | `120.430` | `120.579` | `0.503` | `13.975` | `0.232` | `0.354` |
+| `2` | `-0.869` | `134.325` | `135.194` | `0.516` | `14.677` | `0.290` | `0.388` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-28.800` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-37.100` | `43.7` | `1` | `0` | `0` | `6277` | `124` |
+| `move_sweep` | `-33.800` | `0.0` | `0` | `0` | `0` | `543` | `0` |
+| `use_sweep` | `-35.467` | `11.7` | `0` | `0` | `0` | `8605` | `35` |
+| `chain_oracle` | `-12.830` | `61.0` | `81` | `61` | `41` | `1261` | `183` |
+| `anneal0to0.6_seed0_det` | `-4.467` | `90.7` | `108` | `99` | `63` | `1910` | `272` |
+| `anneal0to0.6_seed0_stoch` | `-33.587` | `66.0` | `81` | `69` | `43` | `1339` | `198` |
+| `anneal0to0.6_seed1_det` | `-6.367` | `58.3` | `69` | `63` | `40` | `630` | `175` |
+| `anneal0to0.6_seed1_stoch` | `-5.423` | `50.3` | `66` | `48` | `34` | `400` | `151` |
+| `anneal0to0.6_seed2_det` | `18.967` | `81.3` | `91` | `89` | `63` | `2621` | `244` |
+| `anneal0to0.6_seed2_stoch` | `-5.600` | `75.7` | `90` | `77` | `54` | `1260` | `227` |
+
+Decision:
+
+- Stage 11 passes the deterministic mixed-reward behavior gate.
+- Deterministic heart deposits were `63,40,63`, above the Stage-3 source
+  preservation thresholds:
+  - seed0: threshold `42.75`, observed `63`;
+  - seed1: threshold `38.25`, observed `40`;
+  - seed2: threshold `43.5`, observed `63`.
+- Deterministic rollouts also beat no-op/random on raw reward and had nonzero
+  ore pickup, battery crafting, heart deposit, and use-success counts.
+- Stochastic rollouts remained nonzero with heart deposits `43,34,54`.
+- This result supports the mechanism hypothesis that abrupt fixed reward mixing
+  destabilizes greedy behavior, while gradual reward-sharing introduction can
+  preserve the learned chain.
+- Stage 11 is the first behavior-valid mixed-reward candidate. It is still not
+  paper evidence by itself: the next step is a canonical promotion sweep with
+  exact seed expansion, behavior gates, and representation/probe analysis.
+
+V10 Stage-12 canonical annealed alpha0.6 promotion plan:
+
+- Purpose: convert the Stage-11 3-seed behavior-valid candidate into a
+  paper-eligible canonical result stream.
+- Required source behavior:
+  - keep existing strict-v10 alpha0 2M seeds `0,1,2`;
+  - add strict-v10 alpha0 2M seeds `3,4` if we want a 5-seed canonical table;
+  - run the same behavior gate for any new alpha0 source checkpoint.
+- Required mixed-reward condition:
+  - linear alpha schedule from `0.0` to `0.6`;
+  - final/evaluation `shared_frac=0.6`;
+  - warm-start from the matching strict-v10 alpha0 2M seed checkpoint;
+  - run seeds `0..4` after source seeds `3,4` exist.
+- Required validation:
+  - deterministic and stochastic behavior gates for every final checkpoint;
+  - replay artifacts saved for every gate;
+  - representation/probe summary over the behavior-valid checkpoints only;
+  - explicit comparison against the alpha0 source representation metrics.
+- Paper rule:
+  - do not update Overleaf until Stage-12 artifacts are complete and the
+    behavior gate passes on the canonical seed set.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3315,8 +3415,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-9 behavior gate.
 - [x] Run Stage-10 alpha0.6 short-budget diagnostic.
 - [x] Run Stage-10 behavior gate.
-- [ ] Add and run Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic.
-- [ ] Run Stage-11 behavior gate.
+- [x] Add and run Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic.
+- [x] Run Stage-11 behavior gate.
+- [ ] Run Stage-12 canonical annealed alpha0.6 promotion sweep.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
