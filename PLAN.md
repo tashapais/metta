@@ -78,6 +78,11 @@ Current uncertainty:
   seeds, but the strict canonical gate did not pass: source seed `2` was
   deterministic-weak, and promoted seed `0` missed the 75% source-preservation
   threshold by `3` heart deposits (`33` observed vs `36` required).
+- Stage-14 tested whether a lower final reward-sharing fraction would recover
+  preservation. It did not: alpha0-to-alpha0.5 annealing worsened deterministic
+  behavior for seeds `1` and `3`, so the next step is a higher-sample behavior
+  audit of the stronger Stage-13 alpha0.6 candidate rather than another
+  lower-alpha training run.
 
 Immediate operating plan:
 
@@ -114,8 +119,12 @@ Immediate operating plan:
   canonical gate.
 - Phase K: run one conservative alpha0-to-alpha0.5 annealed follow-up on the
   same Stage-13 source checkpoints to test whether the seed0 preservation miss
-  is final-alpha sensitive.
-- Phase L: update the paper only after the canonical follow-up is complete.
+  is final-alpha sensitive. Completed: alpha0.5 worsened deterministic behavior
+  and is not a promotion candidate.
+- Phase L: run a higher-N behavior audit for Stage-13 alpha0 sources and
+  alpha0.6 promoted checkpoints to measure whether the seed0 preservation miss
+  and seed2 source weakness persist beyond the 3-episode gate.
+- Phase M: update the paper only after the canonical follow-up is complete.
 
 ## Research Question
 
@@ -3633,6 +3642,98 @@ Stage-13 decision:
   - the specific question is whether a lower final shared-reward fraction keeps
     the meaningful all-seed behavior while recovering seed0 preservation.
 
+V10 Stage-14 alpha0-to-alpha0.5 annealed-transfer outcome, commit
+`436a07de7`:
+
+- Purpose: test whether the Stage-13 seed0 preservation miss is caused by final
+  shared-reward fraction being too high.
+- Source checkpoints: the Stage-13 strict-v10 alpha0 `2M` checkpoints, still
+  using the fixed six-seed source set.
+- Stage-14 promotion root:
+  `/workspace/tribal_event_mask_runs/stage14_v10_alpha0_to_alpha0p5_anneal_promotion`.
+- Stage-14 behavior root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage14_v10_alpha0_to_alpha0p5_anneal_promotion_436a07de71`.
+- Stage-14 launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage14_alpha0_to_alpha0p5_anneal_sandbox1_436a07de71.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage14_alpha0_to_alpha0p5_anneal_sandbox2_436a07de71.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage14_alpha0_to_alpha0p5_behavior_sandbox1_436a07de71.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage14_alpha0_to_alpha0p5_behavior_sandbox2_436a07de71.sh`
+- Jobs:
+  - promotion: `relh-sandbox-1` job `162`, `relh-sandbox-2` job `161`;
+  - behavior: `relh-sandbox-1` job `163`, `relh-sandbox-2` job `162`.
+- Validation:
+  - behavior validation passed for `6` checkpoint rollout files on sandbox 1
+    and `11` rollout files on sandbox 2;
+  - after the final behavior gate, both sandbox queues were empty.
+
+Stage-14 training eval:
+
+| Promotion | Source | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe | W&B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `seed0_anneal0to0.5` | `seed0_alpha0_2m` | `-8.205` | `21.595` | `29.800` | `0.459` | `12.405` | `0.227` | `0.297` | `ixgrr5z5` |
+| `seed1_anneal0to0.5` | `seed1_alpha0_2m` | `1.893` | `187.654` | `185.761` | `0.431` | `10.343` | `0.271` | `0.359` | `ibts2eus` |
+| `seed2_anneal0to0.5` | `seed2_alpha0_2m` | `-9.897` | `3.105` | `13.001` | `0.295` | `7.825` | `0.164` | `0.322` | `tvdv4xxg` |
+| `seed3_anneal0to0.5` | `seed3_alpha0_2m` | `0.835` | `229.083` | `228.248` | `0.423` | `10.334` | `0.297` | `0.311` | `yemag6nn` |
+| `seed4_anneal0to0.5` | `seed4_alpha0_2m` | `-7.322` | `153.077` | `160.399` | `0.518` | `14.496` | `0.271` | `0.308` | `6953ens5` |
+| `seed5_anneal0to0.5` | `seed5_alpha0_2m` | `-6.229` | `121.220` | `127.449` | `0.493` | `12.931` | `0.297` | `0.363` | `fkhy83bq` |
+
+Stage-14 behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-28.800` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-43.700` | `26.7` | `5` | `0` | `0` | `6354` | `76` |
+| `move_sweep` | `-28.800` | `0.0` | `0` | `0` | `0` | `1380` | `0` |
+| `use_sweep` | `-32.133` | `3.3` | `0` | `0` | `0` | `8630` | `10` |
+| `chain_oracle` | `-24.733` | `52.7` | `62` | `55` | `37` | `2209` | `158` |
+| `seed0_anneal0to0.5_det` | `-7.967` | `39.7` | `51` | `48` | `19` | `902` | `119` |
+| `seed0_anneal0to0.5_stoch` | `-35.420` | `54.7` | `68` | `59` | `36` | `783` | `164` |
+| `seed1_anneal0to0.5_det` | `-30.213` | `20.0` | `41` | `15` | `3` | `1110` | `60` |
+| `seed1_anneal0to0.5_stoch` | `-31.497` | `36.3` | `58` | `29` | `21` | `530` | `109` |
+| `seed2_anneal0to0.5_det` | `-26.790` | `26.0` | `31` | `27` | `17` | `1214` | `78` |
+| `seed2_anneal0to0.5_stoch` | `1.900` | `65.7` | `79` | `64` | `48` | `432` | `197` |
+| `seed3_anneal0to0.5_det` | `-44.950` | `50.0` | `67` | `51` | `31` | `1516` | `150` |
+| `seed3_anneal0to0.5_stoch` | `16.300` | `79.7` | `91` | `84` | `59` | `1304` | `239` |
+| `seed4_anneal0to0.5_det` | `4.100` | `77.3` | `87` | `80` | `61` | `2435` | `232` |
+| `seed4_anneal0to0.5_stoch` | `-3.167` | `80.0` | `95` | `83` | `61` | `2052` | `240` |
+| `seed5_anneal0to0.5_det` | `4.533` | `69.7` | `80` | `75` | `52` | `1700` | `209` |
+| `seed5_anneal0to0.5_stoch` | `-10.567` | `83.3` | `101` | `87` | `60` | `1027` | `250` |
+
+Stage-14 decision:
+
+- Alpha0-to-alpha0.5 is not a promotion candidate.
+- It did not fix seed0: deterministic heart deposits dropped from Stage-13
+  alpha0.6's `33` to `19`, farther below the `36` preservation threshold.
+- It created new deterministic failures:
+  - seed1 dropped from `53` hearts at alpha0.6 to `3` hearts at alpha0.5;
+  - seed3 retained nonzero chain work but raw reward fell to `-44.950`, below
+    no-op/random.
+- Stochastic behavior remained strong for several seeds, especially seeds
+  `2,3,4,5`, but the paper gate is deterministic behavior first.
+- Interpretation: lower final alpha is not the missing ingredient. The
+  Stage-13 alpha0.6 candidate remains the stronger mixed-reward condition.
+
+V10 Stage-15 higher-N behavior audit plan:
+
+- Purpose: reduce behavior-gate noise before deciding whether Stage-13 alpha0.6
+  is truly a strict-gate failure.
+- Run higher-sample behavior audits, not new training:
+  - Stage-13 alpha0 source checkpoints, seeds `0..5`;
+  - Stage-13 alpha0-to-alpha0.6 promoted checkpoints, seeds `0..5`.
+- Use the same environment, chain-compass observation, and action-mask metadata.
+- Increase behavior sampling from `3` to `10` episodes at `240` steps.
+- Primary questions:
+  - Does source seed `2` remain deterministic-weak with more episodes?
+  - Does promoted seed `0` remain below 75% source-heart preservation, or was
+    the `33` vs `36` miss 3-episode variance?
+  - Do all promoted deterministic policies still beat no-op/random on raw reward
+    and maintain nonzero chain work?
+- If Stage-15 shows Stage-13 alpha0.6 passes within higher-N uncertainty, run
+  representation/probe analysis from Stage-13.
+- If Stage-15 confirms the miss, the next training diagnostic should focus on
+  source acquisition stability for seed2 and a targeted seed0 preservation
+  schedule, not lower final alpha.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3746,8 +3847,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-13 source behavior gate.
 - [x] Run Stage-13 annealed alpha0.6 promotion and behavior gates.
 - [x] Document Stage-13 behavior-positive/strict-gate-fail outcome.
-- [ ] Run Stage-14 conservative alpha0-to-alpha0.5 annealed promotion.
-- [ ] Run Stage-14 behavior gates.
+- [x] Run Stage-14 conservative alpha0-to-alpha0.5 annealed promotion.
+- [x] Run Stage-14 behavior gates.
+- [x] Document Stage-14 negative alpha0.5 outcome.
+- [ ] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
 - [ ] Run representation/probe analysis only after a strict behavior gate passes.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
