@@ -1324,6 +1324,113 @@ def test_train_canonical_reward_geometry_event_v10_chain_affordance_mock_smoke(t
     assert checkpoint["config"]["chain_compass_observation"] is True
 
 
+def test_train_canonical_reward_geometry_v10_init_checkpoint_relaxed_mask_mock_smoke(tmp_path):
+    pytest.importorskip("sklearn")
+    source_output_path = tmp_path / "source_event_v10_result.json"
+    source_checkpoint_path = tmp_path / "source_event_v10_final_model.pt"
+
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v10_chain_affordance_compass_breadcrumbs",
+                "--use-action-mask",
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(source_output_path),
+                "--checkpoint-path",
+                str(source_checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    transfer_output_path = tmp_path / "transfer_event_v10_result.json"
+    transfer_checkpoint_path = tmp_path / "transfer_event_v10_final_model.pt"
+    assert (
+        train_canonical_main(
+            [
+                "--env-backend",
+                "mock",
+                "--reward-design",
+                "event_v10_chain_affordance_compass_breadcrumbs",
+                "--use-action-mask",
+                "--disable-chain-affordance-action-mask",
+                "--init-checkpoint-path",
+                str(source_checkpoint_path),
+                "--shared-frac",
+                "0.0",
+                "--seed",
+                "0",
+                "--total-agent-steps",
+                "24",
+                "--eval-trials",
+                "1",
+                "--eval-steps",
+                "1",
+                "--num-steps",
+                "2",
+                "--minibatch-size",
+                "12",
+                "--update-epochs",
+                "1",
+                "--hidden-dim",
+                "8",
+                "--embedding-dim",
+                "6",
+                "--output",
+                str(transfer_output_path),
+                "--checkpoint-path",
+                str(transfer_checkpoint_path),
+                "--wandb-mode",
+                "disabled",
+                "--log-interval",
+                "0",
+            ]
+        )
+        == 0
+    )
+
+    record = json.loads(transfer_output_path.read_text())
+    assert record["init_checkpoint_path"] == str(source_checkpoint_path)
+    assert record["init_checkpoint"]["path"] == str(source_checkpoint_path)
+    assert record["init_checkpoint"]["source_reward_design"] == "event_v10_chain_affordance_compass_breadcrumbs"
+    assert record["chain_affordance_action_mask"] is False
+    assert record["reward_design_details"]["action_affordance_curriculum"]["enabled"] is False
+    assert record["role_shaping_coefficients"]["chain_affordance_action_mask"]["enabled"] is False
+    assert validate_record(record, path=transfer_output_path, allow_smoke=True) == []
+
+    checkpoint = torch.load(transfer_checkpoint_path, map_location="cpu", weights_only=False)
+    assert checkpoint["config"]["chain_affordance_action_mask"] is False
+    assert checkpoint["config"]["disable_chain_affordance_action_mask"] is True
+    assert checkpoint["init_checkpoint"]["path"] == str(source_checkpoint_path)
+
+
 def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {

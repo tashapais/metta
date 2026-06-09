@@ -2312,6 +2312,132 @@ Budget-ladder decision rule:
   prioritize behavior stability first; representation sweeps remain blocked
   until an annealed action-surface condition passes.
 
+V10 Stage-3 budget-ladder outcome, commit `69e6627267`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `135`: seeds `0` and `1`, each running `2M` then `4M`.
+  - `relh-sandbox-2` job `134`: seed `2`, running `2M` then `4M`.
+- Result JSON validation passed for all six training outputs.
+- Behavior-output validation passed for both replay gates:
+  - 2M gate: 11 rollout files across baselines plus checkpoint seeds `0,1,2`.
+  - 4M gate: 11 rollout files across baselines plus checkpoint seeds `0,1,2`.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder`.
+- Behavior gate roots:
+  - `/workspace/tribal_event_mask_runs/behavior_gate_stage3_v10_budget_ladder_2m_69e6627267`.
+  - `/workspace/tribal_event_mask_runs/behavior_gate_stage3_v10_budget_ladder_4m_69e6627267`.
+
+2M training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-7.348` | `132.379` | `139.727` | `0.499` | `0.295` | `0.333` |
+| `1` | `-0.962` | `122.953` | `123.915` | `0.525` | `0.431` | `0.343` |
+| `2` | `-0.538` | `154.728` | `155.266` | `0.416` | `0.240` | `0.327` |
+
+2M behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Mean unique actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-4.903` | `55.3` | `72` | `56` | `36` | `943` | `16.7` |
+| `no_op` | `-30.467` | `0.0` | `0` | `0` | `0` | `0` | `1.0` |
+| `random` | `-39.730` | `51.7` | `5` | `0` | `0` | `6129` | `56.0` |
+| `move_sweep` | `-32.557` | `0.0` | `0` | `0` | `0` | `578` | `8.0` |
+| `use_sweep` | `-28.800` | `12.3` | `0` | `0` | `0` | `8603` | `8.0` |
+| `seed0_det` | `3.967` | `78.7` | `91` | `84` | `57` | `2227` | `16.3` |
+| `seed1_det` | `-7.200` | `72.3` | `88` | `75` | `51` | `1182` | `16.7` |
+| `seed2_det` | `-17.600` | `78.0` | `92` | `83` | `58` | `1518` | `17.0` |
+| `seed0_stoch` | `-2.200` | `68.7` | `82` | `72` | `49` | `1408` | `16.3` |
+| `seed1_stoch` | `-18.167` | `74.0` | `99` | `70` | `51` | `1242` | `16.7` |
+| `seed2_stoch` | `-12.667` | `72.0` | `86` | `71` | `53` | `858` | `16.7` |
+
+4M training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-0.183` | `155.654` | `155.837` | `0.465` | `0.208` | `0.356` |
+| `1` | `-1.587` | `133.019` | `134.607` | `0.471` | `0.279` | `0.337` |
+| `2` | `-11.210` | `-20.535` | `-9.325` | `0.463` | `0.251` | `0.296` |
+
+4M behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Mean unique actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-14.367` | `68.0` | `83` | `70` | `49` | `2238` | `16.7` |
+| `no_op` | `-35.467` | `0.0` | `0` | `0` | `0` | `0` | `1.0` |
+| `random` | `-28.733` | `41.3` | `3` | `0` | `0` | `6255` | `56.0` |
+| `move_sweep` | `-34.997` | `0.0` | `0` | `0` | `0` | `584` | `8.0` |
+| `use_sweep` | `-28.767` | `10.0` | `0` | `0` | `0` | `8610` | `8.0` |
+| `seed0_det` | `5.533` | `69.0` | `78` | `74` | `51` | `1153` | `16.3` |
+| `seed1_det` | `14.933` | `75.7` | `86` | `82` | `57` | `2649` | `17.0` |
+| `seed2_det` | `-26.797` | `61.7` | `82` | `58` | `39` | `1691` | `15.7` |
+| `seed0_stoch` | `-64.833` | `72.7` | `113` | `57` | `45` | `844` | `17.0` |
+| `seed1_stoch` | `9.600` | `78.7` | `90` | `84` | `59` | `1516` | `17.0` |
+| `seed2_stoch` | `-3.200` | `74.0` | `86` | `79` | `55` | `969` | `16.3` |
+
+Decision:
+
+- The strict-v10 action mask still learns the ore -> battery -> heart-deposit
+  chain at 2M and 4M. All deterministic checkpoint seeds deposited hearts at
+  both budgets, unlike the 10M seed `0` failure.
+- The 2M budget is the cleaner candidate transfer source:
+  - all deterministic seeds exceeded the chain-oracle deposit count from the
+    same 2M gate;
+  - all deterministic seeds had stronger task-event counts than the oracle and
+    trivial baselines;
+  - seed `2` remained clean at 2M but had negative training eval return and a
+    weaker deterministic behavior gate at 4M.
+- Do not interpret the role-probe or representation metrics as a paper result
+  yet. Role-probe accuracy remains near chance, and these strict-mask policies
+  are behavior-validation checkpoints, not final reward-mixing evidence.
+- Next ramp:
+  - use the 2M strict-v10 checkpoints as the transfer source;
+  - run one affordance-relaxation experiment at a time from those checkpoints;
+  - behavior-gate each relaxed condition before starting any
+    `shared_frac in {0.0, 0.8, 1.0}` representation sweep.
+
+V10 Stage-4 transfer/annealing plan:
+
+- Purpose: test whether the behavior-valid 2M strict-v10 policies can survive
+  the first action-surface relaxation.
+- Source checkpoints:
+  - seed `0`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed0_2m_69e6627267/final_model.pt`.
+  - seed `1`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed1_2m_69e6627267/final_model.pt`.
+  - seed `2`:
+    `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder/stage3_v10_budget_ladder_alpha0_seed2_2m_69e6627267/final_model.pt`.
+- First relaxation: keep `event_v10_chain_affordance_compass_breadcrumbs`,
+  chain-compass observations, and the environment action mask, but disable the
+  strict chain-affordance mask with
+  `--disable-chain-affordance-action-mask`. This allows all environment-valid
+  actions while continuing from a policy that already performs the
+  ore -> battery -> heart chain.
+- Run shape:
+  - `--init-checkpoint-path <2m strict checkpoint>`.
+  - `--shared-frac 0.0`.
+  - `--total-agent-steps 1,000,008`.
+  - `--eval-trials 10`, `--eval-steps 1000`.
+  - `--wandb-mode offline`.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage4_v10_transfer_relaxed_envmask`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage4_v10_transfer_relaxed_envmask_<sha>`.
+- Pass criteria:
+  - deterministic checkpoint rollouts for all seeds keep nonzero heart deposits;
+  - at least two of three deterministic seeds stay within 25% of their 2M
+    strict-v10 deposit counts;
+  - relaxed rollouts do not become dominated by no-op/random invalid-action
+    behavior;
+  - new off-chain actions may appear, but they must not erase the learned
+    ore -> battery -> heart chain.
+- Decision rule:
+  - If the relaxed-env-mask transfer passes, test the next relaxation as a
+    narrower follow-up instead of jumping directly to reward mixing.
+  - If it fails, return to the 2M strict source and either shorten the transfer
+    budget, lower the learning rate, or relax only one verb family with a custom
+    mask instead of the full environment-valid action set.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is

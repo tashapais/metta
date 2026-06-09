@@ -197,6 +197,7 @@ class RunnerConfig:
     separate_encoders: bool
     use_action_mask: bool
     chain_affordance_action_mask: bool
+    disable_chain_affordance_action_mask: bool
     chain_compass_observation: bool
     env_backend: str
     allow_noncanonical_env: bool
@@ -207,6 +208,7 @@ class RunnerConfig:
     wandb_mode: str
     output: str
     checkpoint_path: str | None
+    init_checkpoint_path: str | None
     run_name: str | None
     condition_group: str | None
     device: str
@@ -566,6 +568,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--disable-chain-affordance-action-mask",
+        action="store_true",
+        help=(
+            "Disable the v10 move/current-use-only affordance mask while keeping "
+            "the environment action mask. Use for transfer/annealing diagnostics."
+        ),
+    )
+    parser.add_argument(
         "--chain-compass-observation",
         action="store_true",
         help="Append current chain-target direction/stage planes to Tribal observations.",
@@ -583,6 +593,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output", required=True)
     parser.add_argument("--checkpoint-path")
+    parser.add_argument(
+        "--init-checkpoint-path",
+        help="Initialize the policy weights from an existing canonical reward-geometry checkpoint before training.",
+    )
     parser.add_argument("--run-name")
     parser.add_argument("--condition-group")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -613,6 +627,7 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
             embedding_dim=config.embedding_dim,
             separate_encoders=config.separate_encoders,
         ).to(device)
+        init_checkpoint_metadata = _load_init_checkpoint(policy, config, env, device)
         optimizer = torch.optim.Adam(policy.parameters(), lr=config.learning_rate, eps=1e-5)
         wandb_run = _init_wandb(config, env, run_name, argv)
 
@@ -629,6 +644,7 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
                 "model_state_dict": policy.state_dict(),
                 "config": checkpoint_config,
                 "env": _env_metadata(env),
+                "init_checkpoint": init_checkpoint_metadata,
                 "train_metrics": train_metrics,
                 "eval_summary": eval_summary,
             },
@@ -644,6 +660,7 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
             checkpoint_path,
             train_metrics,
             eval_summary,
+            init_checkpoint_metadata,
             wandb_run,
             argv,
         )
@@ -663,6 +680,84 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
         return record
     finally:
         env.close()
+
+
+def _load_init_checkpoint(
+    policy: ActorCritic,
+    config: RunnerConfig,
+    env: CanonicalEnv,
+    device: torch.device,
+) -> dict[str, Any] | None:
+    if config.init_checkpoint_path is None:
+        return None
+
+    checkpoint_path = Path(config.init_checkpoint_path)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"--init-checkpoint-path does not exist: {checkpoint_path}")
+    checkpoint = _torch_load_checkpoint(checkpoint_path, device)
+    _validate_init_checkpoint_contract(checkpoint, config, env, checkpoint_path)
+    policy.load_state_dict(checkpoint["model_state_dict"])
+
+    checkpoint_config = checkpoint.get("config", {})
+    return {
+        "path": str(checkpoint_path),
+        "source_run_name": checkpoint_config.get("run_name"),
+        "source_reward_design": checkpoint_config.get("reward_design"),
+        "source_shared_frac": checkpoint_config.get("shared_frac"),
+        "source_seed": checkpoint_config.get("seed"),
+        "source_total_agent_steps": checkpoint_config.get("total_agent_steps"),
+        "source_use_action_mask": checkpoint_config.get("use_action_mask"),
+        "source_chain_affordance_action_mask": checkpoint_config.get("chain_affordance_action_mask"),
+        "source_chain_compass_observation": checkpoint_config.get("chain_compass_observation"),
+    }
+
+
+def _torch_load_checkpoint(path: Path, device: torch.device) -> dict[str, Any]:
+    try:
+        return torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=device)
+
+
+def _validate_init_checkpoint_contract(
+    checkpoint: dict[str, Any],
+    config: RunnerConfig,
+    env: CanonicalEnv,
+    checkpoint_path: Path,
+) -> None:
+    if "model_state_dict" not in checkpoint:
+        raise ValueError(f"{checkpoint_path} does not contain model_state_dict")
+
+    checkpoint_env = checkpoint.get("env", {})
+    expected_env = {
+        "num_agents": env.num_agents,
+        "action_space_size": env.action_space_size,
+        "obs_shape": list(env.obs_shape),
+    }
+    mismatches = {
+        key: {"expected": expected_value, "actual": checkpoint_env.get(key)}
+        for key, expected_value in expected_env.items()
+        if checkpoint_env.get(key) != expected_value
+    }
+
+    checkpoint_config = checkpoint.get("config", {})
+    expected_config = {
+        "hidden_dim": config.hidden_dim,
+        "embedding_dim": config.embedding_dim,
+        "separate_encoders": config.separate_encoders,
+    }
+    mismatches.update(
+        {
+            key: {"expected": expected_value, "actual": checkpoint_config.get(key)}
+            for key, expected_value in expected_config.items()
+            if checkpoint_config.get(key) != expected_value
+        }
+    )
+    if mismatches:
+        raise ValueError(
+            f"{checkpoint_path} is not compatible with this transfer run: "
+            f"{json.dumps(mismatches, sort_keys=True)}"
+        )
 
 
 def _train_policy(
@@ -782,7 +877,7 @@ def _train_policy(
             flat_advantages,
             flat_returns,
             flat_agent_ids,
-            np.stack(mask_buf).reshape(-1, env.action_space_size) if config.use_action_mask else None,
+            np.stack(mask_buf).reshape(-1, env.action_space_size) if mask_buf else None,
             config,
             device,
         )
@@ -996,6 +1091,7 @@ def _result_record(
     checkpoint_path: Path,
     train_metrics: dict[str, Any],
     eval_summary: dict[str, Any],
+    init_checkpoint_metadata: dict[str, Any] | None,
     wandb_run: Any,
     argv: list[str],
 ) -> dict[str, Any]:
@@ -1037,6 +1133,8 @@ def _result_record(
         "wandb_run_id": getattr(wandb_run, "id", None) if wandb_run is not None else None,
         "wandb_url": getattr(wandb_run, "url", None) if wandb_run is not None else None,
         "checkpoint_path": str(checkpoint_path),
+        "init_checkpoint_path": config.init_checkpoint_path,
+        "init_checkpoint": init_checkpoint_metadata,
         "output_path": str(output_path),
         "obs_shape": list(env.obs_shape),
         "action_space_size": env.action_space_size,
@@ -1257,6 +1355,8 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
 
 
 def _uses_chain_affordance_action_mask(config: RunnerConfig) -> bool:
+    if config.disable_chain_affordance_action_mask:
+        return False
     return (
         config.chain_affordance_action_mask or config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs"
     )
@@ -1312,6 +1412,8 @@ def _validate_config(config: RunnerConfig) -> None:
         raise ValueError("--eval-trials must be positive")
     if config.eval_steps <= 0:
         raise ValueError("--eval-steps must be positive")
+    if config.chain_affordance_action_mask and config.disable_chain_affordance_action_mask:
+        raise ValueError("--chain-affordance-action-mask and --disable-chain-affordance-action-mask conflict")
 
 
 def _validate_env_contract(env: CanonicalEnv, config: RunnerConfig) -> None:
@@ -1500,6 +1602,7 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "roles": {role: {} for role in EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES},
         }
     if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
+        chain_affordance_enabled = _uses_chain_affordance_action_mask(config)
         return {
             "common": {},
             "task_events": dict(EVENT_V6_ORACLE_CHAIN_TASK_COEFFICIENTS),
@@ -1515,8 +1618,10 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
             "oracle_action_caps": dict(EVENT_V6_ORACLE_CHAIN_ACTION_CAPS),
             "negative_reward_coefficients": {},
             "chain_affordance_action_mask": {
-                "enabled": True,
-                "allowed_verbs": ["move", "use_current_chain_target"],
+                "enabled": chain_affordance_enabled,
+                "allowed_verbs": (
+                    ["move", "use_current_chain_target"] if chain_affordance_enabled else ["environment_valid_actions"]
+                ),
                 "reward_penalties_added": False,
             },
             "roles": {role: {} for role in EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES},
@@ -1548,6 +1653,14 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
     if config.reward_design == "event_v10_chain_affordance_compass_breadcrumbs":
         details = event_v10_chain_affordance_compass_reward_design_details()
         details["potential_shaping"]["run_gamma"] = config.gamma
+        chain_affordance_enabled = _uses_chain_affordance_action_mask(config)
+        details["action_affordance_curriculum"]["enabled"] = chain_affordance_enabled
+        if not chain_affordance_enabled:
+            details["action_affordance_curriculum"]["allowed_verbs"] = ["environment_valid_actions"]
+            details["action_affordance_curriculum"]["blocked_successes"] = []
+            details["action_affordance_curriculum"]["purpose"] = (
+                "Relax the strict v10 affordance mask for transfer/annealing diagnostics."
+            )
         return details
     return {
         "name": "passive_v0",
