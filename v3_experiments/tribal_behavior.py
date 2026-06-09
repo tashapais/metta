@@ -37,6 +37,8 @@ SIMULATOR_STAT_COLUMNS = (
     "death",
     "respawn",
     "lantern_plant",
+    "put_ore",
+    "put_battery",
 )
 ACTION_STAT_COLUMNS = SIMULATOR_STAT_COLUMNS
 INVENTORY_COLUMNS = (
@@ -311,7 +313,7 @@ def _summarize_simulator_action_stats(stats: np.ndarray | None, verb_names: list
             "resource_pickups_by_type": _zero_keys("water", "wheat", "wood", "ore"),
             "crafting_outputs_by_type": _zero_keys("battery", "spear", "lantern", "armor", "bread"),
             "deposits_by_type": _zero_keys("heart"),
-            "handoffs_by_type": _zero_keys("armor", "bread"),
+            "handoffs_by_type": _zero_keys("ore", "battery", "armor", "bread"),
             "combat_events": _zero_keys("tumor_kill", "spawner_kill", "agent_kill"),
             "lifecycle_events": _zero_keys("death", "respawn", "lantern_plant"),
             "task_event_count": 0,
@@ -345,6 +347,8 @@ def _summarize_simulator_action_stats(stats: np.ndarray | None, verb_names: list
     }
     deposits = {"heart": totals_by_column["deposit_heart"]}
     handoffs = {
+        "ore": totals_by_column["put_ore"],
+        "battery": totals_by_column["put_battery"],
         "armor": totals_by_column["put_armor"],
         "bread": totals_by_column["put_bread"],
     }

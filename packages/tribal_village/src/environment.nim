@@ -218,6 +218,8 @@ type
     actionSwap*: int     # Action 4: SWAP
     actionPlant*: int    # Action 6: PLANT lantern
     actionPut*: int      # Action 5: GIVE to teammate
+    putOre*: int
+    putBattery*: int
     resourceWater*: int
     resourceWheat*: int
     resourceWood*: int
@@ -859,8 +861,24 @@ proc putAction(env: Environment, id: int, agent: Thing, argument: int) =
     inc env.stats[id].actionInvalid
     return
   var transferred = false
+  if agent.inventoryOre > 0 and target.inventoryOre < MapObjectAgentMaxInventory:
+    let giveAmt = min(agent.inventoryOre, MapObjectAgentMaxInventory - target.inventoryOre)
+    agent.inventoryOre -= giveAmt
+    target.inventoryOre += giveAmt
+    env.updateObservations(AgentInventoryOreLayer, agent.pos, agent.inventoryOre)
+    env.updateObservations(AgentInventoryOreLayer, target.pos, target.inventoryOre)
+    inc env.stats[id].putOre
+    transferred = true
+  elif agent.inventoryBattery > 0 and target.inventoryBattery < MapObjectAgentMaxInventory:
+    let giveAmt = min(agent.inventoryBattery, MapObjectAgentMaxInventory - target.inventoryBattery)
+    agent.inventoryBattery -= giveAmt
+    target.inventoryBattery += giveAmt
+    env.updateObservations(AgentInventoryBatteryLayer, agent.pos, agent.inventoryBattery)
+    env.updateObservations(AgentInventoryBatteryLayer, target.pos, target.inventoryBattery)
+    inc env.stats[id].putBattery
+    transferred = true
   # Give armor if we have any and target has none
-  if agent.inventoryArmor > 0 and target.inventoryArmor == 0:
+  elif agent.inventoryArmor > 0 and target.inventoryArmor == 0:
     target.inventoryArmor = agent.inventoryArmor
     agent.inventoryArmor = 0
     inc env.stats[id].putArmor
@@ -1335,7 +1353,9 @@ proc isActionCurrentlyValid*(env: Environment, id: int, actionValue: uint8): boo
     let target = env.getThing(targetPos)
     if target.isNil or target.kind != Agent:
       return false
-    return (agent.inventoryArmor > 0 and target.inventoryArmor == 0) or
+    return (agent.inventoryOre > 0 and target.inventoryOre < MapObjectAgentMaxInventory) or
+      (agent.inventoryBattery > 0 and target.inventoryBattery < MapObjectAgentMaxInventory) or
+      (agent.inventoryArmor > 0 and target.inventoryArmor == 0) or
       (agent.inventoryBread > 0 and target.inventoryBread < MapObjectAgentMaxInventory)
   of 6:
     if agent.inventoryLantern <= 0:

@@ -4033,6 +4033,55 @@ latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
   build products were removed before commit, leaving only source/provenance
   changes.
 
+Stage-19 specialization-forcing follow-up:
+
+- Purpose: pursue the next research fork after the Stage-17 negative role audit:
+  create a Tribal Village variant where division of labor is mechanically
+  necessary, then rerun the same behavior-gated representation experiments only
+  if the policies learn meaningful cross-role behavior.
+- Old figure contract recovered from the original paper assets:
+  - Tribal PCA plots compare individual vs shared/mixed reward conditions in
+    side-by-side panels;
+  - axes are encoder embedding PC1/PC2 with explained variance percentages;
+  - point colors are fixed role labels and large outlined markers are
+    per-agent embedding means;
+  - panel subtitles report `EffRank/n`, ordered `D_act`, `D_JS`, and role-probe
+    accuracy.
+- New plotting tool:
+  `v3_experiments/export_tribal_representation_artifacts.py`.
+  It reloads canonical checkpoints, runs deterministic evaluation rollouts,
+  saves `.npz` embedding/logit/action dumps, and regenerates old-style PCA
+  figures plus a JSON summary. It accepts checkpoint path prefix rewrites so
+  canonical JSONs can remain unchanged while artifacts are generated on a
+  sandbox or local harvested directory.
+- New simulator support:
+  - `put` can now hand off ore and batteries, in addition to armor and bread;
+  - action stats now log `put_ore` and `put_battery`;
+  - behavior summaries count ore/battery handoffs as first-class task events.
+- New reward/curriculum design:
+  `event_v11_role_gated_chain_handoffs`.
+  This is a diagnostic curriculum, not a negative-reward patch:
+  - role `0` suppliers can mine ore and hand off ore;
+  - role `1` crafters can convert ore into batteries and hand off batteries;
+  - role `2` depositors can deposit batteries into the home assembler;
+  - movement remains free;
+  - dense guidance is potential-based and role-aware, with depositors pulled
+    toward the home assembler rather than mines.
+- Stage-19 launch gate:
+  - local Python syntax check passed;
+  - local Nim `environment.nim` check passed;
+  - local mock trainer smoke passed;
+  - local real Tribal backend smoke passed and rebuilt the widened stats buffer;
+  - local representation-export smoke passed on the tiny v11 checkpoint.
+- Initial sandbox ramp:
+  - launch short `event_v11_role_gated_chain_handoffs` alpha0 diagnostics on
+    `relh-sandbox-1/2`;
+  - seeds should be split across boxes and kept short enough to inspect
+    `put_ore`, `put_battery`, `craft_battery`, and `deposit_heart` before any
+    long run;
+  - if ore/battery handoffs stay at zero, do not scale. Iterate on navigation,
+    role-aware observation breadcrumbs, or scripted/BC warm start first.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -4155,6 +4204,14 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-17 behavior-derived role audit after the fixed-role probe failed.
 - [x] Resolve the canonical sweep decision after behavior-backed role audit.
 - [x] Update the paper from canonical outputs only.
+- [x] Recover the old PCA/representation figure contract from paper images.
+- [x] Add representation artifact export and old-style PCA plotting.
+- [x] Add v11 ore/battery handoff instrumentation.
+- [x] Add v11 role-gated chain diagnostic reward/mask.
+- [x] Smoke v11 locally on mock and real Tribal backends.
+- [ ] Launch Stage-19 short v11 sandbox diagnostics.
+- [ ] Inspect Stage-19 handoff/craft/deposit counters before scaling.
+- [ ] Rerun old-style representation plots only for behavior-valid v11 streams.
 
 ## Open Questions
 

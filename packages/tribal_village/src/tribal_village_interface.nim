@@ -87,7 +87,7 @@ proc tribal_village_step_with_pointers(
 
 proc tribal_village_get_action_stats(
   env: pointer,
-  stats_buffer: ptr UncheckedArray[int32]  # [MapAgents, 26]
+  stats_buffer: ptr UncheckedArray[int32]  # [MapAgents, 28]
 ): int32 {.exportc, dynlib.} =
   ## Copy cumulative action stats to a flat buffer.
   ##
@@ -97,7 +97,7 @@ proc tribal_village_get_action_stats(
 
   try:
     for i in 0..<MapAgents:
-      let offset = i * 26
+      let offset = i * 28
       if i < globalEnv.stats.len:
         let stats = globalEnv.stats[i]
         stats_buffer[offset + 0] = stats.actionInvalid.int32
@@ -126,8 +126,10 @@ proc tribal_village_get_action_stats(
         stats_buffer[offset + 23] = stats.death.int32
         stats_buffer[offset + 24] = stats.respawn.int32
         stats_buffer[offset + 25] = stats.lanternPlant.int32
+        stats_buffer[offset + 26] = stats.putOre.int32
+        stats_buffer[offset + 27] = stats.putBattery.int32
       else:
-        for col in 0..<26:
+        for col in 0..<28:
           stats_buffer[offset + col] = 0
     return 1
   except:

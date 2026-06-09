@@ -19,6 +19,7 @@ EVENT_V7_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
+EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES = ("supplier", "crafter_logistics", "depositor")
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -384,6 +385,40 @@ EVENT_V6_ORACLE_CHAIN_ACTION_CAPS = {
 
 EVENT_V6_ORACLE_CHAIN_ROLE_COEFFICIENTS = {role: {} for role in EVENT_V6_ORACLE_CHAIN_ROLE_NAMES}
 
+EVENT_V11_ROLE_GATED_CHAIN_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_ore": 2.0,
+        "put_ore": 6.0,
+    },
+    "crafter_logistics": {
+        "craft_battery": 10.0,
+        "put_battery": 12.0,
+    },
+    "depositor": {
+        "deposit_heart": 50.0,
+    },
+}
+
+EVENT_V11_ROLE_GATED_CHAIN_STAGE_OFFSETS = {
+    "supplier_empty_to_mine": 0.0,
+    "supplier_ore_to_converter": 4.0,
+    "crafter_empty_to_mine": 0.0,
+    "crafter_ore_to_converter": 5.0,
+    "crafter_battery_to_home": 8.0,
+    "depositor_empty_to_home": 2.0,
+    "depositor_battery_to_home": 10.0,
+}
+
+EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES = {
+    "supplier_empty_to_mine": 0.04,
+    "supplier_ore_to_converter": 0.08,
+    "crafter_empty_to_mine": 0.03,
+    "crafter_ore_to_converter": 0.10,
+    "crafter_battery_to_home": 0.08,
+    "depositor_empty_to_home": 0.05,
+    "depositor_battery_to_home": 0.12,
+}
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -717,6 +752,36 @@ def event_v9_potential_chain_compass_role_shaping_bonuses(
     return bonuses
 
 
+def event_v11_role_gated_chain_handoff_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return rewards for a handoff-required ore -> battery -> heart chain.
+
+    This is a diagnostic curriculum, not a negative-reward patch. The training
+    action mask splits the chain across fixed roles: suppliers mine ore and hand
+    it off, crafters convert ore into batteries and hand those off, and
+    depositors turn batteries into hearts at the home assembler.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    if stats is not None:
+        _add_role_coefficients(
+            bonuses,
+            stats,
+            EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES,
+            EVENT_V11_ROLE_GATED_CHAIN_ROLE_COEFFICIENTS,
+        )
+    _add_role_gated_chain_potential_bonuses(bonuses, navigation_before, navigation_after, gamma=gamma)
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -970,6 +1035,59 @@ def event_v10_chain_affordance_compass_reward_design_details() -> dict[str, Any]
     return details
 
 
+def event_v11_role_gated_chain_handoff_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v11 specialization diagnostic."""
+
+    details = event_v10_chain_affordance_compass_reward_design_details()
+    details.update(
+        {
+            "name": "event_v11_role_gated_chain_handoffs",
+            "summary": (
+                "Diagnostic curriculum that makes the ore -> battery -> heart chain "
+                "mechanically require cross-role handoff: suppliers can mine and "
+                "pass ore, crafters can craft and pass batteries, and depositors "
+                "can deposit batteries at the home assembler."
+            ),
+            "role_names": list(EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES),
+            "task_event_coefficients": {},
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V11_ROLE_GATED_CHAIN_ROLE_COEFFICIENTS.items()
+            },
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi_role(s') - Phi_role(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V11_ROLE_GATED_CHAIN_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES),
+            },
+            "action_affordance_curriculum": {
+                "enabled": True,
+                "allowed_verbs": [
+                    "move",
+                    "supplier_use_mine",
+                    "supplier_put_ore",
+                    "crafter_use_converter",
+                    "crafter_put_battery",
+                    "depositor_use_assembler",
+                ],
+                "blocked_successes": [
+                    "single-agent mine->craft->deposit completion",
+                    "off-chain resource use",
+                    "attack combat",
+                    "plant lantern",
+                    "swap",
+                ],
+                "reward_penalties_added": False,
+                "purpose": (
+                    "Make role coordination necessary before rerunning fixed-role representation geometry."
+                ),
+            },
+            "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+        }
+    )
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -1128,6 +1246,69 @@ def _chain_potential_stage_and_distance(navigation_row: np.ndarray) -> tuple[str
             NAV_DIST_NEAREST_CONVERTER,
         )
     return "empty_to_mine", _valid_navigation_distance(navigation_row, NAV_DIST_NEAREST_MINE)
+
+
+def _add_role_gated_chain_potential_bonuses(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    *,
+    gamma: float,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    if before is None or after is None:
+        return
+    bonuses += gamma * _role_gated_chain_potential_values(after) - _role_gated_chain_potential_values(before)
+
+
+def _role_gated_chain_potential_values(navigation: np.ndarray) -> np.ndarray:
+    potentials = np.zeros(navigation.shape[0], dtype=np.float64)
+    labels = role_labels(navigation.shape[0], len(EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES))
+    for agent_id, row in enumerate(navigation):
+        stage_name, distance = _role_gated_chain_stage_and_distance(row, int(labels[agent_id]))
+        if stage_name is None or distance is None:
+            continue
+        clipped_distance = max(0.0, min(EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE, distance))
+        closeness = EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE - clipped_distance
+        potentials[agent_id] = (
+            EVENT_V11_ROLE_GATED_CHAIN_STAGE_OFFSETS[stage_name]
+            + EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES[stage_name] * closeness
+        )
+    return potentials
+
+
+def _role_gated_chain_stage_and_distance(
+    navigation_row: np.ndarray,
+    role_id: int,
+) -> tuple[str | None, float | None]:
+    has_ore = int(navigation_row[NAV_INVENTORY_ORE]) > 0
+    has_battery = int(navigation_row[NAV_INVENTORY_BATTERY]) > 0
+    if role_id == 0:
+        if has_ore:
+            return "supplier_ore_to_converter", _valid_navigation_distance(
+                navigation_row,
+                NAV_DIST_NEAREST_CONVERTER,
+            )
+        return "supplier_empty_to_mine", _valid_navigation_distance(navigation_row, NAV_DIST_NEAREST_MINE)
+    if role_id == 1:
+        if has_battery:
+            return "crafter_battery_to_home", _valid_navigation_distance(
+                navigation_row,
+                NAV_DIST_HOME_ASSEMBLER,
+            )
+        if has_ore:
+            return "crafter_ore_to_converter", _valid_navigation_distance(
+                navigation_row,
+                NAV_DIST_NEAREST_CONVERTER,
+            )
+        return "crafter_empty_to_mine", _valid_navigation_distance(navigation_row, NAV_DIST_NEAREST_MINE)
+    if has_battery:
+        return "depositor_battery_to_home", _valid_navigation_distance(
+            navigation_row,
+            NAV_DIST_HOME_ASSEMBLER,
+        )
+    return "depositor_empty_to_home", _valid_navigation_distance(navigation_row, NAV_DIST_HOME_ASSEMBLER)
 
 
 def _valid_navigation_distance(navigation_row: np.ndarray, column: int) -> float | None:
