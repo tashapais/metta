@@ -72,6 +72,7 @@ class LoadedCheckpointPolicy:
     separate_encoders: bool
     use_action_mask: bool
     chain_affordance_action_mask: bool
+    role_gated_chain_mask: bool
     chain_affordance_extra_verbs: tuple[str, ...]
 
 
@@ -162,6 +163,9 @@ def run_rollouts(args: argparse.Namespace, argv: list[str]) -> dict[str, Any]:
             "checkpoint_uses_action_mask": None if checkpoint_policy is None else checkpoint_policy.use_action_mask,
             "checkpoint_chain_affordance_action_mask": (
                 None if checkpoint_policy is None else checkpoint_policy.chain_affordance_action_mask
+            ),
+            "checkpoint_role_gated_chain_mask": (
+                None if checkpoint_policy is None else checkpoint_policy.role_gated_chain_mask
             ),
             "checkpoint_chain_affordance_extra_verbs": (
                 None if checkpoint_policy is None else list(checkpoint_policy.chain_affordance_extra_verbs)
@@ -461,6 +465,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         config,
         disable_override=args.disable_checkpoint_chain_affordance_action_mask,
     )
+    role_gated_chain_mask = config.get("reward_design") == "event_v11_role_gated_chain_handoffs"
     chain_affordance_extra_verbs = (
         ()
         if not chain_affordance_action_mask
@@ -481,6 +486,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         separate_encoders=separate_encoders,
         use_action_mask=use_action_mask,
         chain_affordance_action_mask=chain_affordance_action_mask,
+        role_gated_chain_mask=role_gated_chain_mask,
         chain_affordance_extra_verbs=chain_affordance_extra_verbs,
     )
 
@@ -493,7 +499,8 @@ def _checkpoint_uses_chain_affordance_action_mask(
     if disable_override:
         return False
     return bool(config.get("chain_affordance_action_mask", False)) or (
-        config.get("reward_design") == "event_v10_chain_affordance_compass_breadcrumbs"
+        config.get("reward_design")
+        in ("event_v10_chain_affordance_compass_breadcrumbs", "event_v11_role_gated_chain_handoffs")
     )
 
 
@@ -509,6 +516,7 @@ def _checkpoint_action_mask(
                 use_action_mask=False,
                 chain_affordance_action_mask=True,
                 chain_affordance_extra_verbs=checkpoint_policy.chain_affordance_extra_verbs,
+                role_gated_chain_mask=checkpoint_policy.role_gated_chain_mask,
             )
             return None if mask_arr is None else torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
         return None
@@ -517,6 +525,7 @@ def _checkpoint_action_mask(
         use_action_mask=True,
         chain_affordance_action_mask=checkpoint_policy.chain_affordance_action_mask,
         chain_affordance_extra_verbs=checkpoint_policy.chain_affordance_extra_verbs,
+        role_gated_chain_mask=checkpoint_policy.role_gated_chain_mask,
     )
     if mask_arr is None:
         raise RuntimeError("checkpoint was trained with action masks but rollout environment returned no mask")
