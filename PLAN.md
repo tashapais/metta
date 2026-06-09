@@ -89,6 +89,13 @@ Current uncertainty:
   preservation rule. The Stage-13 alpha0.6 stream is now behavior-valid enough
   to run representation/probe analysis, with source seed `2` still noted as the
   weakest acquisition seed.
+- Stage-16 aggregated the canonical result JSONs for the behavior-valid
+  Stage-13 alpha0 source and alpha0-to-alpha0.6 promoted checkpoints. This is
+  the first behavior-backed geometry readout. It does not recover the original
+  fixed-role probe claim: role-probe accuracy is near the 1/3 chance baseline
+  for alpha0 (`0.348 +/- 0.022`) and alpha0.6 (`0.309 +/- 0.021`). The
+  defensible signal is currently behavioral recovery plus geometry/action
+  changes, not clean fixed-role separability.
 
 Immediate operating plan:
 
@@ -134,9 +141,13 @@ Immediate operating plan:
 - Phase M: run representation/probe analysis for the behavior-valid Stage-13
   alpha0 source and alpha0-to-alpha0.6 promoted checkpoints, preserving exact
   source/promotion provenance and separating behavior-valid alpha0.6 from failed
-  alpha0.5, alpha0.8, and alpha1.0 diagnostics.
-- Phase N: update the paper only after canonical representation/probe outputs
-  are complete and checked against the behavior evidence.
+  alpha0.5, alpha0.8, and alpha1.0 diagnostics. Completed for the first
+  behavior-backed Stage-13 readout.
+- Phase N: decide the paper-safe representation claim. Current evidence supports
+  sensible chain behavior and nontrivial action/geometry metrics, but not the
+  original fixed `agent_id % 3` MAPPO role-probe claim.
+- Phase O: update the paper only after the Stage-16 interpretation and any
+  necessary follow-up analyses are stable.
 
 ## Research Question
 
@@ -3858,6 +3869,69 @@ Stage-15 decision:
   alpha0.5, alpha0.8, and alpha1.0 diagnostics should remain in the provenance
   log as negative/diagnostic evidence, not as paper-positive conditions.
 
+V10 Stage-16 behavior-backed representation readout:
+
+- Purpose: aggregate the canonical-format result JSONs for the first
+  behavior-valid Stage-13 stream.
+- This was not a new training run. It copied and validated the existing
+  Stage-13 result JSONs:
+  - alpha0 source seeds `0..5`;
+  - alpha0-to-alpha0.6 annealed promoted seeds `0..5`.
+- Local copied result root:
+  `/Users/relh/Code/tasha/canonical-reward-geometry-results/stage13_result_json`.
+- Aggregated summary:
+  `/Users/relh/Code/tasha/canonical-reward-geometry-results/stage13_result_json/stage13_alpha0_vs_alpha0p6_geometry_summary.json`.
+- Repo provenance audit artifact:
+  `/Users/relh/Code/tasha/canonical-reward-geometry-results/stage13_result_json/repo_reward_geometry_provenance_audit.json`.
+- Validation command:
+
+```bash
+uv run python v3_experiments/validate_canonical_reward_geometry_results.py \
+  --allow-smoke \
+  --allow-missing-checkpoint \
+  /Users/relh/Code/tasha/canonical-reward-geometry-results/stage13_result_json/alpha0_sources/*.json \
+  /Users/relh/Code/tasha/canonical-reward-geometry-results/stage13_result_json/alpha0p6_promotion/*.json
+```
+
+- Validation result: `validated 12 canonical reward-geometry result file(s)`.
+- The `--allow-smoke` flag is required because this stream intentionally uses
+  `2M` alpha0 source training plus `250k` promotion, not the older 4M full-run
+  validator threshold.
+
+Stage-16 all-six representation summary:
+
+| Condition | n | EffRank/n | Ordered `D_act_KL` | `D_act_JS` | Fixed-role probe | Raw env return | Individual return |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Stage-13 alpha0 source | `6` | `0.328 +/- 0.122` | `11.006 +/- 2.819` | `0.436 +/- 0.092` | `0.348 +/- 0.022` | `-4.406 +/- 3.283` | `147.047 +/- 89.949` |
+| Stage-13 alpha0-to-alpha0.6 promoted | `6` | `0.264 +/- 0.030` | `13.086 +/- 1.694` | `0.496 +/- 0.040` | `0.309 +/- 0.021` | `-1.483 +/- 2.771` | `148.550 +/- 30.230` |
+
+Stage-16 source-stronger subset summary, excluding weak source seed `2`:
+
+| Condition | n | EffRank/n | Ordered `D_act_KL` | `D_act_JS` | Fixed-role probe | Raw env return | Individual return |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Stage-13 alpha0 source, seeds `0,1,3,4,5` | `5` | `0.365 +/- 0.094` | `12.058 +/- 1.276` | `0.472 +/- 0.029` | `0.347 +/- 0.024` | `-3.525 +/- 2.765` | `174.879 +/- 65.603` |
+| Stage-13 alpha0-to-alpha0.6 promoted, seeds `0,1,3,4,5` | `5` | `0.275 +/- 0.013` | `13.665 +/- 1.036` | `0.511 +/- 0.019` | `0.311 +/- 0.023` | `-1.684 +/- 3.049` | `153.328 +/- 31.164` |
+
+Stage-16 interpretation:
+
+- Behavior is now meaningful: Stage 15 showed all six promoted deterministic
+  policies perform nonzero chain work, beat baselines, and preserve at least 75%
+  of source deterministic heart deposits.
+- The original fixed-role probe claim is not recovered. Both alpha0 and alpha0.6
+  fixed `agent_id % 3` role-probe accuracies are near the `1/3` chance baseline.
+- Excluding weak source seed `2` does not change that conclusion; alpha0 remains
+  near chance (`0.347 +/- 0.024`).
+- Alpha0.6 has lower EffRank/n than alpha0 in this behavior-backed stream
+  (`0.264` vs `0.328` all-six; `0.275` vs `0.365` excluding seed2), but action
+  diversity metrics move upward (`D_act_JS` `0.496` vs `0.436` all-six). This is
+  not the old monotonic-collapse story.
+- The paper-safe claim should therefore be revised: after reward redesign, MAPPO
+  can learn sensible Tribal Village chain behavior, but the behavior-backed
+  fixed-role representation evidence is weak. We should not claim clean learned
+  fixed roles unless a follow-up analysis finds a defensible behavior-derived
+  role label or another pre-registered representation metric that aligns with
+  the actual learned behavior.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3975,7 +4049,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-14 behavior gates.
 - [x] Document Stage-14 negative alpha0.5 outcome.
 - [x] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
-- [ ] Run representation/probe analysis only after a strict behavior gate passes.
+- [x] Run representation/probe analysis only after a strict behavior gate passes.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
