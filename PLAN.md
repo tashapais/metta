@@ -80,9 +80,15 @@ Current uncertainty:
   threshold by `3` heart deposits (`33` observed vs `36` required).
 - Stage-14 tested whether a lower final reward-sharing fraction would recover
   preservation. It did not: alpha0-to-alpha0.5 annealing worsened deterministic
-  behavior for seeds `1` and `3`, so the next step is a higher-sample behavior
-  audit of the stronger Stage-13 alpha0.6 candidate rather than another
-  lower-alpha training run.
+  behavior for seeds `1` and `3`.
+- Stage-15 reran behavior gates at higher sample count (`10` episodes x `240`
+  steps) for the Stage-13 alpha0 source and alpha0-to-alpha0.6 promoted
+  checkpoints. This resolved the 3-episode fragility in the positive direction:
+  all six promoted deterministic policies beat no-op/random baselines, produced
+  nonzero ore/battery/heart/use chain work, and passed the 75% source-heart
+  preservation rule. The Stage-13 alpha0.6 stream is now behavior-valid enough
+  to run representation/probe analysis, with source seed `2` still noted as the
+  weakest acquisition seed.
 
 Immediate operating plan:
 
@@ -123,8 +129,14 @@ Immediate operating plan:
   and is not a promotion candidate.
 - Phase L: run a higher-N behavior audit for Stage-13 alpha0 sources and
   alpha0.6 promoted checkpoints to measure whether the seed0 preservation miss
-  and seed2 source weakness persist beyond the 3-episode gate.
-- Phase M: update the paper only after the canonical follow-up is complete.
+  and seed2 source weakness persist beyond the 3-episode gate. Completed:
+  higher-N behavior passes for the Stage-13 alpha0.6 stream.
+- Phase M: run representation/probe analysis for the behavior-valid Stage-13
+  alpha0 source and alpha0-to-alpha0.6 promoted checkpoints, preserving exact
+  source/promotion provenance and separating behavior-valid alpha0.6 from failed
+  alpha0.5, alpha0.8, and alpha1.0 diagnostics.
+- Phase N: update the paper only after canonical representation/probe outputs
+  are complete and checked against the behavior evidence.
 
 ## Research Question
 
@@ -3734,6 +3746,118 @@ V10 Stage-15 higher-N behavior audit plan:
   source acquisition stability for seed2 and a targeted seed0 preservation
   schedule, not lower final alpha.
 
+V10 Stage-15 higher-N behavior audit outcome, launch commit `89a6701f9`:
+
+- Purpose: resolve whether the Stage-13 seed0 preservation miss and seed2
+  source weakness were real failures or artifacts of the 3-episode behavior
+  gate.
+- This was an audit only, not new training.
+- Source checkpoints: Stage-13 strict-v10 alpha0 `2M` checkpoints, seeds `0..5`.
+- Promoted checkpoints: Stage-13 alpha0-to-alpha0.6 annealed checkpoints, seeds
+  `0..5`.
+- Source audit root:
+  `/workspace/tribal_event_mask_runs/behavior_audit_stage15_v10_alpha0_sources_10ep_89a6701f94`.
+- Alpha0.6 promotion audit root:
+  `/workspace/tribal_event_mask_runs/behavior_audit_stage15_v10_alpha0p6_promotion_10ep_89a6701f94`.
+- Launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage15_behavior_audit_sandbox1_89a6701f94.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage15_behavior_audit_sandbox2_89a6701f94.sh`
+- Jobs:
+  - `relh-sandbox-1` job `164`: source and promoted checkpoint audits for
+    seeds `0,1,2`.
+  - `relh-sandbox-2` job `163`: source and promoted baselines plus checkpoint
+    audits for seeds `3,4,5`.
+- Validation:
+  - sandbox 1 validated `6` source rollout files and `6` promoted rollout
+    files;
+  - sandbox 2 validated `11` source rollout files and `11` promoted rollout
+    files;
+  - after the audit, both sandbox queues were empty.
+
+Stage-15 source baselines over 10 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-30.300` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-34.549` | `50.1` | `11` | `0` | `0` | `20678` | `483` |
+| `move_sweep` | `-31.300` | `0.0` | `0` | `0` | `0` | `2393` | `0` |
+| `use_sweep` | `-29.800` | `10.9` | `0` | `0` | `0` | `28704` | `109` |
+| `chain_oracle` | `-1.717` | `66.1` | `255` | `234` | `169` | `4756` | `661` |
+
+Stage-15 source checkpoint audit over 10 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `seed0_alpha0_2m_det` | `-6.030` | `61.90` | `247` | `220` | `142` | `7904` | `619` |
+| `seed0_alpha0_2m_stoch` | `-11.294` | `64.20` | `270` | `218` | `146` | `3226` | `642` |
+| `seed1_alpha0_2m_det` | `-7.083` | `67.10` | `270` | `235` | `157` | `4792` | `671` |
+| `seed1_alpha0_2m_stoch` | `-20.321` | `64.00` | `280` | `212` | `141` | `2835` | `640` |
+| `seed2_alpha0_2m_det` | `-22.668` | `21.40` | `93` | `66` | `45` | `2327` | `214` |
+| `seed2_alpha0_2m_stoch` | `-27.850` | `46.80` | `219` | `141` | `94` | `856` | `468` |
+| `seed3_alpha0_2m_det` | `-15.298` | `51.40` | `217` | `176` | `116` | `4146` | `514` |
+| `seed3_alpha0_2m_stoch` | `11.460` | `80.10` | `308` | `286` | `198` | `4720` | `801` |
+| `seed4_alpha0_2m_det` | `2.290` | `64.70` | `243` | `232` | `156` | `7211` | `647` |
+| `seed4_alpha0_2m_stoch` | `-11.996` | `72.80` | `295` | `250` | `173` | `4368` | `728` |
+| `seed5_alpha0_2m_det` | `-4.691` | `68.40` | `280` | `234` | `163` | `6100` | `684` |
+| `seed5_alpha0_2m_stoch` | `-0.850` | `75.40` | `295` | `255` | `191` | `4853` | `754` |
+
+Stage-15 alpha0.6 promotion baselines over 10 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-28.800` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-35.142` | `38.20` | `5` | `0` | `0` | `19475` | `371` |
+| `move_sweep` | `-37.327` | `0.0` | `0` | `0` | `0` | `3344` | `0` |
+| `use_sweep` | `-28.800` | `7.3` | `0` | `0` | `0` | `28697` | `73` |
+| `chain_oracle` | `-14.101` | `63.40` | `265` | `216` | `148` | `4211` | `634` |
+
+Stage-15 alpha0.6 promoted checkpoint audit over 10 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `seed0_anneal0to0.6_det` | `-0.757` | `68.80` | `271` | `246` | `166` | `5062` | `688` |
+| `seed0_anneal0to0.6_stoch` | `9.820` | `83.30` | `316` | `297` | `207` | `5729` | `833` |
+| `seed1_anneal0to0.6_det` | `-2.793` | `72.00` | `291` | `243` | `182` | `5459` | `720` |
+| `seed1_anneal0to0.6_stoch` | `8.305` | `75.70` | `296` | `268` | `185` | `5312` | `757` |
+| `seed2_anneal0to0.6_det` | `-18.938` | `41.40` | `178` | `150` | `72` | `3065` | `414` |
+| `seed2_anneal0to0.6_stoch` | `-8.166` | `54.30` | `218` | `179` | `127` | `1536` | `543` |
+| `seed3_anneal0to0.6_det` | `-20.150` | `57.00` | `241` | `183` | `131` | `7019` | `570` |
+| `seed3_anneal0to0.6_stoch` | `-12.271` | `67.30` | `266` | `228` | `173` | `3294` | `673` |
+| `seed4_anneal0to0.6_det` | `-13.585` | `65.10` | `278` | `211` | `149` | `4700` | `651` |
+| `seed4_anneal0to0.6_stoch` | `-4.127` | `66.90` | `279` | `227` | `157` | `4416` | `669` |
+| `seed5_anneal0to0.6_det` | `-0.370` | `64.50` | `257` | `222` | `156` | `4038` | `645` |
+| `seed5_anneal0to0.6_stoch` | `5.840` | `79.00` | `308` | `277` | `194` | `3697` | `790` |
+
+Stage-15 preservation check:
+
+| Seed | Source deterministic hearts | 75% threshold | Promoted deterministic hearts | Decision |
+| ---: | ---: | ---: | ---: | --- |
+| `0` | `142` | `106.5` | `166` | pass |
+| `1` | `157` | `117.75` | `182` | pass |
+| `2` | `45` | `33.75` | `72` | pass |
+| `3` | `116` | `87` | `131` | pass |
+| `4` | `156` | `117` | `149` | pass |
+| `5` | `163` | `122.25` | `156` | pass |
+
+Stage-15 decision:
+
+- The higher-N audit resolves the Stage-13 fragility in the positive direction:
+  the Stage-13 alpha0-to-alpha0.6 annealed stream passes the six-seed
+  deterministic behavior gate at `10` episodes.
+- All six source deterministic checkpoints beat no-op/random baselines on raw
+  reward and produced nonzero ore pickup, battery crafting, heart deposits, and
+  successful `use` actions. Source seed `2` remains the weakest acquisition seed
+  (`45` hearts vs `142..163` for the other deterministic source policies), but
+  it is not behavior-empty.
+- All six promoted deterministic checkpoints beat no-op/random/move/use
+  baselines on raw reward and produced nonzero chain work.
+- All six promoted deterministic checkpoints pass the 75% source-heart
+  preservation rule under the higher-N audit.
+- The next paper-eligible step is representation/probe analysis for the
+  Stage-13 alpha0 source and alpha0-to-alpha0.6 promoted checkpoints. Failed
+  alpha0.5, alpha0.8, and alpha1.0 diagnostics should remain in the provenance
+  log as negative/diagnostic evidence, not as paper-positive conditions.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3850,7 +3974,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-14 conservative alpha0-to-alpha0.5 annealed promotion.
 - [x] Run Stage-14 behavior gates.
 - [x] Document Stage-14 negative alpha0.5 outcome.
-- [ ] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
+- [x] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
 - [ ] Run representation/probe analysis only after a strict behavior gate passes.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
