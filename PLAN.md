@@ -4081,6 +4081,28 @@ Stage-19 specialization-forcing follow-up:
     long run;
   - if ore/battery handoffs stay at zero, do not scale. Iterate on navigation,
     role-aware observation breadcrumbs, or scripted/BC warm start first.
+- Stage-19 short diagnostic result, commit `1b8b0d44`:
+  - launched `event_v11_role_gated_chain_handoffs`, `shared_frac=0.0`,
+    `1,000,008` agent steps, seeds `0,1,2,3`, split across
+    `relh-sandbox-1/2`;
+  - local artifact root:
+    `v3_experiments/behavioral_reward_results/stage19_v11_role_gated_handoffs_1m_1b8b0d44d`;
+  - old-style PCA diagnostic plot:
+    `combined_all/tribal_pca_role_geometry.png`;
+  - deterministic behavior gate used `5` episodes x `240` steps per seed with
+    saved sandbox replays;
+  - aggregate events across the four seeds: `1089` ore handoffs, `78` battery
+    handoffs, `87` battery crafts, and `24` heart deposits;
+  - per-seed heart deposits were `0,4,20,0`, so v11 fixed the handoff/crafting
+    bottleneck but has not yet made depositor completion reliable;
+  - per-seed representation readout:
+    - seed `0`: EffRank/n `0.256`, D_act `8.872`, JS `0.307`, probe `0.300`;
+    - seed `1`: EffRank/n `0.380`, D_act `5.992`, JS `0.227`, probe `0.358`;
+    - seed `2`: EffRank/n `0.269`, D_act `10.594`, JS `0.374`, probe `0.459`;
+    - seed `3`: EffRank/n `0.265`, D_act `7.847`, JS `0.292`, probe `0.400`;
+  - interpretation: continue iterating v11 before launching reward-mixing
+    representation sweeps. The next intervention should target reliable
+    depositor battery-to-home completion without adding negative rewards.
 
 ## Candidate Commands
 
@@ -4209,9 +4231,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Add v11 ore/battery handoff instrumentation.
 - [x] Add v11 role-gated chain diagnostic reward/mask.
 - [x] Smoke v11 locally on mock and real Tribal backends.
-- [ ] Launch Stage-19 short v11 sandbox diagnostics.
-- [ ] Inspect Stage-19 handoff/craft/deposit counters before scaling.
-- [ ] Rerun old-style representation plots only for behavior-valid v11 streams.
+- [x] Launch Stage-19 short v11 sandbox diagnostics.
+- [x] Inspect Stage-19 handoff/craft/deposit counters before scaling.
+- [x] Rerun old-style representation plots for the Stage-19 alpha0 diagnostic.
+- [ ] Iterate v11 depositor reliability before shared-fraction representation sweeps.
+- [ ] Rerun old-style representation plots only for behavior-valid v11 reward-mixing streams.
 
 ## Open Questions
 
