@@ -23,6 +23,46 @@ old shaped rewards, shared reward mixing strongly affected representation
 geometry and action diversity metrics, but the policies failed the behavioral
 sanity check.
 
+## Long-Term Goal
+
+Produce one provenance-clean, behavior-validated Tribal Village representation
+result, or determine that the current reconstructed environment cannot support
+the paper's MAPPO role-learning claim.
+
+This goal has three hard gates:
+
+1. Behavior first: identify a training protocol where `shared_frac=0.0` reliably
+   learns meaningful Tribal Village work across seeds. The policy must beat
+   no-op/random on raw task progress and pass replay/behavior validation before
+   representation metrics are interpreted.
+2. Provenance next: every candidate result must be tied to one git SHA, exact
+   command shape, sandbox/job IDs, checkpoint paths, behavior gate root, and
+   validation output. Failed and pilot runs stay in this plan/notes, not in the
+   paper.
+3. Representation last: only after behavior is stable do we run the
+   `shared_frac in {0.0, 0.8, 1.0}` sweep and ask whether shared reward mixing
+   reduces role-separable geometry, action diversity, and behavior diversity.
+
+Current uncertainty:
+
+- The 1M strict-v10 condition is behavior-valid under a constrained
+  affordance/curriculum mask.
+- The 10M strict-v10 condition degraded, so longer training alone is not the
+  right answer.
+- We do not yet know whether v10 needs early stopping, a shorter stable budget,
+  or transfer/annealing from the clean 1M checkpoint into a less constrained
+  action surface.
+
+Immediate operating plan:
+
+- Phase A: run a strict-v10 budget ladder at `2M` and `4M` agent steps for
+  seeds `0,1,2`, then behavior-gate each budget.
+- Phase B: if a budget is stable, use that checkpoint as the transfer source
+  and relax one affordance family at a time.
+- Phase C: only if the transfer condition remains behavior-valid, run a small
+  reward-mixing pilot.
+- Phase D: only if the pilot preserves behavior, run the canonical paper sweep.
+
 ## Research Question
 
 Can shared-parameter MAPPO learn task-relevant differentiated behavior in Tribal
@@ -2241,6 +2281,36 @@ Decision:
   - run a short budget ladder or early-stopping comparison before 10M;
   - then test annealing from the clean checkpoint into a less constrained action
     surface one affordance family at a time.
+
+V10 budget-ladder diagnostic plan:
+
+- Purpose: test whether strict-v10 behavior degrades because 10M overtrains past
+  a shorter stable policy.
+- Reward design: `event_v10_chain_affordance_compass_breadcrumbs`.
+- Shared fraction: `0.0`.
+- Seeds: `0,1,2`.
+- Budgets: `2,000,004` and `4,000,008` agent steps per seed.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage3_v10_budget_ladder`.
+- Run naming:
+  `stage3_v10_budget_ladder_alpha0_seed<seed>_<budget>_<sha>`.
+- Sandbox split:
+  - `relh-sandbox-1`: seeds `0` and `1`, each running the 2M then 4M budget on
+    a dedicated GPU.
+  - `relh-sandbox-2`: seed `2`, running the 2M then 4M budget.
+- Behavior gates:
+  - `/workspace/tribal_event_mask_runs/behavior_gate_stage3_v10_budget_ladder_2m_<sha>`.
+  - `/workspace/tribal_event_mask_runs/behavior_gate_stage3_v10_budget_ladder_4m_<sha>`.
+
+Budget-ladder decision rule:
+
+- If 2M or 4M retains all-seed deterministic deposits while 10M does not, treat
+  that budget as the candidate transfer source.
+- If both budgets degrade, prefer the 1M strict checkpoint as the transfer
+  source and do not spend more on strict-mask-only PPO.
+- If a budget passes behavior but has lower representation diversity than 1M,
+  prioritize behavior stability first; representation sweeps remain blocked
+  until an annealed action-surface condition passes.
 
 ## Candidate Commands
 
