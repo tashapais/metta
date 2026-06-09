@@ -52,8 +52,10 @@ Current uncertainty:
 - Action-surface transfer did not yet create useful `put`/handoff behavior.
 - A from-scratch strict-v10 reward-mixing pilot did not pass the behavior gate:
   `shared_frac=0.8` was seed-fragile and `shared_frac=1.0` collapsed.
-- We do not yet know whether high reward sharing blocks behavior acquisition
-  from scratch, or actively destroys already-learned chain behavior.
+- Warm-starting from behavior-valid alpha0 checkpoints showed that
+  `shared_frac=1.0` actively destroys learned chain behavior, while
+  `shared_frac=0.8` can preserve stochastic chain behavior but remains
+  deterministic-evaluation fragile.
 
 Immediate operating plan:
 
@@ -65,8 +67,11 @@ Immediate operating plan:
   failed the behavior gate and should not update the paper.
 - Phase D: run one warm-start reward-mixing diagnostic from the behavior-valid
   strict alpha0 2M checkpoints to distinguish acquisition failure from
-  reward-sharing-induced behavior destruction.
-- Phase E: only if a reward-mixing condition preserves behavior across seeds,
+  reward-sharing-induced behavior destruction. Completed: alpha1.0 destroys the
+  chain; alpha0.8 is stochastic-valid but deterministic-fragile.
+- Phase E: run a short/low-lr alpha0.8 stabilization diagnostic to see whether
+  deterministic behavior can be preserved while changing reward mixing.
+- Phase F: only if a reward-mixing condition preserves behavior across seeds,
   run the canonical paper sweep.
 
 ## Research Question
@@ -2741,6 +2746,119 @@ V10 Stage-7 warm-start reward-mixing diagnostic plan:
     reconstructed reward/task setup and the MAPPO reward-mixing paper claim
     remains unsupported.
 
+V10 Stage-7 warm-start reward-mixing diagnostic outcome, commit `ef8dc7b8b`:
+
+- Smoke jobs verified checkpoint loading and trainer flags on both sandboxes:
+  - `relh-sandbox-1` job `140`: seed `0`, `shared_frac=0.8` smoke.
+  - `relh-sandbox-2` job `139`: seed `2`, `shared_frac=1.0` smoke.
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `141`: seeds `0,1`, `shared_frac in {0.8,1.0}`.
+  - `relh-sandbox-2` job `140`: seed `2`, `shared_frac in {0.8,1.0}`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `142`: eight deterministic/stochastic checkpoint
+    rollouts for seeds `0,1`.
+  - `relh-sandbox-2` job `141`: five baselines plus four
+    deterministic/stochastic checkpoint rollouts for seed `2`.
+- Result JSON validation passed for all six training outputs.
+- Behavior-output validation passed for all Stage-7 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage7_v10_warmstart_reward_mixing`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage7_v10_warmstart_reward_mixing_ef8dc7b8b`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage7_v10_warmstart_reward_mixing_sandbox1_ef8dc7b8b.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage7_v10_warmstart_reward_mixing_sandbox2_ef8dc7b8b.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage7_behavior_gate_sandbox1_ef8dc7b8b.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage7_behavior_gate_sandbox2_ef8dc7b8b.sh`
+
+Training eval:
+
+| Shared frac | Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0.8` | `0` | `-8.462` | `-3.660` | `4.802` | `0.396` | `7.349` | `0.186` | `0.356` |
+| `0.8` | `1` | `1.386` | `204.829` | `203.443` | `0.500` | `11.890` | `0.283` | `0.319` |
+| `0.8` | `2` | `-9.976` | `1.249` | `11.226` | `0.374` | `8.522` | `0.246` | `0.381` |
+| `1.0` | `0` | `-12.496` | `-37.334` | `-24.838` | `0.366` | `11.726` | `0.164` | `0.349` |
+| `1.0` | `1` | `-9.577` | `-32.929` | `-23.352` | `0.530` | `17.484` | `0.133` | `0.336` |
+| `1.0` | `2` | `-11.446` | `-49.376` | `-37.930` | `0.431` | `13.171` | `0.169` | `0.335` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-30.467` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-35.467` | `26.3` | `0` | `0` | `0` | `6330` | `77` |
+| `move_sweep` | `-38.397` | `0.0` | `0` | `0` | `0` | `492` | `0` |
+| `use_sweep` | `-35.467` | `1.7` | `0` | `0` | `0` | `8635` | `5` |
+| `chain_oracle` | `3.000` | `70.7` | `84` | `80` | `48` | `1958` | `212` |
+| `alpha0.8_seed0_det` | `-38.140` | `19.0` | `34` | `21` | `0` | `908` | `57` |
+| `alpha0.8_seed0_stoch` | `-17.923` | `61.7` | `77` | `64` | `43` | `741` | `185` |
+| `alpha0.8_seed1_det` | `-0.967` | `66.0` | `81` | `68` | `46` | `1713` | `198` |
+| `alpha0.8_seed1_stoch` | `12.467` | `80.0` | `92` | `87` | `60` | `1474` | `240` |
+| `alpha0.8_seed2_det` | `-30.453` | `29.3` | `39` | `28` | `19` | `492` | `88` |
+| `alpha0.8_seed2_stoch` | `-9.783` | `69.7` | `86` | `74` | `47` | `727` | `209` |
+| `alpha1.0_seed0_det` | `-31.933` | `2.3` | `6` | `0` | `0` | `870` | `7` |
+| `alpha1.0_seed0_stoch` | `-34.120` | `0.3` | `1` | `0` | `0` | `1017` | `1` |
+| `alpha1.0_seed1_det` | `-35.467` | `0.0` | `0` | `0` | `0` | `1793` | `0` |
+| `alpha1.0_seed1_stoch` | `-37.753` | `1.0` | `2` | `0` | `0` | `3289` | `3` |
+| `alpha1.0_seed2_det` | `-34.370` | `0.7` | `2` | `0` | `0` | `1613` | `2` |
+| `alpha1.0_seed2_stoch` | `-33.433` | `2.7` | `6` | `0` | `0` | `604` | `8` |
+
+Decision:
+
+- Stage 7 does not pass the deterministic warm-start reward-mixing gate.
+- `shared_frac=1.0` is now a stronger negative result: it destroys the learned
+  chain even when initialized from behavior-valid alpha0 checkpoints.
+- `shared_frac=0.8` preserves a stochastic version of the chain across all
+  seeds, with stochastic heart deposits `43,60,47`. It does not preserve robust
+  deterministic behavior:
+  - seed `0` deterministic deposits drop from Stage-3 strict 2M `57` to `0`;
+  - seed `1` deterministic deposits stay near threshold at `46`;
+  - seed `2` deterministic deposits drop from Stage-3 strict 2M `58` to `19`.
+- The next question is whether the deterministic fragility is caused by too much
+  fine-tuning under mixed reward, too large a learning rate, or an unavoidable
+  alpha0.8 policy-distribution effect.
+- Do not update the paper from Stage 7. It is mechanistic evidence that
+  alpha1.0 is destructive and alpha0.8 may be recoverable only under
+  stochastic execution.
+
+V10 Stage-8 short/low-lr alpha0.8 stabilization diagnostic plan:
+
+- Purpose: test whether alpha0.8 can preserve deterministic chain behavior if
+  the reward-mixing transfer is gentler.
+- Source checkpoints: the same Stage-3 strict-v10 alpha0 2M per-seed
+  checkpoints used in Stage 7.
+- Arms:
+  - `shared_frac=0.8`, seeds `0,1,2`, `100,008` fine-tuning agent steps,
+    learning rate `1e-4`.
+  - `shared_frac=0.8`, seeds `0,1,2`, `250,008` fine-tuning agent steps,
+    learning rate `1e-4`.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - per-seed `--init-checkpoint-path` from the Stage-3 strict 2M source.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage8_v10_alpha0p8_low_lr_stabilization`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage8_v10_alpha0p8_low_lr_stabilization_<sha>`.
+- Pass criteria:
+  - every deterministic checkpoint arm has nonzero heart deposits;
+  - at least two of three seeds per budget stay within 25% of their Stage-3
+    strict 2M deterministic heart-deposit count;
+  - stochastic rollouts remain nonzero and do not lose the chain;
+  - raw behavior stays above no-op/random and near the chain-oracle baseline.
+- Interpretation rule:
+  - If 100k or 250k preserves deterministic behavior, use that budget as the
+    alpha0.8 transfer candidate and run one follow-up representation/probe
+    check against the alpha0 source.
+  - If both fail deterministically but pass stochastically, the paper can only
+    discuss alpha0.8 behavior under stochastic execution, not deterministic
+    competence.
+  - If both fail, high reward sharing remains unsupported for the reconstructed
+    Tribal Village setup.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2838,7 +2956,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run v10 Stage-2 behavior gate.
 - [x] Run from-scratch strict-v10 reward-mixing pilot.
 - [x] Run Stage-6 reward-mixing behavior gate.
-- [ ] Run Stage-7 warm-start reward-mixing diagnostic.
+- [x] Run Stage-7 warm-start reward-mixing diagnostic.
+- [x] Run Stage-7 warm-start behavior gate.
+- [ ] Run Stage-8 short/low-lr alpha0.8 stabilization diagnostic.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
