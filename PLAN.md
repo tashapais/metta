@@ -96,6 +96,13 @@ Current uncertainty:
   for alpha0 (`0.348 +/- 0.022`) and alpha0.6 (`0.309 +/- 0.021`). The
   defensible signal is currently behavioral recovery plus geometry/action
   changes, not clean fixed-role separability.
+- Stage-17 audited behavior-derived roles from the Stage-15 per-agent simulator
+  counters. The recovered behavior is chain competence without specialization:
+  all deterministic checkpoint agents complete all chain stages, every
+  agent-rollout is ore-dominant by event count, and fixed `agent_id % 3` groups
+  do not separate by ore/battery/heart stage. This supports revising the paper
+  away from a learned-role claim rather than searching for a behavior-derived
+  role label to rescue it.
 
 Immediate operating plan:
 
@@ -145,7 +152,8 @@ Immediate operating plan:
   behavior-backed Stage-13 readout.
 - Phase N: decide the paper-safe representation claim. Current evidence supports
   sensible chain behavior and nontrivial action/geometry metrics, but not the
-  original fixed `agent_id % 3` MAPPO role-probe claim.
+  original fixed `agent_id % 3` MAPPO role-probe claim. Completed Stage-17
+  behavior-derived role audit: the behavior itself is not role-specialized.
 - Phase O: update the paper only after the Stage-16 interpretation and any
   necessary follow-up analyses are stable.
 
@@ -3932,6 +3940,60 @@ Stage-16 interpretation:
   role label or another pre-registered representation metric that aligns with
   the actual learned behavior.
 
+V10 Stage-17 behavior-derived role audit:
+
+- Purpose: test whether the recovered behavior contains role-like specialization
+  even though the fixed `agent_id % 3` probe is near chance.
+- Added reusable analyzer:
+  `v3_experiments/analyze_tribal_behavior_roles.py`.
+- Focused tests:
+  `tests/v3_experiments/test_tribal_behavior_role_analysis.py`.
+- Input artifacts: copied Stage-15 `rollout_metrics.json` files, using only
+  deterministic checkpoint rollouts and excluding stochastic rollouts/baselines.
+- Local input root:
+  `/Users/relh/Code/tasha/canonical-reward-geometry-results/stage15_behavior_metrics`.
+- Output artifact:
+  `/Users/relh/Code/tasha/canonical-reward-geometry-results/stage15_behavior_metrics/stage15_deterministic_behavior_role_analysis.json`.
+- Analyzer command:
+
+```bash
+find /Users/relh/Code/tasha/canonical-reward-geometry-results/stage15_behavior_metrics \
+  -type f -name rollout_metrics.json \
+  | grep -v baseline_ \
+  | grep '_det/rollout_metrics.json' \
+  | sort \
+  | xargs uv run python v3_experiments/analyze_tribal_behavior_roles.py \
+      --output /Users/relh/Code/tasha/canonical-reward-geometry-results/stage15_behavior_metrics/stage15_deterministic_behavior_role_analysis.json
+```
+
+Stage-17 behavior-role summary:
+
+| Condition | Rollouts | Dominant stage counts | Mean agents with all stages | Mean specialized agents | Mean max fixed-role stage-share gap | Fixed-role separated rollouts |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Stage-13 alpha0 source | `6` | `ore: 72` | `12.0` | `0.167` | `0.0366` | `0` |
+| Stage-13 alpha0-to-alpha0.6 promoted | `6` | `ore: 72` | `12.0` | `0.0` | `0.0368` | `0` |
+
+Stage-17 interpretation:
+
+- The recovered behavior is not a division of labor across gatherer,
+  crafter/logistics, and depositor roles. Every deterministic checkpoint agent
+  has nonzero ore pickup, battery craft, and heart deposit events across the
+  10-episode audit.
+- The reason every agent is "ore-dominant" is mechanical rather than semantic:
+  the learned task is a serial ore-to-battery-to-heart chain, so successful
+  agents necessarily produce at least as many ore events as downstream battery
+  and heart events.
+- The fixed `agent_id % 3` groups are behaviorally similar. The mean maximum
+  stage-share gap across fixed role groups is only about `0.037`, far below the
+  `0.15` audit threshold.
+- This explains the Stage-16 near-chance fixed-role probe. The probe is not
+  merely using the wrong labels for a hidden specialized behavior; the
+  deterministic policies appear to implement a shared chain policy across all
+  agents.
+- Paper implication: the reconstructed setup now supports a claim about reward
+  shaping recovering meaningful chain behavior, but it does not support the
+  original MAPPO learned-role/specialization claim.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -4010,6 +4072,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Add inventory and world-state snapshot introspection.
 - [x] Add rollout metrics JSON output.
 - [x] Add behavior summary/red-flag output.
+- [x] Add behavior-derived role analysis.
 - [x] Add no-op, random, and simple scripted baseline policies.
 - [x] Add replay generation to the rollout harness.
 - [x] Implement event-based reward components.
@@ -4050,6 +4113,7 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Document Stage-14 negative alpha0.5 outcome.
 - [x] Run Stage-15 higher-N behavior audit for Stage-13 alpha0 and alpha0.6.
 - [x] Run representation/probe analysis only after a strict behavior gate passes.
+- [x] Run Stage-17 behavior-derived role audit after the fixed-role probe failed.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
