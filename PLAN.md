@@ -58,6 +58,9 @@ Current uncertainty:
   deterministic-evaluation fragile.
 - Shorter/lower-lr alpha0.8 fine-tuning improved deterministic behavior for
   some seeds but did not find a single all-seed deterministic pass condition.
+- Lower-alpha thresholding found that `shared_frac=0.6` is the first plausible
+  mixed-reward candidate, but one deterministic seed remains weak enough that it
+  needs a focused shorter-budget check before promotion.
 
 Immediate operating plan:
 
@@ -76,8 +79,11 @@ Immediate operating plan:
   Completed: stochastic behavior remains strong, deterministic behavior is still
   seed/budget fragile.
 - Phase F: run a lower-alpha threshold diagnostic to test whether reward sharing
-  below `0.8` can preserve deterministic behavior.
-- Phase G: only if a reward-mixing condition preserves behavior across seeds,
+  below `0.8` can preserve deterministic behavior. Completed: alpha0.6 is a
+  partial pass with a weak seed1 deterministic rollout.
+- Phase G: run a focused alpha0.6 shorter-budget check to see whether the weak
+  seed1 behavior is a budget/overtraining issue.
+- Phase H: only if a reward-mixing condition preserves behavior across seeds,
   run the canonical paper sweep.
 
 ## Research Question
@@ -2973,6 +2979,118 @@ V10 Stage-9 lower-alpha threshold diagnostic plan:
     finding clearly: only individual reward reliably supports the reconstructed
     Tribal Village behavior.
 
+V10 Stage-9 lower-alpha threshold diagnostic outcome, commit `632fac02e`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `145`: seeds `0,1`, alpha `0.4` and `0.6`.
+  - `relh-sandbox-2` job `144`: seed `2`, alpha `0.4` and `0.6`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `146`: eight deterministic/stochastic checkpoint
+    rollouts for seeds `0,1`.
+  - `relh-sandbox-2` job `145`: five baselines plus four
+    deterministic/stochastic checkpoint rollouts for seed `2`.
+- Result JSON validation passed for all six training outputs.
+- Behavior-output validation passed for all Stage-9 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage9_v10_lower_alpha_threshold`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage9_v10_lower_alpha_threshold_632fac02e`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage9_v10_lower_alpha_threshold_sandbox1_632fac02e.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage9_v10_lower_alpha_threshold_sandbox2_632fac02e.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage9_behavior_gate_sandbox1_632fac02e.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage9_behavior_gate_sandbox2_632fac02e.sh`
+
+Training eval:
+
+| Alpha | Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0.4` | `0` | `-6.743` | `173.729` | `180.472` | `0.523` | `14.086` | `0.253` | `0.353` |
+| `0.4` | `1` | `-7.251` | `138.303` | `145.553` | `0.513` | `13.379` | `0.316` | `0.338` |
+| `0.4` | `2` | `-3.102` | `123.841` | `126.942` | `0.539` | `15.627` | `0.262` | `0.350` |
+| `0.6` | `0` | `-5.591` | `93.988` | `99.579` | `0.484` | `12.468` | `0.228` | `0.297` |
+| `0.6` | `1` | `-3.725` | `174.042` | `177.767` | `0.548` | `15.502` | `0.324` | `0.351` |
+| `0.6` | `2` | `-3.920` | `137.545` | `141.465` | `0.517` | `14.328` | `0.244` | `0.330` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-32.133` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-28.800` | `34.7` | `1` | `0` | `0` | `5575` | `104` |
+| `move_sweep` | `-37.133` | `0.0` | `0` | `0` | `0` | `1173` | `0` |
+| `use_sweep` | `-30.467` | `8.3` | `0` | `0` | `0` | `8611` | `25` |
+| `chain_oracle` | `-8.933` | `50.3` | `65` | `48` | `38` | `1648` | `151` |
+| `alpha0.4_seed0_det` | `-11.367` | `62.7` | `79` | `63` | `44` | `2022` | `188` |
+| `alpha0.4_seed0_stoch` | `-34.517` | `55.0` | `82` | `50` | `32` | `906` | `165` |
+| `alpha0.4_seed1_det` | `-7.430` | `53.7` | `69` | `55` | `36` | `1350` | `161` |
+| `alpha0.4_seed1_stoch` | `-26.497` | `63.7` | `81` | `62` | `44` | `989` | `191` |
+| `alpha0.4_seed2_det` | `-22.070` | `49.3` | `65` | `50` | `30` | `1163` | `148` |
+| `alpha0.4_seed2_stoch` | `3.930` | `67.0` | `81` | `71` | `46` | `1928` | `201` |
+| `alpha0.6_seed0_det` | `1.933` | `68.0` | `80` | `74` | `50` | `2184` | `204` |
+| `alpha0.6_seed0_stoch` | `5.900` | `79.3` | `95` | `82` | `59` | `1768` | `238` |
+| `alpha0.6_seed1_det` | `-22.203` | `22.7` | `35` | `28` | `3` | `2203` | `68` |
+| `alpha0.6_seed1_stoch` | `-23.067` | `77.7` | `94` | `81` | `53` | `1520` | `233` |
+| `alpha0.6_seed2_det` | `-25.833` | `59.7` | `75` | `58` | `45` | `2849` | `179` |
+| `alpha0.6_seed2_stoch` | `1.767` | `78.0` | `91` | `82` | `57` | `1709` | `234` |
+
+Decision:
+
+- Stage 9 found the first plausible mixed-reward threshold candidate, but did
+  not yet find a canonical behavior-valid condition.
+- `shared_frac=0.6` is the best candidate:
+  - deterministic heart deposits were `50,3,45`;
+  - stochastic heart deposits were `59,53,57`;
+  - two of three deterministic seeds stayed within 25% of their Stage-3 strict
+    2M source deposits, but seed `1` nearly collapsed under greedy execution.
+- `shared_frac=0.4` is weaker:
+  - deterministic heart deposits were `44,36,30`;
+  - stochastic heart deposits were `32,44,46`;
+  - all deterministic seeds remained nonzero, but only seed `0` clearly met
+    the Stage-3 25% preservation threshold.
+- The main mechanism uncertainty is budget/overtraining versus inherent
+  deterministic fragility. Alpha0.6 has strong stochastic behavior for every
+  seed, which suggests the useful chain policy may still exist in the
+  distribution even when the greedy policy fails.
+- Do not update the paper from Stage 9. Treat it as a threshold-finding
+  diagnostic and run one shorter-budget alpha0.6 check before promotion.
+
+V10 Stage-10 alpha0.6 short-budget diagnostic plan:
+
+- Purpose: test whether the Stage-9 alpha0.6 seed1 deterministic collapse is a
+  `250k` fine-tuning budget/overtraining issue.
+- Source checkpoints: the same Stage-3 strict-v10 alpha0 2M per-seed
+  checkpoints.
+- Arm:
+  - `shared_frac=0.6`, seeds `0,1,2`, `100,008` fine-tuning agent steps,
+    learning rate `1e-4`.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - per-seed `--init-checkpoint-path` from the Stage-3 strict 2M source.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage10_v10_alpha0p6_short_budget`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage10_v10_alpha0p6_short_budget_<sha>`.
+- Pass criteria:
+  - every deterministic checkpoint has nonzero heart deposits;
+  - all three deterministic seeds stay within 25% of their Stage-3 strict 2M
+    deterministic heart-deposit count;
+  - stochastic rollouts remain nonzero and do not lose the chain;
+  - raw behavior stays above no-op/random and near the chain-oracle baseline.
+- Interpretation rule:
+  - If alpha0.6 at `100k` passes deterministically across all seeds, promote it
+    as the first behavior-valid mixed-reward candidate and run a
+    representation/probe follow-up against the alpha0 source.
+  - If only seed1 improves while seed0/2 degrade, alpha0.6 is budget-fragile
+    and should not be promoted without an even tighter schedule or annealing.
+  - If seed1 remains weak, reward sharing is still not reproducibly
+    deterministic-valid in the reconstructed setup, and the next discriminating
+    experiment should be an annealed transfer rather than another fixed-alpha
+    short run.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3074,7 +3192,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-7 warm-start behavior gate.
 - [x] Run Stage-8 short/low-lr alpha0.8 stabilization diagnostic.
 - [x] Run Stage-8 behavior gate.
-- [ ] Run Stage-9 lower-alpha threshold diagnostic.
+- [x] Run Stage-9 lower-alpha threshold diagnostic.
+- [x] Run Stage-9 behavior gate.
+- [ ] Run Stage-10 alpha0.6 short-budget diagnostic.
+- [ ] Run Stage-10 behavior gate.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
