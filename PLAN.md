@@ -2194,6 +2194,54 @@ Stage-2 promotion criteria:
   not a final paper sweep: start from the Stage-2 checkpoint and relax only one
   affordance family at a time.
 
+V10 Stage-2 strict-mask outcome, commit `129dbac38b`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `134`: seeds `0` and `1`.
+  - `relh-sandbox-2` job `133`: seed `2`.
+- Result JSON validation passed for all three seeds.
+- Behavior-output validation passed for 11 rollout files split across
+  `relh-sandbox-1` and `relh-sandbox-2`.
+- Result root:
+  `/workspace/tribal_event_mask_runs/stage2_v10_chain_affordance_compass_10m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage2_v10_chain_affordance_compass_129dbac38b`.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-10.949` | `-67.389` | `0.440` | `0.307` | `0.323` |
+| `1` | `-10.627` | `-50.329` | `0.462` | `0.446` | `0.345` |
+| `2` | `-4.907` | `33.563` | `0.391` | `0.362` | `0.283` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Battery crafts | Heart deposits | Invalid frac. | Joint actions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-19.210` | `54.0` | `71` | `56` | `35` | `0.1167` | `167.0` |
+| `random` | `-28.733` | `12.7` | `37` | `0` | `0` | `0.7514` | `240.0` |
+| `seed0_det` | `-44.093` | `4.0` | `12` | `0` | `0` | `0.0749` | `75.3` |
+| `seed0_stoch` | `-35.227` | `11.0` | `30` | `3` | `0` | `0.0941` | `141.7` |
+| `seed1_det` | `-8.183` | `59.3` | `79` | `62` | `37` | `0.1703` | `176.0` |
+| `seed1_stoch` | `2.433` | `57.0` | `72` | `61` | `38` | `0.1069` | `240.0` |
+| `seed2_det` | `-11.567` | `34.3` | `47` | `44` | `12` | `0.0586` | `134.3` |
+| `seed2_stoch` | `-25.063` | `32.0` | `52` | `32` | `12` | `0.0181` | `173.0` |
+
+Decision:
+
+- The strict action mask continued to work mechanically: checkpoint rollouts had
+  zero `put`, `attack`, `plant`, and `swap` attempts.
+- Longer strict-v10 training did not improve the result. It weakened the clean
+  1M behavior, especially seed `0`, which lost battery/heart-chain completion.
+- Do not promote the 10M strict-v10 checkpoints to a representation sweep.
+- The next ramp should be a budget/transfer diagnostic, not another longer
+  strict-mask run:
+  - use the 1M strict-v10 checkpoints as the known-good behavior reference;
+  - run a short budget ladder or early-stopping comparison before 10M;
+  - then test annealing from the clean checkpoint into a less constrained action
+    surface one affordance family at a time.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2287,8 +2335,8 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run first v10 chain-affordance cleanup ramp.
 - [x] Rerun v10 after strict action-mask fallback fix.
 - [x] Fix v10 checkpoint metadata so behavior rollouts use the effective mask.
-- [ ] Run v10 Stage-2 strict-mask 10M ramp.
-- [ ] Run v10 Stage-2 behavior gate.
+- [x] Run v10 Stage-2 strict-mask 10M ramp.
+- [x] Run v10 Stage-2 behavior gate.
 - [ ] Run reward-mixing pilot.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.

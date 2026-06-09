@@ -227,3 +227,49 @@ Decision:
   controlled.
 - The next experiment should anneal or transfer from strict v10 into a less
   constrained action surface before any representation sweep.
+
+## V10 Stage-2 Strict-Mask Outcome
+
+Run date: 2026-06-09.
+
+- Commit: `129dbac38b`.
+- Stage-2 root:
+  `/workspace/tribal_event_mask_runs/stage2_v10_chain_affordance_compass_10m`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage2_v10_chain_affordance_compass_129dbac38b`.
+- Training jobs completed on `relh-sandbox-1` job `134` for seeds `0,1` and
+  `relh-sandbox-2` job `133` for seed `2`.
+- Result JSON validation passed for all three seeds.
+- Behavior-output validation passed for 11 rollout files.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | `D_act_JS` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-10.949` | `-67.389` | `0.440` | `0.307` | `0.323` |
+| `1` | `-10.627` | `-50.329` | `0.462` | `0.446` | `0.345` |
+| `2` | `-4.907` | `33.563` | `0.391` | `0.362` | `0.283` |
+
+Corrected masked behavior over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Resources | Battery crafts | Heart deposits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-19.210` | `54.0` | `71` | `56` | `35` |
+| `random` | `-28.733` | `12.7` | `37` | `0` | `0` |
+| `seed0_det` | `-44.093` | `4.0` | `12` | `0` | `0` |
+| `seed0_stoch` | `-35.227` | `11.0` | `30` | `3` | `0` |
+| `seed1_det` | `-8.183` | `59.3` | `79` | `62` | `37` |
+| `seed1_stoch` | `2.433` | `57.0` | `72` | `61` | `38` |
+| `seed2_det` | `-11.567` | `34.3` | `47` | `44` | `12` |
+| `seed2_stoch` | `-25.063` | `32.0` | `52` | `32` | `12` |
+
+Decision:
+
+- The strict mask still works mechanically: corrected checkpoint attempts had no
+  `put`, `attack`, `plant`, or `swap`.
+- Scaling strict v10 from 1M to 10M did not improve behavior. Seed `0` lost the
+  heart chain almost completely, seed `2` weakened, and only seed `1` remained
+  behavior-valid.
+- Do not use the 10M strict-v10 checkpoints for a representation sweep.
+- The next ramp should diagnose budget/overtraining and transfer from the clean
+  1M strict-v10 checkpoints before relaxing the action surface.
