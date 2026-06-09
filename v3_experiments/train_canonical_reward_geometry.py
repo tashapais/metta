@@ -186,6 +186,7 @@ class CanonicalEnv(Protocol):
 @dataclass(frozen=True)
 class RunnerConfig:
     shared_frac: float
+    shared_frac_start: float | None
     seed: int
     total_agent_steps: int
     eval_trials: int
@@ -533,6 +534,15 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shared-frac", type=float, required=True)
+    parser.add_argument(
+        "--shared-frac-start",
+        type=float,
+        default=None,
+        help=(
+            "Linearly anneal training reward mixing from this value to "
+            "--shared-frac over total-agent-steps. Evaluation uses --shared-frac."
+        ),
+    )
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--total-agent-steps", type=int, default=4_000_000)
     parser.add_argument("--eval-trials", type=int, default=CANONICAL_EVAL_TRIALS)
@@ -830,6 +840,7 @@ def _train_policy(
                 obs,
                 env_rewards,
                 config,
+                shared_frac=_training_shared_frac(config, global_step),
                 event_stats_delta=event_stats.delta(env),
                 event_stats_total=event_stats.current,
                 navigation_before=navigation_before,
@@ -917,6 +928,7 @@ def _train_policy(
             "mean_raw_env_return": float(np.mean(recent_raw_returns[-100:])),
             "mean_role_shaping_return": float(np.mean(recent_role_shaping_returns[-100:])),
             "mean_individual_return": float(np.mean(recent_individual_returns[-100:])),
+            "shared_frac": _training_shared_frac(config, global_step),
             "policy_loss": pg_loss,
             "value_loss": value_loss,
             "entropy": entropy_loss,
@@ -1123,6 +1135,8 @@ def _result_record(
         "condition_group": condition_group,
         "environment_backend": config.env_backend,
         "shared_frac": config.shared_frac,
+        "shared_frac_start": config.shared_frac_start,
+        "shared_frac_schedule": "linear" if config.shared_frac_start is not None else "constant",
         "seed": config.seed,
         "num_agents": env.num_agents,
         "num_teams": env.num_teams,
@@ -1200,6 +1214,7 @@ def _canonical_reward_components(
     env_rewards: np.ndarray,
     config: RunnerConfig,
     *,
+    shared_frac: float | None = None,
     event_stats_delta: np.ndarray | None = None,
     event_stats_total: np.ndarray | None = None,
     navigation_before: np.ndarray | None = None,
@@ -1223,12 +1238,20 @@ def _canonical_reward_components(
     else:
         bonuses = np.zeros_like(raw_env_rewards, dtype=np.float64)
     individual_rewards = raw_env_rewards + bonuses
+    mix_alpha = config.shared_frac if shared_frac is None else shared_frac
     return {
         "raw_env_rewards": raw_env_rewards,
         "role_shaping_bonuses": bonuses,
         "individual_rewards": individual_rewards,
-        "mixed_rewards": mix_rewards(individual_rewards, config.shared_frac),
+        "mixed_rewards": mix_rewards(individual_rewards, mix_alpha),
     }
+
+
+def _training_shared_frac(config: RunnerConfig, global_step: int) -> float:
+    if config.shared_frac_start is None:
+        return config.shared_frac
+    progress = min(1.0, max(0.0, global_step / max(1, config.total_agent_steps)))
+    return config.shared_frac_start + progress * (config.shared_frac - config.shared_frac_start)
 
 
 def _canonical_rewards(
@@ -1425,6 +1448,8 @@ def _copy_navigation_snapshot(env: CanonicalEnv) -> np.ndarray | None:
 def _validate_config(config: RunnerConfig) -> None:
     if not 0.0 <= config.shared_frac <= 1.0:
         raise ValueError("--shared-frac must be in [0, 1]")
+    if config.shared_frac_start is not None and not 0.0 <= config.shared_frac_start <= 1.0:
+        raise ValueError("--shared-frac-start must be in [0, 1]")
     if config.total_agent_steps <= 0:
         raise ValueError("--total-agent-steps must be positive")
     if config.eval_trials <= 0:

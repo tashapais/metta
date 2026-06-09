@@ -61,6 +61,10 @@ Current uncertainty:
 - Lower-alpha thresholding found that `shared_frac=0.6` is the first plausible
   mixed-reward candidate, but one deterministic seed remains weak enough that it
   needs a focused shorter-budget check before promotion.
+- The focused alpha0.6 `100k` short-budget check improved the weak seed1
+  deterministic behavior from `3` to `34` heart deposits, but still missed the
+  all-seed preservation gate, so alpha0.6 is budget-sensitive rather than
+  canonical.
 
 Immediate operating plan:
 
@@ -82,8 +86,11 @@ Immediate operating plan:
   below `0.8` can preserve deterministic behavior. Completed: alpha0.6 is a
   partial pass with a weak seed1 deterministic rollout.
 - Phase G: run a focused alpha0.6 shorter-budget check to see whether the weak
-  seed1 behavior is a budget/overtraining issue.
-- Phase H: only if a reward-mixing condition preserves behavior across seeds,
+  seed1 behavior is a budget/overtraining issue. Completed: `100k` is much
+  better than `250k` for seed1 but still misses the strict gate.
+- Phase H: run an alpha0-to-alpha0.6 annealed-transfer diagnostic to test
+  whether gradual reward sharing preserves the chain better than fixed alpha.
+- Phase I: only if a reward-mixing condition preserves behavior across seeds,
   run the canonical paper sweep.
 
 ## Research Question
@@ -3091,6 +3098,118 @@ V10 Stage-10 alpha0.6 short-budget diagnostic plan:
     experiment should be an annealed transfer rather than another fixed-alpha
     short run.
 
+V10 Stage-10 alpha0.6 short-budget diagnostic outcome, commit `a16d0d6d2`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `147`: seeds `0,1`.
+  - `relh-sandbox-2` job `146`: seed `2`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `148`: deterministic/stochastic checkpoint rollouts
+    for seeds `0,1`.
+  - `relh-sandbox-2` job `147`: five baselines plus deterministic/stochastic
+    checkpoint rollouts for seed `2`.
+- Result JSON and checkpoint files were present and nonempty for all three
+  training runs.
+- Behavior-output validation passed for all Stage-10 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage10_v10_alpha0p6_short_budget`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage10_v10_alpha0p6_short_budget_a16d0d6d2`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage10_v10_alpha0p6_short_budget_sandbox1_a16d0d6d2.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage10_v10_alpha0p6_short_budget_sandbox2_a16d0d6d2.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage10_behavior_gate_sandbox1_a16d0d6d2.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage10_behavior_gate_sandbox2_a16d0d6d2.sh`
+- Offline W&B run IDs:
+  - seed `0`: `dujrobc5`;
+  - seed `1`: `wyexhp9n`;
+  - seed `2`: `or44hm32`.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `-6.437` | `133.935` | `140.372` | `0.530` | `14.976` | `0.237` | `0.356` |
+| `1` | `-7.789` | `91.684` | `99.473` | `0.522` | `14.531` | `0.281` | `0.338` |
+| `2` | `-5.606` | `92.734` | `98.340` | `0.520` | `14.902` | `0.224` | `0.315` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-28.800` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-28.800` | `29.0` | `0` | `0` | `0` | `6359` | `80` |
+| `move_sweep` | `-35.397` | `0.0` | `0` | `0` | `0` | `694` | `0` |
+| `use_sweep` | `-28.800` | `19.7` | `0` | `0` | `0` | `8581` | `59` |
+| `chain_oracle` | `-64.000` | `85.3` | `114` | `85` | `55` | `1211` | `256` |
+| `alpha0.6_100k_seed0_det` | `16.800` | `78.7` | `90` | `86` | `59` | `2287` | `236` |
+| `alpha0.6_100k_seed0_stoch` | `14.800` | `75.7` | `86` | `79` | `59` | `1247` | `227` |
+| `alpha0.6_100k_seed1_det` | `-8.530` | `54.3` | `64` | `60` | `34` | `1807` | `163` |
+| `alpha0.6_100k_seed1_stoch` | `-19.940` | `72.3` | `90` | `71` | `49` | `1577` | `217` |
+| `alpha0.6_100k_seed2_det` | `1.177` | `59.3` | `74` | `61` | `42` | `1634` | `178` |
+| `alpha0.6_100k_seed2_stoch` | `-2.067` | `81.0` | `94` | `86` | `62` | `1842` | `243` |
+
+Decision:
+
+- Stage 10 is a near miss, not a promotion candidate.
+- Shortening alpha0.6 fine-tuning from `250k` to `100k` improved deterministic
+  seed1 heart deposits from `3` to `34`, and seed0 improved from `50` to `59`.
+- The strict preservation thresholds from Stage-3 source behavior remain:
+  - seed0: `57 * 0.75 = 42.75`;
+  - seed1: `51 * 0.75 = 38.25`;
+  - seed2: `58 * 0.75 = 43.5`.
+- Stage-10 deterministic deposits were `59,34,42`, so seed1 and seed2 still
+  miss the all-seed pass gate.
+- Stochastic deposits were `59,49,62`, again showing that useful behavior
+  remains in the policy distribution even when greedy execution is fragile.
+- The mechanism read is budget sensitivity plus deterministic fragility, not
+  simple acquisition failure. The next discriminating experiment should anneal
+  reward sharing from alpha0 to alpha0.6 instead of applying fixed alpha0.6
+  immediately.
+- Do not update the paper from Stage 10.
+
+V10 Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic plan:
+
+- Purpose: test whether gradual reward-sharing introduction preserves
+  deterministic chain behavior better than fixed alpha0.6.
+- Code support:
+  - add `--shared-frac-start <float>` to
+    `v3_experiments/train_canonical_reward_geometry.py`;
+  - keep `--shared-frac` as the final/evaluation alpha;
+  - record `shared_frac_start` and `shared_frac_schedule` in result JSON and
+    checkpoint metadata;
+  - log the current training `shared_frac` in `train_metrics`.
+- Source checkpoints: the same Stage-3 strict-v10 alpha0 2M per-seed
+  checkpoints.
+- Arm:
+  - linear alpha schedule from `0.0` to `0.6`, seeds `0,1,2`, `250,008`
+    fine-tuning agent steps, learning rate `1e-4`.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - per-seed `--init-checkpoint-path` from the Stage-3 strict 2M source.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage11_v10_alpha0_to_alpha0p6_anneal`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage11_v10_alpha0_to_alpha0p6_anneal_<sha>`.
+- Pass criteria:
+  - every deterministic checkpoint has nonzero heart deposits;
+  - all three deterministic seeds stay within 25% of their Stage-3 strict 2M
+    deterministic heart-deposit count;
+  - stochastic rollouts remain nonzero and do not lose the chain;
+  - raw behavior stays above no-op/random and near the chain-oracle baseline.
+- Interpretation rule:
+  - If annealing passes where fixed alpha0.6 failed, promote annealing as the
+    behavior-preserving transfer protocol and run representation/probe follow-up
+    at the final alpha.
+  - If annealing improves but still misses one seed, run one smaller final-alpha
+    anneal, likely `0.5`, before giving up on mixed rewards.
+  - If annealing fails similarly to fixed alpha0.6, fixed reward mixing is not
+    behavior-valid enough for deterministic MAPPO role-learning claims in this
+    reconstruction.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3194,8 +3313,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-8 behavior gate.
 - [x] Run Stage-9 lower-alpha threshold diagnostic.
 - [x] Run Stage-9 behavior gate.
-- [ ] Run Stage-10 alpha0.6 short-budget diagnostic.
-- [ ] Run Stage-10 behavior gate.
+- [x] Run Stage-10 alpha0.6 short-budget diagnostic.
+- [x] Run Stage-10 behavior gate.
+- [ ] Add and run Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic.
+- [ ] Run Stage-11 behavior gate.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
