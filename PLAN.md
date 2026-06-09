@@ -68,6 +68,11 @@ Current uncertainty:
 - Linear alpha0-to-alpha0.6 annealed transfer passed the 3-seed deterministic
   behavior gate with heart deposits `63,40,63`, making it the first
   behavior-valid mixed-reward candidate in this reconstruction.
+- Stage-12 expanded that candidate beyond seeds `0,1,2`, but it exposed a
+  source-selection confound: seed `3` and replacement seed `5` were usable at a
+  uniform `2M` alpha0 source budget, while contiguous seed `4` only became
+  deterministic-source-valid after a `4M` rescue. Therefore Stage 12 is useful
+  promotion evidence, but it is not yet a paper-eligible canonical result.
 
 Immediate operating plan:
 
@@ -96,8 +101,11 @@ Immediate operating plan:
   Completed: annealing passed the 3-seed deterministic behavior gate.
 - Phase I: promote annealed alpha0.6 into a canonical follow-up: expand seeds,
   preserve behavior gates, and run representation/probe analysis from the
-  behavior-valid checkpoints.
-- Phase J: update the paper only after the canonical follow-up is complete.
+  behavior-valid checkpoints. Completed as a diagnostic, not as a paper stream:
+  the seed4 source-budget confound requires a cleaner rerun.
+- Phase J: pre-register and run a Stage-13 canonical rerun under one SHA with a
+  fixed source seed/budget rule before looking at promoted results.
+- Phase K: update the paper only after the canonical follow-up is complete.
 
 ## Research Question
 
@@ -3310,6 +3318,170 @@ V10 Stage-12 canonical annealed alpha0.6 promotion plan:
   - do not update Overleaf until Stage-12 artifacts are complete and the
     behavior gate passes on the canonical seed set.
 
+V10 Stage-12 annealed alpha0.6 promotion diagnostic outcome, commit
+`5738657e7`:
+
+- Current sandbox status on 2026-06-09: `relh-sandbox-1` and
+  `relh-sandbox-2` queues were empty under
+  `uv run sky queue <cluster> --all-users --skip-finished`; all GPUs reported
+  `0 MiB` memory and `0%` utilization. Recent queue history showed the Stage-12
+  jobs succeeded, but the durable provenance anchors are the exact script paths,
+  result roots, checkpoint paths, and behavior-output JSON listed below.
+- Remote worktree:
+  `/workspace/tribal_event_mask_7635f01b`.
+- Stage-12 alpha0 source root:
+  `/workspace/tribal_event_mask_runs/stage12_v10_alpha0_sources`.
+- Stage-12 corrected source behavior root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage12_v10_alpha0_sources_chain_compass_5738657e7`.
+- Stage-12 annealed promotion root:
+  `/workspace/tribal_event_mask_runs/stage12_v10_alpha0_to_alpha0p6_anneal_promotion`.
+- Stage-12 annealed promotion behavior root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage12_v10_alpha0_to_alpha0p6_anneal_promotion_5738657e7`.
+
+Source-run scripts:
+
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_v10_alpha0_source_seed3_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_v10_alpha0_source_seed4_sandbox2_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_v10_alpha0_source_seed5_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_v10_alpha0_source_seed4_4m_sandbox2_5738657e7.sh`
+
+Source behavior-gate scripts:
+
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_source_behavior_seed3_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_source_behavior_seed4_sandbox2_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_source_behavior_seed5_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_source_behavior_seed4_4m_sandbox2_5738657e7.sh`
+
+Promotion scripts:
+
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_anneal_promotion_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_anneal_promotion_sandbox2_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_anneal_promotion_behavior_sandbox1_5738657e7.sh`
+- `/workspace/tribal_event_mask_runs/scripts/launch_stage12_anneal_promotion_behavior_sandbox2_5738657e7.sh`
+
+Important correction:
+
+- The first source behavior attempt omitted `--chain-compass-observation`, so
+  checkpoints with `obs_shape=(26,11,11)` were evaluated against an environment
+  with the smaller non-compass observation. The failed root
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage12_v10_alpha0_sources_5738657e7`
+  is invalid and should not be used. The corrected root is the
+  `_chain_compass_5738657e7` behavior gate listed above.
+
+Stage-12 source training eval:
+
+| Source | Steps | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe | W&B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `seed3_alpha0_2m` | `2,000,004` | `2.470` | `161.881` | `159.411` | `0.446` | `11.304` | `0.472` | `0.344` | `nzv3ap3w` |
+| `seed4_alpha0_2m` | `2,000,004` | `-3.595` | `41.403` | `44.998` | `0.488` | `13.664` | `0.277` | `0.365` | `4eym7llu` |
+| `seed5_alpha0_2m` | `2,000,004` | `-1.561` | `217.636` | `219.197` | `0.441` | `11.257` | `0.262` | `0.353` | `5ij0a14b` |
+| `seed4_alpha0_4m` | `4,000,008` | `-7.261` | `133.010` | `140.271` | `0.483` | `12.925` | `0.263` | `0.363` | `4vp3xz53` |
+
+Corrected Stage-12 source behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-32.133` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-36.810` | `39.3` | `3` | `0` | `0` | `5977` | `113` |
+| `move_sweep` | `-28.800` | `0.0` | `0` | `0` | `0` | `905` | `0` |
+| `use_sweep` | `-30.467` | `7.0` | `0` | `0` | `0` | `8619` | `21` |
+| `chain_oracle` | `-11.963` | `56.3` | `73` | `58` | `37` | `1239` | `169` |
+| `seed3_alpha0_2m_det` | `-4.600` | `83.3` | `104` | `84` | `60` | `1212` | `250` |
+| `seed3_alpha0_2m_stoch` | `-43.763` | `64.7` | `87` | `62` | `42` | `790` | `194` |
+| `seed4_alpha0_2m_det` | `-29.067` | `37.3` | `52` | `45` | `13` | `1422` | `112` |
+| `seed4_alpha0_2m_stoch` | `-36.467` | `85.0` | `108` | `84` | `59` | `1092` | `255` |
+| `seed5_alpha0_2m_det` | `-18.650` | `52.0` | `74` | `41` | `36` | `621` | `156` |
+| `seed5_alpha0_2m_stoch` | `-18.797` | `44.7` | `64` | `43` | `27` | `359` | `134` |
+| `seed4_alpha0_4m_det` | `1.833` | `56.0` | `69` | `60` | `37` | `1493` | `168` |
+| `seed4_alpha0_4m_stoch` | `-4.530` | `55.0` | `72` | `55` | `36` | `933` | `165` |
+
+Stage-12 promoted annealed alpha0-to-alpha0.6 training eval:
+
+| Promotion | Source | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe | W&B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `seed3_anneal0to0.6` | `seed3_alpha0_2m` | `-1.255` | `87.752` | `89.007` | `0.516` | `14.288` | `0.352` | `0.281` | `jlv4x6np` |
+| `seed5_anneal0to0.6` | `seed5_alpha0_2m` | `-1.072` | `200.297` | `201.369` | `0.482` | `11.963` | `0.298` | `0.324` | `x9wbdh6o` |
+| `seed4_anneal0to0.6` | `seed4_alpha0_4m` | `-9.534` | `62.692` | `72.226` | `0.512` | `14.150` | `0.261` | `0.350` | `ddzij58q` |
+
+Stage-12 promoted behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-28.800` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-37.843` | `51.3` | `1` | `0` | `0` | `6042` | `150` |
+| `move_sweep` | `-34.317` | `0.0` | `0` | `0` | `0` | `779` | `0` |
+| `use_sweep` | `-32.133` | `6.0` | `0` | `0` | `0` | `8622` | `18` |
+| `chain_oracle` | `-32.757` | `75.3` | `96` | `74` | `54` | `1232` | `226` |
+| `seed3_anneal0to0.6_det` | `-9.433` | `69.0` | `85` | `72` | `47` | `1838` | `207` |
+| `seed3_anneal0to0.6_stoch` | `-5.673` | `60.3` | `74` | `68` | `39` | `1092` | `181` |
+| `seed5_anneal0to0.6_det` | `-1.600` | `48.3` | `56` | `50` | `36` | `1308` | `145` |
+| `seed5_anneal0to0.6_stoch` | `-4.790` | `52.0` | `65` | `50` | `35` | `595` | `156` |
+| `seed4_anneal0to0.6_det_from_4m` | `-7.333` | `46.0` | `58` | `47` | `31` | `1874` | `138` |
+| `seed4_anneal0to0.6_stoch_from_4m` | `6.167` | `63.7` | `77` | `64` | `46` | `808` | `191` |
+
+Stage-12 decision:
+
+- Stage 12 strengthens the evidence that alpha0-to-alpha0.6 annealing preserves
+  meaningful chain behavior after source acquisition: promoted deterministic
+  heart deposits for additional seeds were `47`, `36`, and `31`, all nonzero
+  and all above the corresponding 75% source-preservation thresholds when using
+  the source checkpoints that were promoted.
+- It is not a canonical paper stream. Two confounds remain:
+  - contiguous seed `4` failed the deterministic source gate at the uniform `2M`
+    source budget (`13` deterministic heart deposits), even though its
+    stochastic rollout was strong (`59` heart deposits);
+  - the promoted seed4 checkpoint came from a `4M` source rescue, which changes
+    the source-acquisition budget and makes it incomparable with the uniform
+    `2M` seeds.
+- The uniform-2M replacement seed set `{0,1,2,3,5}` looks promising, but using
+  seed5 after observing seed4 failure would be selection-biased unless we
+  pre-register the rule and rerun under one SHA.
+- The contiguous set `{0,1,2,3,4}` also looks promising only if all seeds use a
+  common `4M` source budget, or if seed4 is explicitly reported as a source
+  acquisition failure rather than silently rescued.
+- Do not update Overleaf from Stage 12. Treat it as a promotion diagnostic that
+  justifies a Stage-13 canonical rerun.
+
+V10 Stage-13 pre-registered canonical rerun plan:
+
+- Purpose: remove the Stage-12 source-selection and source-budget confounds.
+- SHA rule: run all Stage-13 source, promotion, behavior, replay, and
+  representation artifacts under one committed SHA after this PLAN update.
+- Primary source protocol:
+  - train strict-v10 alpha0 source checkpoints for seeds `0,1,2,3,4,5`;
+  - use the same `2,000,004` agent-step source budget for every seed;
+  - do not replace or drop a seed after seeing its behavior result;
+  - run deterministic and stochastic source behavior gates for all six seeds.
+- Primary mixed-reward protocol:
+  - run linear alpha0-to-alpha0.6 annealed promotion for every Stage-13 source
+    checkpoint, including any source-weak seed;
+  - use `250,008` promotion steps and `learning_rate=1e-4`;
+  - evaluate with deterministic and stochastic behavior gates.
+- Reporting rule:
+  - report source acquisition success across all six seeds;
+  - report reward-mixing preservation conditionally on all seeds and separately
+    on source-valid seeds;
+  - if seed4 or any other seed is source-weak at `2M`, do not hide it. Treat
+    the failure as part of the behavior-first evidence.
+- Optional rescue protocol:
+  - only after the primary `2M` protocol is complete, run a separate all-seed
+    `4M` source-budget rescue arm if we need to know whether the source
+    acquisition failure is budget-driven;
+  - never mix `2M` and `4M` source checkpoints in the same canonical table.
+- Promotion gate:
+  - deterministic raw reward beats no-op/random;
+  - ore pickup, battery crafting, heart deposits, and successful `use` actions
+    are nonzero;
+  - promoted deterministic heart deposits are at least `75%` of that seed's
+    source deterministic heart deposits when the source deterministic behavior
+    is nonzero.
+- Paper rule:
+  - if the primary Stage-13 seed set passes source acquisition and mixed-reward
+    preservation, run representation/probe analysis and then update Overleaf;
+  - if source acquisition is seed-fragile, the paper should describe the
+    reconstructed setup as behavior-fragile rather than claim canonical MAPPO
+    role learning.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -3417,7 +3589,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-10 behavior gate.
 - [x] Add and run Stage-11 alpha0-to-alpha0.6 annealed-transfer diagnostic.
 - [x] Run Stage-11 behavior gate.
-- [ ] Run Stage-12 canonical annealed alpha0.6 promotion sweep.
+- [x] Run Stage-12 annealed alpha0.6 promotion diagnostic.
+- [x] Document Stage-12 source-selection/source-budget confound.
+- [ ] Run Stage-13 pre-registered six-seed canonical source rerun.
+- [ ] Run Stage-13 annealed alpha0.6 promotion and behavior gates.
+- [ ] Run Stage-13 representation/probe analysis on behavior-validated outputs.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
