@@ -56,6 +56,8 @@ Current uncertainty:
   `shared_frac=1.0` actively destroys learned chain behavior, while
   `shared_frac=0.8` can preserve stochastic chain behavior but remains
   deterministic-evaluation fragile.
+- Shorter/lower-lr alpha0.8 fine-tuning improved deterministic behavior for
+  some seeds but did not find a single all-seed deterministic pass condition.
 
 Immediate operating plan:
 
@@ -71,7 +73,11 @@ Immediate operating plan:
   chain; alpha0.8 is stochastic-valid but deterministic-fragile.
 - Phase E: run a short/low-lr alpha0.8 stabilization diagnostic to see whether
   deterministic behavior can be preserved while changing reward mixing.
-- Phase F: only if a reward-mixing condition preserves behavior across seeds,
+  Completed: stochastic behavior remains strong, deterministic behavior is still
+  seed/budget fragile.
+- Phase F: run a lower-alpha threshold diagnostic to test whether reward sharing
+  below `0.8` can preserve deterministic behavior.
+- Phase G: only if a reward-mixing condition preserves behavior across seeds,
   run the canonical paper sweep.
 
 ## Research Question
@@ -2859,6 +2865,114 @@ V10 Stage-8 short/low-lr alpha0.8 stabilization diagnostic plan:
   - If both fail, high reward sharing remains unsupported for the reconstructed
     Tribal Village setup.
 
+V10 Stage-8 short/low-lr alpha0.8 stabilization diagnostic outcome, commit
+`c17b7dfeb`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `143`: seeds `0,1`, budgets `100k` and `250k`.
+  - `relh-sandbox-2` job `142`: seed `2`, budgets `100k` and `250k`.
+- Behavior-gate jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `144`: eight deterministic/stochastic checkpoint
+    rollouts for seeds `0,1`.
+  - `relh-sandbox-2` job `143`: five baselines plus four
+    deterministic/stochastic checkpoint rollouts for seed `2`.
+- Result JSON validation passed for all six training outputs.
+- Behavior-output validation passed for all Stage-8 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage8_v10_alpha0p8_low_lr_stabilization`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage8_v10_alpha0p8_low_lr_stabilization_c17b7dfeb`.
+- Remote launch scripts:
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage8_v10_alpha0p8_low_lr_stabilization_sandbox1_c17b7dfeb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage8_v10_alpha0p8_low_lr_stabilization_sandbox2_c17b7dfeb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage8_behavior_gate_sandbox1_c17b7dfeb.sh`
+  - `/workspace/tribal_event_mask_runs/scripts/launch_stage8_behavior_gate_sandbox2_c17b7dfeb.sh`
+
+Training eval:
+
+| Budget | Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | `D_act_KL` | EffRank/n | Role probe |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `100k` | `0` | `-0.226` | `183.194` | `183.421` | `0.507` | `13.054` | `0.283` | `0.334` |
+| `100k` | `1` | `-2.542` | `131.114` | `133.656` | `0.480` | `12.459` | `0.328` | `0.303` |
+| `100k` | `2` | `-4.451` | `81.685` | `86.137` | `0.456` | `11.781` | `0.208` | `0.363` |
+| `250k` | `0` | `-7.709` | `221.178` | `228.887` | `0.517` | `12.339` | `0.274` | `0.323` |
+| `250k` | `1` | `-3.927` | `95.184` | `99.110` | `0.547` | `15.605` | `0.340` | `0.322` |
+| `250k` | `2` | `-4.415` | `124.258` | `128.673` | `0.511` | `15.091` | `0.234` | `0.327` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Use successes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `no_op` | `-30.467` | `0.0` | `0` | `0` | `0` | `0` | `0` |
+| `random` | `-40.210` | `37.3` | `3` | `0` | `0` | `5505` | `105` |
+| `move_sweep` | `-45.073` | `0.0` | `0` | `0` | `0` | `603` | `0` |
+| `use_sweep` | `-37.133` | `5.0` | `0` | `0` | `0` | `8625` | `15` |
+| `chain_oracle` | `-17.633` | `55.0` | `69` | `52` | `40` | `1480` | `165` |
+| `100k_seed0_det` | `-7.597` | `58.0` | `76` | `60` | `37` | `769` | `174` |
+| `100k_seed0_stoch` | `10.533` | `70.3` | `84` | `72` | `52` | `1220` | `211` |
+| `100k_seed1_det` | `-31.303` | `65.0` | `84` | `60` | `47` | `1588` | `195` |
+| `100k_seed1_stoch` | `-11.570` | `65.0` | `78` | `69` | `44` | `1503` | `195` |
+| `100k_seed2_det` | `-17.997` | `46.3` | `62` | `52` | `22` | `769` | `139` |
+| `100k_seed2_stoch` | `-15.133` | `81.3` | `98` | `84` | `59` | `1092` | `244` |
+| `250k_seed0_det` | `8.367` | `71.3` | `83` | `69` | `58` | `1869` | `214` |
+| `250k_seed0_stoch` | `4.633` | `78.0` | `89` | `83` | `60` | `2475` | `234` |
+| `250k_seed1_det` | `-14.963` | `57.0` | `73` | `61` | `36` | `1809` | `171` |
+| `250k_seed1_stoch` | `12.200` | `71.7` | `84` | `77` | `53` | `1254` | `215` |
+| `250k_seed2_det` | `-31.220` | `35.0` | `60` | `25` | `19` | `685` | `105` |
+| `250k_seed2_stoch` | `-31.833` | `70.3` | `93` | `67` | `48` | `768` | `211` |
+
+Decision:
+
+- Stage 8 does not pass the deterministic alpha0.8 stabilization gate.
+- Lower learning rate and shorter budgets improved alpha0.8 relative to Stage 7
+  but did not find a single all-seed deterministic pass condition:
+  - `100k` deterministic deposits are `37,47,22`;
+  - `250k` deterministic deposits are `58,36,19`.
+- Stochastic behavior remains much stronger, with all six stochastic rollouts
+  depositing hearts and four of six above the Stage-8 chain-oracle deposit count
+  of `40`.
+- The persistent failure mode is deterministic seed fragility, especially seed
+  `2`. This suggests alpha0.8 preserves a useful stochastic policy distribution
+  but does not reliably preserve the greedy action sequence.
+- Do not update the paper from Stage 8. Treat it as evidence that alpha0.8 is a
+  partial/stochastic behavior condition, not a canonical deterministic one.
+
+V10 Stage-9 lower-alpha threshold diagnostic plan:
+
+- Purpose: find whether reward sharing below `0.8` can preserve deterministic
+  behavior while still perturbing representation geometry.
+- Source checkpoints: the same Stage-3 strict-v10 alpha0 2M per-seed
+  checkpoints.
+- Arms:
+  - `shared_frac=0.4`, seeds `0,1,2`, `250,008` fine-tuning agent steps,
+    learning rate `1e-4`.
+  - `shared_frac=0.6`, seeds `0,1,2`, `250,008` fine-tuning agent steps,
+    learning rate `1e-4`.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - per-seed `--init-checkpoint-path` from the Stage-3 strict 2M source.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage9_v10_lower_alpha_threshold`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage9_v10_lower_alpha_threshold_<sha>`.
+- Pass criteria:
+  - every deterministic checkpoint arm has nonzero heart deposits;
+  - at least two of three seeds per alpha stay within 25% of their Stage-3
+    strict 2M deterministic heart-deposit count;
+  - stochastic rollouts remain nonzero;
+  - raw behavior stays above no-op/random and near the chain-oracle baseline.
+- Interpretation rule:
+  - If alpha0.4 or alpha0.6 passes, that alpha becomes the candidate
+    behavior-valid mixed-reward condition for a representation/probe follow-up.
+  - If both fail deterministically but pass stochastically, deterministic
+    MAPPO reward-mixing claims remain unsupported in this reconstruction.
+  - If both fail both modes, stop reward-mixing ramps and write the negative
+    finding clearly: only individual reward reliably supports the reconstructed
+    Tribal Village behavior.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
@@ -2958,7 +3072,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-6 reward-mixing behavior gate.
 - [x] Run Stage-7 warm-start reward-mixing diagnostic.
 - [x] Run Stage-7 warm-start behavior gate.
-- [ ] Run Stage-8 short/low-lr alpha0.8 stabilization diagnostic.
+- [x] Run Stage-8 short/low-lr alpha0.8 stabilization diagnostic.
+- [x] Run Stage-8 behavior gate.
+- [ ] Run Stage-9 lower-alpha threshold diagnostic.
 - [ ] Run canonical 5-seed sweep only after pilot success.
 - [ ] Update the paper from canonical outputs only.
 
