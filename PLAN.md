@@ -2550,6 +2550,79 @@ V10 Stage-5 one-family relaxation plan:
   - `put` attempts may occur, but task-chain progress must remain near the 2M
     strict source behavior rather than collapsing into handoff spam.
 
+V10 Stage-5 put-only transfer outcome, commit `f575fdd22c`:
+
+- Training jobs completed successfully on 2026-06-09:
+  - `relh-sandbox-1` job `137`: seeds `0` and `1`.
+  - `relh-sandbox-2` job `136`: seed `2`.
+- Result JSON validation passed for all three transfer outputs.
+- Behavior-output validation passed for 11 rollout files.
+- Training root:
+  `/workspace/tribal_event_mask_runs/stage5_v10_transfer_put_only`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage5_v10_transfer_put_only_f575fdd22c`.
+
+Training eval:
+
+| Seed | Eval raw return | Eval shaped/individual return | Eval role-shaping return | `D_act_JS` | EffRank/n | Role probe | Extra verbs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `0` | `-7.876` | `-1.570` | `6.306` | `0.351` | `0.150` | `0.370` | `put` |
+| `1` | `-1.988` | `149.559` | `151.547` | `0.450` | `0.304` | `0.327` | `put` |
+| `2` | `-6.580` | `26.519` | `33.099` | `0.421` | `0.307` | `0.350` | `put` |
+
+Behavior gate over 3 episodes x 240 steps:
+
+| Rollout | Raw reward | Task events | Ore pickups | Battery crafts | Heart deposits | Invalid attempts | Put attempts |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chain_oracle` | `-23.900` | `53.7` | `75` | `44` | `37` | `2008` | `0` |
+| `seed0_det` | `-29.300` | `10.7` | `19` | `7` | `6` | `1220` | `0` |
+| `seed1_det` | `-18.267` | `57.0` | `70` | `57` | `39` | `537` | `0` |
+| `seed2_det` | `-49.157` | `70.3` | `100` | `68` | `41` | `1011` | `0` |
+| `seed0_stoch` | `17.867` | `82.0` | `92` | `86` | `62` | `1188` | `0` |
+| `seed1_stoch` | `-26.467` | `73.7` | `96` | `68` | `53` | `768` | `0` |
+| `seed2_stoch` | `-51.790` | `56.0` | `75` | `45` | `42` | `622` | `0` |
+
+Decision:
+
+- Put-only relaxation is not a promotion candidate. It improves deterministic
+  seed `2` over Stage 4, but deterministic seed `0` collapses from `57` strict
+  2M deposits to `6`.
+- The agents do not actually use `put` in the behavior gate, so this does not
+  create meaningful handoff behavior. It is another training-dynamics
+  perturbation around the chain policy.
+- Current stable behavior condition remains strict-v10 at 2M. Do not continue
+  action-surface relaxation as the next mainline route.
+
+V10 Stage-6 strict-mask reward-mixing pilot plan:
+
+- Purpose: test the paper's reward-mixing claim only on the behavior-validated
+  strict-v10 condition.
+- Baseline: Stage-3 strict-v10 `shared_frac=0.0`, `2M` budget.
+- New arms:
+  - `shared_frac=0.8`, seeds `0,1,2`, `2M` agent steps.
+  - `shared_frac=1.0`, seeds `0,1,2`, `2M` agent steps.
+- Keep:
+  - `event_v10_chain_affordance_compass_breadcrumbs`;
+  - `--use-action-mask`;
+  - strict chain-affordance mask;
+  - chain-compass observations;
+  - no checkpoint warm start.
+- Run root:
+  `/workspace/tribal_event_mask_runs/stage6_v10_strict_reward_mixing_pilot`.
+- Behavior gate root:
+  `/workspace/tribal_event_mask_runs/behavior_gate_stage6_v10_strict_reward_mixing_pilot_<sha>`.
+- Pass criteria before interpreting representation:
+  - every deterministic checkpoint arm has nonzero heart deposits;
+  - each shared-reward arm has at least two of three deterministic seeds above
+    the chain-oracle deposit count from the same gate;
+  - no arm collapses to no-op/random behavior.
+- Interpretation rule:
+  - If behavior fails for shared-reward arms, paper claims about reward mixing
+    remain blocked.
+  - If behavior passes, compare `D_act_JS`, EffRank/n, role probe, action
+    diversity, and replay behavior against the Stage-3 `shared_frac=0.0`
+    baseline as a pilot, not yet as final paper evidence.
+
 ## Candidate Commands
 
 These commands should be updated after the implementation lands, but this is
