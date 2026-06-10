@@ -21,6 +21,7 @@ EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES = ("supplier", "crafter_logistics", "depositor")
 EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -458,6 +459,27 @@ EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES = {
     "depositor_battery_to_home": 0.25,
 }
 
+EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_ore": 2.0,
+        "put_ore": 6.0,
+        "put_ore_to_crafter": 2.0,
+    },
+    "crafter_logistics": {
+        "craft_battery": 10.0,
+        "put_battery": 12.0,
+        "put_battery_to_depositor": 4.0,
+    },
+    "depositor": {
+        "receive_battery_from_crafter": 8.0,
+        "deposit_heart": 70.0,
+    },
+}
+
+EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS = {
+    "depositor_use_home_assembler": 2.0,
+}
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -852,6 +874,40 @@ def event_v12_role_gated_depositor_reliability_bonuses(
     return bonuses
 
 
+def event_v13_role_gated_depositor_use_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v11-style handoff rewards plus depositor receive/use breadcrumbs."""
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    if stats is not None:
+        _add_role_coefficients(
+            bonuses,
+            stats,
+            EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES,
+            EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS,
+        )
+    _add_role_gated_chain_potential_bonuses(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        gamma=gamma,
+        stage_offsets=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS,
+        closeness_scales=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES,
+    )
+    _add_depositor_home_use_breadcrumb(bonuses, navigation_before, actions, action_mask)
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1201,6 +1257,40 @@ def event_v12_role_gated_depositor_reliability_details() -> dict[str, Any]:
     return details
 
 
+def event_v13_role_gated_depositor_use_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v13 depositor-use diagnostic."""
+
+    details = event_v12_role_gated_depositor_reliability_details()
+    details.update(
+        {
+            "name": "event_v13_role_gated_depositor_use",
+            "summary": (
+                "V11-style generic handoff acquisition with correct-recipient diagnostics, "
+                "depositor receive credit, stronger depositor home potential, and a small "
+                "positive breadcrumb for the final valid depositor home-assembler use action."
+            ),
+            "role_names": list(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs)
+                for role, coeffs in EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": dict(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS),
+            "v13_changes": {
+                "restores_v11_generic_handoff_rewards": True,
+                "keeps_correct_recipient_metrics": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "final_action_breadcrumb": (
+                    "Depositor receives a small positive reward only when it already has a battery, "
+                    "is adjacent to the home assembler, and chooses the matching valid use action."
+                ),
+            },
+            "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+        }
+    )
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -1437,6 +1527,42 @@ def _role_gated_chain_stage_and_distance(
             NAV_DIST_HOME_ASSEMBLER,
         )
     return "depositor_empty_to_home", _valid_navigation_distance(navigation_row, NAV_DIST_HOME_ASSEMBLER)
+
+
+def _add_depositor_home_use_breadcrumb(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+) -> None:
+    navigation = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if navigation is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    labels = role_labels(navigation.shape[0], len(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES))
+    for agent_id, row in enumerate(navigation):
+        if int(labels[agent_id]) != 2 or int(row[NAV_INVENTORY_BATTERY]) <= 0:
+            continue
+        target = _target_if_valid(row, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER)
+        if target is None:
+            continue
+        agent_x = int(row[NAV_AGENT_X])
+        agent_y = int(row[NAV_AGENT_Y])
+        target_x, target_y = target
+        dx_raw = target_x - agent_x
+        dy_raw = target_y - agent_y
+        if max(abs(dx_raw), abs(dy_raw)) != 1:
+            continue
+        dx = _sign(dx_raw)
+        dy = _sign(dy_raw)
+        if dx == 0 and dy == 0:
+            continue
+        action = _encode_action(USE_VERB, ORIENTATION_BY_DELTA[(dx, dy)])
+        if actions_arr[agent_id] == action and _mask_allows(mask, agent_id, action):
+            bonuses[agent_id] += EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS[
+                "depositor_use_home_assembler"
+            ]
 
 
 def _valid_navigation_distance(navigation_row: np.ndarray, column: int) -> float | None:

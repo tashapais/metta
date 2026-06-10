@@ -468,6 +468,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
     role_gated_chain_mask = config.get("reward_design") in (
         "event_v11_role_gated_chain_handoffs",
         "event_v12_role_gated_depositor_reliability",
+        "event_v13_role_gated_depositor_use",
     )
     chain_affordance_extra_verbs = (
         ()
@@ -507,6 +508,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v10_chain_affordance_compass_breadcrumbs",
             "event_v11_role_gated_chain_handoffs",
             "event_v12_role_gated_depositor_reliability",
+            "event_v13_role_gated_depositor_use",
         )
     )
 

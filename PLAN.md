@@ -4143,6 +4143,32 @@ Stage-19 specialization-forcing follow-up:
     `tribal_village_interface.nim` and `environment.nim`, a real Tribal v12
     smoke, and a short checkpoint rollout sanity check with sane zero targeted
     counters.
+- Stage-20 fixed v12 result, commit `fe235048d`:
+  - fixed-counter run completed seeds `0,1,2,3`;
+  - v12 was cleaner but not better than v11: total heart deposits fell from
+    v11's `24` to `8`, total battery handoffs fell from `78` to `31`, and
+    seeds `1` and `3` barely acquired the battery chain;
+  - correct-recipient counters were now sane and useful: total
+    `put_battery_to_depositor` / `receive_battery_from_crafter` was `12`;
+  - interpretation: replacing generic handoff rewards with sparse
+    correct-recipient rewards hurt acquisition. Keep the correct-recipient
+    counters/extra credit, but restore the easier v11 generic handoff rewards.
+- Stage-21 v13 depositor-use iteration:
+  - restore v11-style generic `put_ore` and `put_battery` rewards so the chain
+    is discoverable again;
+  - keep small correct-recipient extra credit and depositor
+    `receive_battery_from_crafter` reward for credit assignment;
+  - keep the stronger v12 depositor home potential;
+  - add one narrow positive final-action breadcrumb: if a depositor already has
+    a battery, is adjacent to the home assembler, and chooses the matching valid
+    `use` action, add a small reward. This is not a scripted policy; it does not
+    choose movement, handoff timing, or actions for the agent, and it adds no
+    negative rewards.
+  - local validation passed Python syntax checks, separate Nim checks, mock
+    trainer smoke, real Tribal trainer smoke, and checkpoint behavior rollout
+    smoke. The first rollout smoke used a shared default `/tmp/checkpoints`
+    checkpoint path in parallel with the mock smoke and corrupted the temporary
+    checkpoint; rerunning with an explicit unique checkpoint path passed.
 
 ## Candidate Commands
 
@@ -4275,8 +4301,13 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Inspect Stage-19 handoff/craft/deposit counters before scaling.
 - [x] Rerun old-style representation plots for the Stage-19 alpha0 diagnostic.
 - [x] Implement v12 depositor-reliability shaping and correct-recipient handoff counters.
-- [ ] Launch Stage-20 short v12 sandbox diagnostics.
-- [ ] Inspect Stage-20 correct-recipient handoffs and depositor completion before scaling.
+- [x] Launch Stage-20 short v12 sandbox diagnostics.
+- [x] Inspect Stage-20 correct-recipient handoffs and depositor completion before scaling.
+- [x] Fix v12 stats stride bug and relaunch Stage-20.
+- [x] Document that fixed v12 is cleaner but not a promotion candidate.
+- [x] Implement and smoke v13 depositor-use breadcrumb.
+- [ ] Launch Stage-21 short v13 sandbox diagnostics.
+- [ ] Inspect Stage-21 deposits, correct-recipient handoffs, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions
