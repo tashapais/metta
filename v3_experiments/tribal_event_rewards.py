@@ -28,6 +28,7 @@ EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -567,6 +568,18 @@ EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_CAPS = {
     "crafter_battery_arrive_adjacent_home": 160,
 }
 
+EVENT_V20_HOME_STAGED_HANDOFF_ROLE_COEFFICIENTS = EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_COEFFICIENTS
+
+EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS = {
+    **EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_COEFFICIENTS,
+    "crafter_battery_put_to_home_staged_depositor": 8.00,
+}
+
+EVENT_V20_HOME_STAGED_HANDOFF_ACTION_CAPS = {
+    **EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_CAPS,
+    "crafter_battery_put_to_home_staged_depositor": 160,
+}
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -599,6 +612,7 @@ EVENT_V9_POTENTIAL_CHAIN_CLOSENESS_SCALES = {
 ACTION_ARGUMENT_COUNT = 8
 MOVE_VERB = 1
 USE_VERB = 3
+PUT_VERB = 5
 ORIENTATION_DELTAS = (
     (0, -1),
     (0, 1),
@@ -1199,6 +1213,39 @@ def event_v19_crafter_home_delivery_bonuses(
         bonuses,
         navigation_before,
         navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
+def event_v20_home_staged_handoff_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v19 rewards plus a positive masked-put breadcrumb near home."""
+
+    bonuses = event_v19_crafter_home_delivery_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_crafter_home_staged_handoff_breadcrumb(
+        bonuses,
+        navigation_before,
         actions,
         action_mask,
         event_stats_total,
@@ -1841,6 +1888,59 @@ def event_v19_crafter_home_delivery_details() -> dict[str, Any]:
     return details
 
 
+def event_v20_home_staged_handoff_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v20 home-staged handoff diagnostic."""
+
+    details = event_v19_crafter_home_delivery_details()
+    details.update(
+        {
+            "name": "event_v20_home_staged_handoff",
+            "summary": (
+                "V19 crafter home delivery plus a positive-only oracle-action "
+                "breadcrumb for battery-carrying crafters that select a "
+                "target-aware mask-valid put action near the home assembler."
+            ),
+            "role_names": list(EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V20_HOME_STAGED_HANDOFF_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": {
+                "depositor_use_home_assembler": EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ],
+                "crafter_battery_put_to_home_staged_depositor": EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS[
+                    "crafter_battery_put_to_home_staged_depositor"
+                ],
+            },
+            "final_mile_action_coefficients": {
+                name: coefficient
+                for name, coefficient in EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS.items()
+                if name
+                not in {
+                    "depositor_use_home_assembler",
+                    "crafter_battery_put_to_home_staged_depositor",
+                }
+            },
+            "final_mile_action_caps": dict(EVENT_V20_HOME_STAGED_HANDOFF_ACTION_CAPS),
+            "v20_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "changes_action_permissions": False,
+                "purpose": (
+                    "Address Stage-27 v19 evidence: crafters can make batteries, "
+                    "but deterministic rollouts selected no battery-to-depositor "
+                    "handoffs. Reward the existing target-aware put affordance "
+                    "when it is selected near a home-staged depositor."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -2401,6 +2501,41 @@ def _add_crafter_battery_home_delivery_breadcrumbs(
         ):
             bonuses[agent_id] += EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_COEFFICIENTS[
                 "crafter_battery_arrive_adjacent_home"
+            ]
+
+
+def _add_crafter_home_staged_handoff_breadcrumb(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    navigation = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    if navigation is None or actions_arr is None or mask is None:
+        return
+    labels = role_labels(navigation.shape[0], len(EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES))
+    put_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_put",
+        EVENT_V20_HOME_STAGED_HANDOFF_ACTION_CAPS["crafter_battery_put_to_home_staged_depositor"],
+        bonuses.shape[0],
+    )
+
+    for agent_id, row in enumerate(navigation):
+        if int(labels[agent_id]) != 1 or int(row[NAV_INVENTORY_BATTERY]) <= 0:
+            continue
+        home_distance = _valid_navigation_distance(row, NAV_DIST_HOME_ASSEMBLER)
+        if home_distance is None or home_distance > 2:
+            continue
+        action = int(actions_arr[agent_id])
+        if action // ACTION_ARGUMENT_COUNT != PUT_VERB:
+            continue
+        if put_cap[agent_id] and _mask_allows(mask, agent_id, action):
+            bonuses[agent_id] += EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS[
+                "crafter_battery_put_to_home_staged_depositor"
             ]
 
 

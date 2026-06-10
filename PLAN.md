@@ -4769,6 +4769,103 @@ Stage-19 specialization-forcing follow-up:
       branch;
     - do not update `main_richard.tex` from v19 unless behavior gates recover
       and stabilize heart deposits across seeds.
+  - Stage-27 v19 sandbox result, commit `723967c54`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `208`, seeds `0,1`;
+      - `relh-sandbox-2` job `205`, seeds `2,3`;
+    - Sky marked the detached jobs failed with wrapper return code `141`, but
+      direct artifact inspection confirmed all four `result.json` files and
+      `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage27_v19_crafter_home_delivery_1m_723967c54`;
+    - all four result JSONs record
+      `reward_design=event_v19_crafter_home_delivery`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - final training readout:
+      - seed `0`: EffRank/n `0.195`, D_act KL `9.805`, D_act JS
+        `0.298`, probe `0.472`, raw return `-6.353`;
+      - seed `1`: EffRank/n `0.178`, D_act KL `9.416`, D_act JS
+        `0.341`, probe `0.405`, raw return `-7.263`;
+      - seed `2`: EffRank/n `0.144`, D_act KL `6.070`, D_act JS
+        `0.216`, probe `0.573`, raw return `-6.058`;
+      - seed `3`: EffRank/n `0.204`, D_act KL `6.312`, D_act JS
+        `0.224`, probe `0.472`, raw return `-5.535`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `210`, seeds `0,1`;
+      - `relh-sandbox-2` job `207`, seeds `2,3`;
+    - aggregate Stage-27 behavior across the `20` evaluation episodes:
+      - `114` ore pickups;
+      - `67` ore-to-crafter targeted handoffs;
+      - `21` battery crafts;
+      - `0` battery-to-depositor targeted handoffs;
+      - `0` heart deposits;
+    - per-seed behavior:
+      - seed `0`: `19` ore pickups, `8` ore-to-crafter handoffs,
+        `0` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `30` ore pickups, `18` ore-to-crafter handoffs,
+        `10` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `2`: `38` ore pickups, `20` ore-to-crafter handoffs,
+        `6` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `3`: `27` ore pickups, `21` ore-to-crafter handoffs,
+        `5` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+    - interpretation: v19 is not paper-ready and should not update
+      `main_richard.tex`. It recovers some battery crafting relative to v18,
+      but it breaks the final handoff entirely relative to v17. The next
+      bottleneck is action selection for the already target-aware,
+      mask-valid `put_battery_to_depositor` affordance near a staged home
+      depositor.
+- Stage-28 v20 home-staged-handoff iteration:
+  - new reward design: `event_v20_home_staged_handoff`;
+  - v20 keeps v19 crafter home delivery, v17 depositor home staging, the
+    target-aware handoff mask, chain-compass observation, role-gated action
+    mask, and positive-only shaping rule;
+  - v20 does not add penalties, scripted actions, demonstrations, simulator
+    rule changes, or new action permissions;
+  - v20 adds one positive oracle-action breadcrumb for role-1 crafters:
+    - `crafter_battery_put_to_home_staged_depositor`: `+8.00` when the
+      crafter carries a battery, is within distance `2` of the home assembler,
+      selects a `put` action, and that exact action is allowed by the current
+      action mask;
+    - because the Stage-28 runs keep the target-aware role-gated mask enabled,
+      this action is exposed only when the runtime already sees a valid
+      adjacent depositor target;
+    - the breadcrumb is capped by cumulative `action_put` count and the
+      existing successful event rewards for `put_battery_to_depositor`,
+      `receive_battery_from_crafter`, and `deposit_heart` remain the main
+      terminal rewards.
+  - rationale: v19 showed that agents can still collect ore, hand ore to
+    crafters, and craft batteries, but deterministic rollouts selected zero
+    battery-to-depositor handoffs. v20 rewards the existing target-aware handoff
+    affordance at the missing decision point without rewarding generic put spam
+    or moving recipients away from the home-assembler context.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v17/v18/v19/v20/checkpoint pytest group passed (`13` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/v19/v20
+      checkpoint pytest group passed (`34` tests);
+    - mock v20 trainer smoke passed and emitted validated JSON;
+    - real Tribal v20 trainer smoke passed and emitted validated JSON;
+    - v20 checkpoint behavior-rollout smoke passed from the real Tribal smoke
+      checkpoint, with checkpoint chain-affordance, role-gated, and
+      target-aware masks all inferred as `true`.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - compare v20 against v17 and v19: v20 must recover nonzero
+      battery-to-depositor handoffs and heart deposits without sacrificing the
+      upstream ore-to-crafter and battery-craft counts;
+    - do not update `main_richard.tex` from v20 unless the behavior gate shows
+      stable final-chain behavior across seeds.
 
 ## Candidate Commands
 
