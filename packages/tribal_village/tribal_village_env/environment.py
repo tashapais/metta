@@ -118,6 +118,7 @@ class TribalVillageEnv(pufferlib.PufferEnv):
             (self.total_agents, NAVIGATION_SNAPSHOT_COLUMN_COUNT), dtype=np.int32
         )
         self.action_mask_buffer = np.zeros((self.total_agents, ACTION_SPACE_SIZE), dtype=np.uint8)
+        self.role_targeted_handoff_mask_buffer = np.zeros((self.total_agents, ACTION_SPACE_SIZE), dtype=np.uint8)
 
         # Initialize environment
         self.env_ptr = self.lib.tribal_village_create()
@@ -246,6 +247,15 @@ class TribalVillageEnv(pufferlib.PufferEnv):
                 ctypes.c_void_p,
             ]
             self.lib.tribal_village_get_action_mask.restype = ctypes.c_int32
+        except AttributeError:
+            pass
+
+        try:
+            self.lib.tribal_village_get_role_targeted_handoff_mask.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ]
+            self.lib.tribal_village_get_role_targeted_handoff_mask.restype = ctypes.c_int32
         except AttributeError:
             pass
 
@@ -416,6 +426,19 @@ class TribalVillageEnv(pufferlib.PufferEnv):
         if not success:
             return None
         return self.action_mask_buffer.copy().astype(bool)
+
+    def get_role_targeted_handoff_mask(self) -> Optional[np.ndarray]:
+        """Return a mask for handoffs to the intended next chain role."""
+        try:
+            fn = self.lib.tribal_village_get_role_targeted_handoff_mask
+        except AttributeError:
+            return None
+
+        mask_ptr = self.role_targeted_handoff_mask_buffer.ctypes.data_as(ctypes.c_void_p)
+        success = fn(self.env_ptr, mask_ptr)
+        if not success:
+            return None
+        return self.role_targeted_handoff_mask_buffer.copy().astype(bool)
 
     def close(self):
         """Clean up the environment."""

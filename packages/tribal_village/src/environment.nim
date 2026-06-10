@@ -1376,6 +1376,42 @@ proc isActionCurrentlyValid*(env: Environment, id: int, actionValue: uint8): boo
   else:
     return false
 
+proc isRoleTargetedHandoffCurrentlyValid*(env: Environment, id: int, actionValue: uint8): bool =
+  ## Check whether a put action would hand the intended chain resource to the intended role.
+  if id < 0 or id >= env.agents.len:
+    return false
+  let agent = env.agents[id]
+  if agent.isNil or agent.frozen > 0:
+    return false
+
+  let decoded = decodeAction(actionValue)
+  let verb = decoded.verb.int
+  let argument = decoded.argument.int
+  if verb != 5 or argument < 0 or argument >= ActionArgumentCount:
+    return false
+  if not env.isActionCurrentlyValid(id, actionValue):
+    return false
+
+  let dir = Orientation(argument)
+  let delta = getOrientationDelta(dir)
+  let targetPos = ivec2(agent.pos.x + delta.x.int32, agent.pos.y + delta.y.int32)
+  if targetPos.x < 0 or targetPos.x >= MapWidth or targetPos.y < 0 or targetPos.y >= MapHeight:
+    return false
+  let target = env.getThing(targetPos)
+  if target.isNil or target.kind != Agent:
+    return false
+
+  let senderRole = agent.agentId mod 3
+  let targetRole = target.agentId mod 3
+  let oreToCrafter =
+    senderRole == 0 and targetRole == 1 and
+    agent.inventoryOre > 0 and target.inventoryOre < MapObjectAgentMaxInventory
+  let batteryWouldTransfer =
+    agent.inventoryBattery > 0 and target.inventoryBattery < MapObjectAgentMaxInventory and
+    not (agent.inventoryOre > 0 and target.inventoryOre < MapObjectAgentMaxInventory)
+  let batteryToDepositor = senderRole == 1 and targetRole == 2 and batteryWouldTransfer
+  return oreToCrafter or batteryToDepositor
+
 proc init(env: Environment) =
   # Use current time for random seed to get different maps each time
   let seed = int(nowSeconds() * 1000)

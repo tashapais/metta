@@ -101,6 +101,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS,
     EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS,
     EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES,
+    EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS,
+    EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -143,6 +145,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v12_role_gated_depositor_reliability_details,
     event_v13_role_gated_depositor_use_bonuses,
     event_v13_role_gated_depositor_use_details,
+    event_v14_target_aware_handoff_bonuses,
+    event_v14_target_aware_handoff_details,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -194,6 +198,8 @@ class CanonicalEnv(Protocol):
     def get_world_stats(self) -> np.ndarray | None: ...
 
     def get_action_mask(self) -> np.ndarray | None: ...
+
+    def get_role_targeted_handoff_mask(self) -> np.ndarray | None: ...
 
     def get_navigation_snapshot(self) -> np.ndarray | None: ...
 
@@ -441,6 +447,9 @@ class MockCanonicalTribalEnv:
     def get_action_mask(self) -> np.ndarray | None:
         return np.ones((self.num_agents, self.action_space_size), dtype=bool)
 
+    def get_role_targeted_handoff_mask(self) -> np.ndarray | None:
+        return None
+
     def get_navigation_snapshot(self) -> np.ndarray | None:
         return None
 
@@ -527,6 +536,13 @@ class TribalVillageAdapter:
         mask = get_mask()
         return None if mask is None else np.asarray(mask, dtype=bool)
 
+    def get_role_targeted_handoff_mask(self) -> np.ndarray | None:
+        get_mask = getattr(self._env, "get_role_targeted_handoff_mask", None)
+        if get_mask is None:
+            return None
+        mask = get_mask()
+        return None if mask is None else np.asarray(mask, dtype=bool)
+
     def get_navigation_snapshot(self) -> np.ndarray | None:
         get_snapshot = getattr(self._env, "get_navigation_snapshot", None)
         if get_snapshot is None:
@@ -593,6 +609,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v11_role_gated_chain_handoffs",
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
+            "event_v14_target_aware_handoffs",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -685,6 +702,7 @@ def run(config: RunnerConfig, argv: list[str]) -> dict[str, Any]:
 
         checkpoint_config = asdict(config)
         checkpoint_config["chain_affordance_action_mask"] = _uses_chain_affordance_action_mask(config)
+        checkpoint_config["target_aware_handoff_mask"] = _uses_target_aware_handoff_mask(config)
         checkpoint_config["chain_compass_observation"] = _uses_chain_compass_observation(config)
 
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -757,6 +775,7 @@ def _load_init_checkpoint(
         "source_total_agent_steps": checkpoint_config.get("total_agent_steps"),
         "source_use_action_mask": checkpoint_config.get("use_action_mask"),
         "source_chain_affordance_action_mask": checkpoint_config.get("chain_affordance_action_mask"),
+        "source_target_aware_handoff_mask": checkpoint_config.get("target_aware_handoff_mask"),
         "source_chain_compass_observation": checkpoint_config.get("chain_compass_observation"),
     }
 
@@ -1173,6 +1192,7 @@ def _result_record(
         "separate_encoders": config.separate_encoders,
         "use_action_mask": config.use_action_mask,
         "chain_affordance_action_mask": _uses_chain_affordance_action_mask(config),
+        "target_aware_handoff_mask": _uses_target_aware_handoff_mask(config),
         "chain_compass_observation": _uses_chain_compass_observation(config),
         "total_agent_steps": config.total_agent_steps,
         "eval_trials": config.eval_trials,
@@ -1421,6 +1441,17 @@ def _role_shaping_bonuses_for_design(
             gamma=config.gamma,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v14_target_aware_handoffs":
+        return event_v14_target_aware_handoff_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            gamma=config.gamma,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1445,6 +1476,7 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
         "event_v11_role_gated_chain_handoffs",
         "event_v12_role_gated_depositor_reliability",
         "event_v13_role_gated_depositor_use",
+        "event_v14_target_aware_handoffs",
     )
 
 
@@ -1459,8 +1491,13 @@ def _uses_chain_affordance_action_mask(config: RunnerConfig) -> bool:
             "event_v11_role_gated_chain_handoffs",
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
+            "event_v14_target_aware_handoffs",
         )
     )
+
+
+def _uses_target_aware_handoff_mask(config: RunnerConfig) -> bool:
+    return _uses_chain_affordance_action_mask(config) and config.reward_design == "event_v14_target_aware_handoffs"
 
 
 class _EventStatsTracker:
@@ -1615,6 +1652,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES)
     if config.reward_design == "event_v13_role_gated_depositor_use":
         return list(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES)
+    if config.reward_design == "event_v14_target_aware_handoffs":
+        return list(EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1831,6 +1870,38 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 for role, coefficients in EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v14_target_aware_handoffs":
+        return {
+            "common": {},
+            "task_events": {},
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi_role(s') - Phi_role(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "run_gamma": config.gamma,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES),
+            },
+            "oracle_actions": dict(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS),
+            "negative_reward_coefficients": {},
+            "chain_affordance_action_mask": {
+                "enabled": _uses_chain_affordance_action_mask(config),
+                "target_aware_handoffs": _uses_target_aware_handoff_mask(config),
+                "allowed_verbs": [
+                    "move",
+                    "supplier_use_mine",
+                    "supplier_put_ore_to_adjacent_crafter",
+                    "crafter_use_converter",
+                    "crafter_put_battery_to_adjacent_depositor",
+                    "depositor_use_assembler",
+                ],
+                "reward_penalties_added": False,
+            },
+            "roles": {
+                role: dict(coefficients)
+                for role, coefficients in EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1911,6 +1982,18 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
                 "Relax the v13 role-gated mask for transfer/ablation diagnostics."
             )
         return details
+    if config.reward_design == "event_v14_target_aware_handoffs":
+        details = event_v14_target_aware_handoff_details()
+        details["potential_shaping"]["run_gamma"] = config.gamma
+        details["action_affordance_curriculum"]["enabled"] = _uses_chain_affordance_action_mask(config)
+        details["action_affordance_curriculum"]["target_aware_handoffs"] = _uses_target_aware_handoff_mask(config)
+        if not _uses_chain_affordance_action_mask(config):
+            details["action_affordance_curriculum"]["allowed_verbs"] = ["environment_valid_actions"]
+            details["action_affordance_curriculum"]["blocked_successes"] = []
+            details["action_affordance_curriculum"]["purpose"] = (
+                "Relax the v14 target-aware role-gated mask for transfer/ablation diagnostics."
+            )
+        return details
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",
@@ -1956,7 +2039,9 @@ def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.d
             "event_v11_role_gated_chain_handoffs",
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
+            "event_v14_target_aware_handoffs",
         ),
+        target_aware_handoff_mask=_uses_target_aware_handoff_mask(config),
     )
     if mask_arr is None:
         return None
@@ -1970,6 +2055,7 @@ def _action_mask_array_from_flags(
     chain_affordance_action_mask: bool,
     chain_affordance_extra_verbs: tuple[str, ...] = (),
     role_gated_chain_mask: bool = False,
+    target_aware_handoff_mask: bool = False,
 ) -> np.ndarray | None:
     if not use_action_mask and not chain_affordance_action_mask:
         return None
@@ -1985,7 +2071,11 @@ def _action_mask_array_from_flags(
         raise ValueError(f"action mask has shape {mask_arr.shape}, expected {(env.num_agents, env.action_space_size)}")
     if chain_affordance_action_mask:
         if role_gated_chain_mask:
-            mask_arr = _role_gated_chain_action_mask(env, mask_arr)
+            mask_arr = _role_gated_chain_action_mask(
+                env,
+                mask_arr,
+                target_aware_handoff_mask=target_aware_handoff_mask,
+            )
         else:
             mask_arr = _chain_affordance_action_mask(
                 env,
@@ -2038,7 +2128,12 @@ def _chain_affordance_action_mask(
     return chain_mask
 
 
-def _role_gated_chain_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> np.ndarray:
+def _role_gated_chain_action_mask(
+    env: CanonicalEnv,
+    base_mask: np.ndarray,
+    *,
+    target_aware_handoff_mask: bool = False,
+) -> np.ndarray:
     navigation = env.get_navigation_snapshot()
     if navigation is None:
         return base_mask
@@ -2057,6 +2152,11 @@ def _role_gated_chain_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
 
     put_actions = [_encode_action(PUT_VERB, orientation) for orientation in range(len(ORIENTATION_DELTAS))]
     valid_put_actions = [action for action in put_actions if action < env.action_space_size]
+    targeted_put_mask = (
+        _role_targeted_handoff_mask(env, base_mask)
+        if target_aware_handoff_mask
+        else np.zeros_like(base_mask, dtype=bool)
+    )
     labels = role_labels(env.num_agents, len(EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES))
     for agent_id, row in enumerate(navigation_arr):
         role_id = int(labels[agent_id])
@@ -2065,7 +2165,10 @@ def _role_gated_chain_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
         use_action = None
         if role_id == 0:
             if has_ore:
-                _enable_valid_actions(chain_mask, base_mask, agent_id, valid_put_actions)
+                if target_aware_handoff_mask:
+                    _enable_valid_actions(chain_mask, targeted_put_mask, agent_id, valid_put_actions)
+                else:
+                    _enable_valid_actions(chain_mask, base_mask, agent_id, valid_put_actions)
             else:
                 use_action = _use_action_toward_target(
                     row,
@@ -2076,7 +2179,10 @@ def _role_gated_chain_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
                 )
         elif role_id == 1:
             if has_battery:
-                _enable_valid_actions(chain_mask, base_mask, agent_id, valid_put_actions)
+                if target_aware_handoff_mask:
+                    _enable_valid_actions(chain_mask, targeted_put_mask, agent_id, valid_put_actions)
+                else:
+                    _enable_valid_actions(chain_mask, base_mask, agent_id, valid_put_actions)
             elif has_ore:
                 use_action = _use_action_toward_target(
                     row,
@@ -2105,6 +2211,19 @@ def _role_gated_chain_action_mask(env: CanonicalEnv, base_mask: np.ndarray) -> n
                 if valid.size:
                     chain_mask[agent_id, int(valid[0])] = True
     return chain_mask
+
+
+def _role_targeted_handoff_mask(env: CanonicalEnv, base_mask: np.ndarray) -> np.ndarray:
+    get_mask = getattr(env, "get_role_targeted_handoff_mask", None)
+    if get_mask is None:
+        return np.zeros_like(base_mask, dtype=bool)
+    mask = get_mask()
+    if mask is None:
+        return np.zeros_like(base_mask, dtype=bool)
+    targeted = np.asarray(mask, dtype=bool)
+    if targeted.shape != base_mask.shape:
+        raise ValueError(f"targeted handoff mask has shape {targeted.shape}, expected {base_mask.shape}")
+    return targeted & base_mask
 
 
 def _enable_valid_actions(

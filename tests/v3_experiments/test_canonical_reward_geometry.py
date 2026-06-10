@@ -49,6 +49,7 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
     EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
     EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES,
+    EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -83,6 +84,7 @@ from v3_experiments.tribal_event_rewards import (
     event_v9_potential_chain_compass_reward_design_details,
     event_v9_potential_chain_compass_role_shaping_bonuses,
     event_v10_chain_affordance_compass_reward_design_details,
+    event_v14_target_aware_handoff_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -678,6 +680,70 @@ def test_chain_affordance_action_mask_can_allow_one_extra_verb_family():
     assert not mask[0, attack_north]
     assert not mask[0, plant_north]
     assert mask[0].sum() == 17
+
+
+def test_role_gated_target_aware_handoff_mask_keeps_only_intended_puts():
+    navigation = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    navigation[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [5, 5]
+    navigation[:, [NAV_DIST_HOME_ASSEMBLER, NAV_DIST_NEAREST_CONVERTER, NAV_DIST_NEAREST_MINE]] = [4, 4, 4]
+    navigation[0, NAV_INVENTORY_ORE] = 1
+    navigation[1, NAV_INVENTORY_BATTERY] = 1
+    navigation[2, [NAV_AGENT_X, NAV_AGENT_Y]] = [4, 5]
+    navigation[2, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y, NAV_DIST_HOME_ASSEMBLER]] = [3, 6, 1]
+    navigation[2, NAV_INVENTORY_BATTERY] = 1
+
+    move_actions = [MOVE_VERB * ACTION_ARGUMENT_COUNT + orientation for orientation in range(8)]
+    put_north = 5 * ACTION_ARGUMENT_COUNT
+    put_east = 5 * ACTION_ARGUMENT_COUNT + 3
+    put_southwest = 5 * ACTION_ARGUMENT_COUNT + 6
+    use_southwest = USE_VERB * ACTION_ARGUMENT_COUNT + 6
+
+    base_mask = np.zeros((3, 56), dtype=bool)
+    base_mask[:, move_actions] = True
+    base_mask[0, [put_north, put_east]] = True
+    base_mask[1, [put_north, put_southwest]] = True
+    base_mask[2, use_southwest] = True
+
+    targeted_put_mask = np.zeros_like(base_mask)
+    targeted_put_mask[0, put_east] = True
+    targeted_put_mask[1, put_southwest] = True
+
+    env = _MaskEnv(base_mask, navigation, targeted_put_mask)
+    legacy_mask = _action_mask_array_from_flags(
+        env,
+        use_action_mask=True,
+        chain_affordance_action_mask=True,
+        role_gated_chain_mask=True,
+    )
+    target_aware_mask = _action_mask_array_from_flags(
+        env,
+        use_action_mask=True,
+        chain_affordance_action_mask=True,
+        role_gated_chain_mask=True,
+        target_aware_handoff_mask=True,
+    )
+
+    assert legacy_mask is not None
+    assert target_aware_mask is not None
+    assert legacy_mask[0, put_north]
+    assert legacy_mask[0, put_east]
+    assert target_aware_mask[0, put_east]
+    assert not target_aware_mask[0, put_north]
+    assert target_aware_mask[1, put_southwest]
+    assert not target_aware_mask[1, put_north]
+    assert target_aware_mask[2, use_southwest]
+    assert target_aware_mask[:, move_actions].all()
+
+
+def test_event_v14_target_aware_handoff_details_are_serializable():
+    details = event_v14_target_aware_handoff_details()
+
+    assert details["name"] == "event_v14_target_aware_handoffs"
+    assert details["role_names"] == list(EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES)
+    assert details["v14_changes"]["changes_rewards"] is False
+    assert details["v14_changes"]["target_aware_handoff_mask"] is True
+    assert details["action_affordance_curriculum"]["target_aware_handoffs"] is True
+    assert details["action_affordance_curriculum"]["reward_penalties_added"] is False
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -1469,6 +1535,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
         }
     )
     assert _checkpoint_uses_chain_affordance_action_mask({"chain_affordance_action_mask": True})
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v14_target_aware_handoffs",
+            "chain_affordance_action_mask": False,
+        }
+    )
     assert not _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v9_potential_chain_compass_breadcrumbs",
@@ -1495,12 +1567,21 @@ class _MaskEnv:
     num_agents = 3
     action_space_size = 56
 
-    def __init__(self, action_mask: np.ndarray, navigation: np.ndarray | None) -> None:
+    def __init__(
+        self,
+        action_mask: np.ndarray,
+        navigation: np.ndarray | None,
+        targeted_handoff_mask: np.ndarray | None = None,
+    ) -> None:
         self._action_mask = action_mask
         self._navigation = navigation
+        self._targeted_handoff_mask = targeted_handoff_mask
 
     def get_action_mask(self) -> np.ndarray:
         return self._action_mask
+
+    def get_role_targeted_handoff_mask(self) -> np.ndarray | None:
+        return self._targeted_handoff_mask
 
     def get_navigation_snapshot(self) -> np.ndarray | None:
         return self._navigation

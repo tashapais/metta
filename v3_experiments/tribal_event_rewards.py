@@ -22,6 +22,7 @@ EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES = ("supplier", "crafter_logistics", "depositor")
 EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -480,6 +481,8 @@ EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS = {
     "depositor_use_home_assembler": 2.0,
 }
 
+EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS = EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -908,6 +911,31 @@ def event_v13_role_gated_depositor_use_bonuses(
     return bonuses
 
 
+def event_v14_target_aware_handoff_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v13 positive rewards under the v14 target-aware handoff mask."""
+
+    return event_v13_role_gated_depositor_use_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1288,6 +1316,46 @@ def event_v13_role_gated_depositor_use_details() -> dict[str, Any]:
             "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
         }
     )
+    return details
+
+
+def event_v14_target_aware_handoff_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v14 target-aware handoff diagnostic."""
+
+    details = event_v13_role_gated_depositor_use_details()
+    details.update(
+        {
+            "name": "event_v14_target_aware_handoffs",
+            "summary": (
+                "V13 positive rewards with a stricter role-gated action affordance surface: "
+                "supplier put actions are exposed only toward adjacent crafters, and crafter "
+                "put actions are exposed only when they would hand a battery to an adjacent depositor."
+            ),
+            "role_names": list(EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS.items()
+            },
+            "v14_changes": {
+                "changes_rewards": False,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "purpose": (
+                    "Remove wrong-recipient handoff actions from the curriculum while leaving movement, "
+                    "timing, and final use choices to the learned policy."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["allowed_verbs"] = [
+        "move",
+        "supplier_use_mine",
+        "supplier_put_ore_to_adjacent_crafter",
+        "crafter_use_converter",
+        "crafter_put_battery_to_adjacent_depositor",
+        "depositor_use_assembler",
+    ]
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
     return details
 
 

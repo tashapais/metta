@@ -4321,6 +4321,40 @@ Stage-19 specialization-forcing follow-up:
     adjacent depositors, while otherwise leaving movement free. This is a
     cleaner curriculum than rewarding wrong-recipient handoffs and hoping the
     policy later discovers the intended receiver.
+- Stage-22 v14 target-aware handoff affordance iteration:
+  - implementation keeps the v13 positive reward coefficients unchanged; the
+    experimental difference is the action-affordance surface, not a new reward
+    scale;
+  - new simulator helper:
+    `isRoleTargetedHandoffCurrentlyValid` checks whether a `put` action would
+    transfer ore from a supplier to a crafter or a battery from a crafter to a
+    depositor, respecting the simulator's actual transfer priority;
+  - new exported mask:
+    `tribal_village_get_role_targeted_handoff_mask`, exposed in Python as
+    `get_role_targeted_handoff_mask`;
+  - new reward design name:
+    `event_v14_target_aware_handoffs`;
+  - v14 checkpoints and behavior rollouts record
+    `target_aware_handoff_mask=true`, so behavior gates and representation
+    exports reload the same affordance surface used in training;
+  - local validation before sandbox launch:
+    - Python compile for the modified runner/reward/rollout/environment files;
+    - targeted pytest group: `16` canonical reward-geometry tests passed;
+    - targeted behavior-tool pytest group: `3` tests passed;
+    - mock v14 trainer smoke passed and validated emitted JSON;
+    - real Tribal v14 trainer smoke passed, rebuilt the Nim library, and
+      validated emitted JSON;
+    - v14 checkpoint behavior-rollout smoke passed after enabling
+      `--chain-compass-observation`, with checkpoint metadata confirming
+      `checkpoint_target_aware_handoff_mask=true`.
+  - launch plan after push:
+    - run a short `1,000,008` agent-step alpha0 diagnostic for seeds `0,1,2,3`
+      split across `relh-sandbox-1/2`;
+    - run a deterministic behavior gate with `5` episodes x `240` steps per
+      seed and saved replays;
+    - compare heart deposits, correct-recipient handoffs, stranded batteries,
+      and old-style PCA readouts against v11/v12/v13 before any reward-mixing
+      sweep.
 
 ## Candidate Commands
 
@@ -4460,7 +4494,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Implement and smoke v13 depositor-use breadcrumb.
 - [x] Launch Stage-21 short v13 sandbox diagnostics.
 - [x] Inspect Stage-21 deposits, correct-recipient handoffs, and stranded batteries.
-- [ ] Implement v14 target-aware handoff affordance mask.
+- [x] Implement and smoke v14 target-aware handoff affordance mask.
+- [ ] Launch Stage-22 short v14 sandbox diagnostics.
+- [ ] Inspect Stage-22 deposits, correct-recipient handoffs, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

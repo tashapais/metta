@@ -73,6 +73,7 @@ class LoadedCheckpointPolicy:
     use_action_mask: bool
     chain_affordance_action_mask: bool
     role_gated_chain_mask: bool
+    target_aware_handoff_mask: bool
     chain_affordance_extra_verbs: tuple[str, ...]
 
 
@@ -166,6 +167,9 @@ def run_rollouts(args: argparse.Namespace, argv: list[str]) -> dict[str, Any]:
             ),
             "checkpoint_role_gated_chain_mask": (
                 None if checkpoint_policy is None else checkpoint_policy.role_gated_chain_mask
+            ),
+            "checkpoint_target_aware_handoff_mask": (
+                None if checkpoint_policy is None else checkpoint_policy.target_aware_handoff_mask
             ),
             "checkpoint_chain_affordance_extra_verbs": (
                 None if checkpoint_policy is None else list(checkpoint_policy.chain_affordance_extra_verbs)
@@ -469,6 +473,10 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         "event_v11_role_gated_chain_handoffs",
         "event_v12_role_gated_depositor_reliability",
         "event_v13_role_gated_depositor_use",
+        "event_v14_target_aware_handoffs",
+    )
+    target_aware_handoff_mask = bool(config.get("target_aware_handoff_mask", False)) or (
+        config.get("reward_design") == "event_v14_target_aware_handoffs" and chain_affordance_action_mask
     )
     chain_affordance_extra_verbs = (
         ()
@@ -491,6 +499,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         use_action_mask=use_action_mask,
         chain_affordance_action_mask=chain_affordance_action_mask,
         role_gated_chain_mask=role_gated_chain_mask,
+        target_aware_handoff_mask=target_aware_handoff_mask,
         chain_affordance_extra_verbs=chain_affordance_extra_verbs,
     )
 
@@ -509,6 +518,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v11_role_gated_chain_handoffs",
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
+            "event_v14_target_aware_handoffs",
         )
     )
 
@@ -526,6 +536,7 @@ def _checkpoint_action_mask(
                 chain_affordance_action_mask=True,
                 chain_affordance_extra_verbs=checkpoint_policy.chain_affordance_extra_verbs,
                 role_gated_chain_mask=checkpoint_policy.role_gated_chain_mask,
+                target_aware_handoff_mask=checkpoint_policy.target_aware_handoff_mask,
             )
             return None if mask_arr is None else torch.as_tensor(mask_arr, dtype=torch.bool, device=device)
         return None
@@ -535,6 +546,7 @@ def _checkpoint_action_mask(
         chain_affordance_action_mask=checkpoint_policy.chain_affordance_action_mask,
         chain_affordance_extra_verbs=checkpoint_policy.chain_affordance_extra_verbs,
         role_gated_chain_mask=checkpoint_policy.role_gated_chain_mask,
+        target_aware_handoff_mask=checkpoint_policy.target_aware_handoff_mask,
     )
     if mask_arr is None:
         raise RuntimeError("checkpoint was trained with action masks but rollout environment returned no mask")

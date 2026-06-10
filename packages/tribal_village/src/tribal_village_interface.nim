@@ -298,6 +298,29 @@ proc tribal_village_get_action_mask(
   except:
     return 0
 
+proc tribal_village_get_role_targeted_handoff_mask(
+  env: pointer,
+  mask_buffer: ptr UncheckedArray[uint8]  # [MapAgents, ActionVerbCount * ActionArgumentCount]
+): int32 {.exportc, dynlib.} =
+  ## Copy a per-agent mask for role-intended handoff actions only.
+  if globalEnv == nil or mask_buffer.isNil:
+    return 0
+
+  try:
+    let actionCount = ActionVerbCount * ActionArgumentCount
+    for i in 0..<MapAgents:
+      let offset = i * actionCount
+      for action in 0..<actionCount:
+        mask_buffer[offset + action] = 0'u8
+
+      for argument in 0..<ActionArgumentCount:
+        let actionValue = encodeAction(5'u8, argument.uint8)
+        if globalEnv.isRoleTargetedHandoffCurrentlyValid(i, actionValue):
+          mask_buffer[offset + actionValue.int] = 1'u8
+    return 1
+  except:
+    return 0
+
 proc tribal_village_get_num_agents(): int32 {.exportc, dynlib.} =
   return MapAgents.int32
 
