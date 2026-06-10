@@ -4347,14 +4347,73 @@ Stage-19 specialization-forcing follow-up:
     - v14 checkpoint behavior-rollout smoke passed after enabling
       `--chain-compass-observation`, with checkpoint metadata confirming
       `checkpoint_target_aware_handoff_mask=true`.
+  - Stage-22 v14 sandbox result, commit `7d277fb9e`:
+    - launched short `event_v14_target_aware_handoffs`, `shared_frac=0.0`,
+      `1,000,008` agent-step diagnostics for seeds `0,1,2,3`, split across
+      `relh-sandbox-1/2`;
+    - sandbox training jobs wrote all four `result.json` and `final_model.pt`
+      artifacts, but Sky marked the detached jobs failed with return code
+      `141`; direct artifact inspection confirmed the checkpoints were present
+      and recorded `target_aware_handoff_mask=true`;
+    - behavior gate used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved JSONL replays, and
+      `--chain-compass-observation`;
+    - aggregate Stage-22 behavior across the four seeds:
+      - `80` ore pickups;
+      - `45` ore-to-crafter targeted handoffs;
+      - `16` battery crafts;
+      - `3` battery-to-depositor targeted handoffs;
+      - `0` heart deposits;
+    - per-seed heart deposits were `0,0,0,0`, so v14 is not a promotion
+      candidate and must not be used for paper claims;
+    - best diagnostic episode was seed `1`, episode `1`: `8` ore pickups,
+      `4` battery crafts, `4` ore-to-crafter handoffs, `3`
+      battery-to-depositor handoffs, and still `0` heart deposits;
+    - replay inspection of that episode showed depositor-role agents holding
+      batteries far from home for hundreds of steps: depositor `2` held one
+      battery at home distance `25`, depositor `5` held two batteries at home
+      distance `22`, and depositor-role agents issued no `use` actions;
+    - interpretation: v14 made correct-recipient handoffs cleaner but did not
+      solve the final-mile depositor navigation/use problem. The next iteration
+      should keep positive rewards only, keep target-aware handoffs, and add a
+      narrow final-mile breadcrumb for battery-carrying depositors moving
+      toward the home assembler.
+- Stage-23 v15 depositor-final-mile iteration:
+  - new reward design: `event_v15_depositor_final_mile`;
+  - v15 keeps the v14 target-aware handoff mask and v13/v14 chain rewards;
+  - v15 adds two positive-only depositor breadcrumbs, both restricted to
+    depositor-role agents already carrying at least one battery:
+    - `depositor_battery_move_toward_home`: `+0.50` per step of reduced
+      home-assembler distance when the selected action is a mask-valid move,
+      capped by cumulative successful move count;
+    - `depositor_battery_arrive_adjacent_home`: `+4.00` when such a depositor
+      moves from non-adjacent to adjacent to the home assembler, using the same
+      movement cap;
+  - v15 does not add penalties, scripted actions, demonstration data, or
+    simulator rule changes. The policy still has to choose when to move, where
+    to hand off, and when to issue the final `use`;
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v15/target-aware/checkpoint pytest group passed (`6` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/checkpoint pytest
+      group passed (`19` tests);
+    - mock v15 trainer smoke passed and validated emitted JSON;
+    - real Tribal v15 trainer smoke passed and validated emitted JSON;
+    - v15 checkpoint behavior-rollout smoke passed with
+      `checkpoint_chain_affordance_action_mask=true`,
+      `checkpoint_role_gated_chain_mask=true`,
+      `checkpoint_target_aware_handoff_mask=true`, and
+      `chain_compass_observation=true`.
   - launch plan after push:
-    - run a short `1,000,008` agent-step alpha0 diagnostic for seeds `0,1,2,3`
-      split across `relh-sandbox-1/2`;
-    - run a deterministic behavior gate with `5` episodes x `240` steps per
-      seed and saved replays;
-    - compare heart deposits, correct-recipient handoffs, stranded batteries,
-      and old-style PCA readouts against v11/v12/v13 before any reward-mixing
-      sweep.
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - promote only if heart deposits recover and final inventories show fewer
+      stranded depositor batteries than v14. If v15 still stalls, do not update
+      Overleaf; inspect whether the issue is home navigation, assembler
+      cooldown/respawn drain, or final `use` selection.
 
 ## Candidate Commands
 
@@ -4495,8 +4554,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-21 short v13 sandbox diagnostics.
 - [x] Inspect Stage-21 deposits, correct-recipient handoffs, and stranded batteries.
 - [x] Implement and smoke v14 target-aware handoff affordance mask.
-- [ ] Launch Stage-22 short v14 sandbox diagnostics.
-- [ ] Inspect Stage-22 deposits, correct-recipient handoffs, and stranded batteries.
+- [x] Launch Stage-22 short v14 sandbox diagnostics.
+- [x] Inspect Stage-22 deposits, correct-recipient handoffs, and stranded batteries.
+- [x] Implement and smoke v15 depositor-final-mile breadcrumbs.
+- [ ] Launch Stage-23 short v15 sandbox diagnostics.
+- [ ] Inspect Stage-23 deposits, depositor movement, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

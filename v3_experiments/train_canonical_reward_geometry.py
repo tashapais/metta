@@ -103,6 +103,10 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES,
     EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS,
     EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_COEFFICIENTS,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -147,6 +151,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v13_role_gated_depositor_use_details,
     event_v14_target_aware_handoff_bonuses,
     event_v14_target_aware_handoff_details,
+    event_v15_depositor_final_mile_bonuses,
+    event_v15_depositor_final_mile_details,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -610,6 +616,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
             "event_v14_target_aware_handoffs",
+            "event_v15_depositor_final_mile",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -1452,6 +1459,17 @@ def _role_shaping_bonuses_for_design(
             gamma=config.gamma,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v15_depositor_final_mile":
+        return event_v15_depositor_final_mile_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            gamma=config.gamma,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1477,6 +1495,7 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
         "event_v12_role_gated_depositor_reliability",
         "event_v13_role_gated_depositor_use",
         "event_v14_target_aware_handoffs",
+        "event_v15_depositor_final_mile",
     )
 
 
@@ -1492,12 +1511,16 @@ def _uses_chain_affordance_action_mask(config: RunnerConfig) -> bool:
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
             "event_v14_target_aware_handoffs",
+            "event_v15_depositor_final_mile",
         )
     )
 
 
 def _uses_target_aware_handoff_mask(config: RunnerConfig) -> bool:
-    return _uses_chain_affordance_action_mask(config) and config.reward_design == "event_v14_target_aware_handoffs"
+    return _uses_chain_affordance_action_mask(config) and config.reward_design in (
+        "event_v14_target_aware_handoffs",
+        "event_v15_depositor_final_mile",
+    )
 
 
 class _EventStatsTracker:
@@ -1654,6 +1677,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES)
     if config.reward_design == "event_v14_target_aware_handoffs":
         return list(EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES)
+    if config.reward_design == "event_v15_depositor_final_mile":
+        return list(EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -1902,6 +1927,40 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 for role, coefficients in EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v15_depositor_final_mile":
+        return {
+            "common": {},
+            "task_events": {},
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi_role(s') - Phi_role(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "run_gamma": config.gamma,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES),
+            },
+            "oracle_actions": dict(EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS),
+            "final_mile_actions": dict(EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS),
+            "final_mile_action_caps": dict(EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS),
+            "negative_reward_coefficients": {},
+            "chain_affordance_action_mask": {
+                "enabled": _uses_chain_affordance_action_mask(config),
+                "target_aware_handoffs": _uses_target_aware_handoff_mask(config),
+                "allowed_verbs": [
+                    "move",
+                    "supplier_use_mine",
+                    "supplier_put_ore_to_adjacent_crafter",
+                    "crafter_use_converter",
+                    "crafter_put_battery_to_adjacent_depositor",
+                    "depositor_use_assembler",
+                ],
+                "reward_penalties_added": False,
+            },
+            "roles": {
+                role: dict(coefficients)
+                for role, coefficients in EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -1994,6 +2053,18 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
                 "Relax the v14 target-aware role-gated mask for transfer/ablation diagnostics."
             )
         return details
+    if config.reward_design == "event_v15_depositor_final_mile":
+        details = event_v15_depositor_final_mile_details()
+        details["potential_shaping"]["run_gamma"] = config.gamma
+        details["action_affordance_curriculum"]["enabled"] = _uses_chain_affordance_action_mask(config)
+        details["action_affordance_curriculum"]["target_aware_handoffs"] = _uses_target_aware_handoff_mask(config)
+        if not _uses_chain_affordance_action_mask(config):
+            details["action_affordance_curriculum"]["allowed_verbs"] = ["environment_valid_actions"]
+            details["action_affordance_curriculum"]["blocked_successes"] = []
+            details["action_affordance_curriculum"]["purpose"] = (
+                "Relax the v15 target-aware role-gated mask for transfer/ablation diagnostics."
+            )
+        return details
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",
@@ -2040,6 +2111,7 @@ def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.d
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
             "event_v14_target_aware_handoffs",
+            "event_v15_depositor_final_mile",
         ),
         target_aware_handoff_mask=_uses_target_aware_handoff_mask(config),
     )

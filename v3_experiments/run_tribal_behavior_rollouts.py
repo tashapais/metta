@@ -474,9 +474,12 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         "event_v12_role_gated_depositor_reliability",
         "event_v13_role_gated_depositor_use",
         "event_v14_target_aware_handoffs",
+        "event_v15_depositor_final_mile",
     )
     target_aware_handoff_mask = bool(config.get("target_aware_handoff_mask", False)) or (
-        config.get("reward_design") == "event_v14_target_aware_handoffs" and chain_affordance_action_mask
+        config.get("reward_design")
+        in ("event_v14_target_aware_handoffs", "event_v15_depositor_final_mile")
+        and chain_affordance_action_mask
     )
     chain_affordance_extra_verbs = (
         ()
@@ -519,6 +522,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v12_role_gated_depositor_reliability",
             "event_v13_role_gated_depositor_use",
             "event_v14_target_aware_handoffs",
+            "event_v15_depositor_final_mile",
         )
     )
 

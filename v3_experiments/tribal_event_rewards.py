@@ -23,6 +23,7 @@ EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES = ("supplier", "crafter_logistics", "depos
 EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -483,6 +484,18 @@ EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS = {
 
 EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS = EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_COEFFICIENTS
 
+EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_COEFFICIENTS = EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_COEFFICIENTS
+
+EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS = {
+    "depositor_battery_move_toward_home": 0.50,
+    "depositor_battery_arrive_adjacent_home": 4.00,
+}
+
+EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS = {
+    "depositor_battery_move_toward_home": 160,
+    "depositor_battery_arrive_adjacent_home": 160,
+}
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -936,6 +949,40 @@ def event_v14_target_aware_handoff_bonuses(
     )
 
 
+def event_v15_depositor_final_mile_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v14 rewards plus positive-only depositor battery-to-home breadcrumbs."""
+
+    bonuses = event_v14_target_aware_handoff_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_depositor_final_mile_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1359,6 +1406,41 @@ def event_v14_target_aware_handoff_details() -> dict[str, Any]:
     return details
 
 
+def event_v15_depositor_final_mile_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v15 depositor final-mile diagnostic."""
+
+    details = event_v14_target_aware_handoff_details()
+    details.update(
+        {
+            "name": "event_v15_depositor_final_mile",
+            "summary": (
+                "V14 target-aware handoff curriculum plus positive-only final-mile "
+                "breadcrumbs for battery-carrying depositors: valid movement that "
+                "reduces distance to the home assembler and a capped adjacent-home "
+                "arrival bonus."
+            ),
+            "role_names": list(EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_COEFFICIENTS.items()
+            },
+            "final_mile_action_coefficients": dict(EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS),
+            "final_mile_action_caps": dict(EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS),
+            "v15_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "purpose": (
+                    "Address Stage-22 evidence where depositors received batteries "
+                    "but remained far from home and never issued the final use action."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -1630,6 +1712,56 @@ def _add_depositor_home_use_breadcrumb(
         if actions_arr[agent_id] == action and _mask_allows(mask, agent_id, action):
             bonuses[agent_id] += EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ACTION_COEFFICIENTS[
                 "depositor_use_home_assembler"
+            ]
+
+
+def _add_depositor_final_mile_breadcrumbs(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if before is None or after is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    labels = role_labels(before.shape[0], len(EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES))
+    move_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS["depositor_battery_move_toward_home"],
+        bonuses.shape[0],
+    )
+    arrival_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS["depositor_battery_arrive_adjacent_home"],
+        bonuses.shape[0],
+    )
+
+    progress = _positive_distance_progress(before, after, NAV_DIST_HOME_ASSEMBLER)
+    for agent_id, row in enumerate(before):
+        if int(labels[agent_id]) != 2 or int(row[NAV_INVENTORY_BATTERY]) <= 0:
+            continue
+        action = int(actions_arr[agent_id])
+        if action // ACTION_ARGUMENT_COUNT != MOVE_VERB or not _mask_allows(mask, agent_id, action):
+            continue
+        if progress[agent_id] > 0.0 and move_cap[agent_id]:
+            bonuses[agent_id] += (
+                EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_move_toward_home"]
+                * progress[agent_id]
+            )
+        if (
+            row[NAV_DIST_HOME_ASSEMBLER] > 1
+            and after[agent_id, NAV_DIST_HOME_ASSEMBLER] == 1
+            and arrival_cap[agent_id]
+        ):
+            bonuses[agent_id] += EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS[
+                "depositor_battery_arrive_adjacent_home"
             ]
 
 

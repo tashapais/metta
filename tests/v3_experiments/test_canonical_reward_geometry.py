@@ -50,6 +50,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V9_POTENTIAL_CHAIN_STAGE_OFFSETS,
     EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES,
     EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS,
+    EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -84,7 +86,10 @@ from v3_experiments.tribal_event_rewards import (
     event_v9_potential_chain_compass_reward_design_details,
     event_v9_potential_chain_compass_role_shaping_bonuses,
     event_v10_chain_affordance_compass_reward_design_details,
+    event_v14_target_aware_handoff_bonuses,
     event_v14_target_aware_handoff_details,
+    event_v15_depositor_final_mile_bonuses,
+    event_v15_depositor_final_mile_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -744,6 +749,94 @@ def test_event_v14_target_aware_handoff_details_are_serializable():
     assert details["v14_changes"]["target_aware_handoff_mask"] is True
     assert details["action_affordance_curriculum"]["target_aware_handoffs"] is True
     assert details["action_affordance_curriculum"]["reward_penalties_added"] is False
+
+
+def test_event_v15_depositor_final_mile_details_are_serializable():
+    details = event_v15_depositor_final_mile_details()
+
+    assert details["name"] == "event_v15_depositor_final_mile"
+    assert details["role_names"] == list(EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES)
+    assert details["v15_changes"]["target_aware_handoff_mask"] is True
+    assert details["v15_changes"]["reward_penalties_added"] is False
+    assert details["v15_changes"]["scripted_policy_added"] is False
+    assert details["final_mile_action_coefficients"] == EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS
+
+
+def test_event_v15_rewards_depositor_battery_progress_beyond_v14():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [5, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 3
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    after[2, NAV_INVENTORY_BATTERY] = 1
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v14 = event_v14_target_aware_handoff_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v15 = event_v15_depositor_final_mile_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    delta = v15 - v14
+    assert delta[:2].tolist() == [0.0, 0.0]
+    assert delta[2] == pytest.approx(
+        EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_move_toward_home"]
+    )
+
+
+def test_event_v15_rewards_depositor_arrival_beyond_v14():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [7, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 1
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    after[2, NAV_INVENTORY_BATTERY] = 1
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v14 = event_v14_target_aware_handoff_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v15 = event_v15_depositor_final_mile_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v15[2] - v14[2] == pytest.approx(
+        EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_move_toward_home"]
+        + EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_arrive_adjacent_home"]
+    )
 
 
 def test_effective_rank_uses_entropy_of_singular_values():
@@ -1538,6 +1631,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v14_target_aware_handoffs",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v15_depositor_final_mile",
             "chain_affordance_action_mask": False,
         }
     )
