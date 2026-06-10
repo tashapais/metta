@@ -43,6 +43,18 @@ This goal has three hard gates:
    `shared_frac in {0.0, 0.8, 1.0}` sweep and ask whether shared reward mixing
    reduces role-separable geometry, action diversity, and behavior diversity.
 
+To get the paper to a set of verified concrete real results, maintain this
+claim ledger instead of treating every ramp result as paper evidence:
+
+| Candidate paper claim | Current status | Evidence gap before paper use |
+| --- | --- | --- |
+| Event-based Tribal rewards can recover meaningful chain behavior in the reconstructed 12-agent Tribal Village setup. | Supported by Stage-15 behavior gates for Stage-13 alpha0 and alpha0-to-alpha0.6 promoted checkpoints. | Package the result as a provenance bundle with per-seed JSON, replay index, aggregate table, commands, git SHA, and checkpoint paths. |
+| The reconstructed Tribal Village setup does not recover the original fixed `agent_id % 3` role-specialization claim. | Supported by Stage-16 fixed-role probes near chance and Stage-17 behavior-derived role audit showing all agents do all chain stages. | Keep the wording negative and bounded to this reconstruction; do not call it a general MAPPO failure. |
+| Shared reward mixing changes geometry/action diversity after behavior recovery. | Partially supported by Stage-16, but the effect is not the original clean fixed-role story. | Regenerate old-style figures from behavior-valid artifacts and decide whether the paper should present this as geometry-without-specialization rather than role collapse. |
+| v17/v23-style final-mile shaping can produce reliable depositor behavior. | Not supported yet. v17 is the best short-budget final-mile diagnostic; v23 improved v22 but still failed the behavior gate. | Run the Stage-32 budget diagnostic with a v17 budget control, inspect replays, and require final deposits across seeds before representation analysis. |
+| SMACv2 `10gen_terran` is a boundary condition where unit type makes EffRank/n saturate while Dact still responds to attribution granularity. | Historical Overleaf evidence only. Runner/log provenance is missing. | Reconstruct the SMACv2 runner, rerun 3 seeds per condition, and update the paper only from new artifacts or explicitly label the table historical/unverified. |
+| The old passive-shaped Tribal Village geometry table is evidence for learned roles. | Rejected. It is diagnostic only. | Keep it out of positive claims; use it only as a failure mode where metrics looked coherent while behavior failed. |
+
 Current uncertainty:
 
 - The strict-v10 `shared_frac=0.0` condition is behavior-valid at `2M` under a
@@ -298,6 +310,54 @@ Rules for future paper updates:
 5. Push each coherent paper update with the corresponding `PLAN.md` or result
    artifact provenance update, so the paper never drifts away from the current
    evidence stream.
+
+## Canonical Result Bundle Contract
+
+A result is paper-ready only when it has a self-contained artifact bundle. The
+bundle can live outside git if it is too large, but `PLAN.md` and
+`main_richard.tex` must name its path and source commit.
+
+Required bundle layout:
+
+```text
+<bundle-root>/
+  manifest.json
+  commands.sh
+  aggregate_behavior.json
+  aggregate_behavior.csv
+  aggregate_geometry.json
+  aggregate_geometry.csv
+  paper_table.csv
+  plots/
+  seed_<seed>/
+    result.json
+    rollout_metrics.json
+    final_model.pt
+    replays/
+```
+
+`manifest.json` must include:
+
+- Metta git SHA and branch.
+- Tribal package SHA, if separate.
+- Overleaf commit used for the corresponding paper edit.
+- Reward design, `shared_frac`, seed list, total agent steps, eval protocol,
+  environment backend, action/observation contract, and masking flags.
+- Sandbox names and Sky job IDs for training and behavior jobs.
+- W&B run IDs or explicit `wandb-mode=offline/disabled`.
+- Checkpoint paths and replay roots.
+- Aggregator script and exact command used to produce every table and figure.
+
+Paper update gate:
+
+- `main_richard.tex` can be updated from a bundle only after the aggregate JSON
+  and CSV are regenerated from per-seed raw files.
+- Every number in the paper table must be traceable to a per-seed value.
+- At least one successful replay and one representative failure replay per
+  condition must be indexed, with the behavior interpretation written in this
+  plan before any positive claim is added.
+- If a result changes the interpretation, update the claim ledger above before
+  editing the paper.
 
 ## Research Question
 
@@ -5220,24 +5280,47 @@ Stage-19 specialization-forcing follow-up:
   - purpose: test whether the v23 positive-only crafter-depositor rendezvous
     signal matures with more training, rather than immediately adding another
     reward term;
-  - run `event_v23_v17_depositor_rendezvous`, `shared_frac=0.0`, seeds
-    `0,1,2,3`, same masks and PPO settings as Stage 31, but with a larger
-    `4,000,008` agent-step budget;
+  - primary arm: run `event_v23_v17_depositor_rendezvous`, `shared_frac=0.0`,
+    seeds `0,1,2,3`, same masks and PPO settings as Stage 31, but with a
+    larger `4,000,008` agent-step budget;
+  - required budget control: run `event_v17_depositor_staging`,
+    `shared_frac=0.0`, seeds `0,1,2,3`, same masks and PPO settings, also at
+    `4,000,008` agent steps. If sandbox capacity forces sequencing, run v23
+    first but launch the v17 control immediately if v23 is close to passing or
+    if the failure mode is ambiguous;
   - use deterministic behavior gates with `5` episodes x `500` steps per seed,
     saved replays, and the same chain counters;
+  - inspect at least one successful replay and one representative failed replay
+    per seed when available. Classify failures before making v24:
+    - upstream acquisition failure: ore pickup, ore-to-crafter, or battery craft
+      drops below the v17 short-budget baseline;
+    - handoff failure: batteries are crafted but do not reach role-2
+      depositors;
+    - final-use failure: role-2 depositors receive or carry batteries near the
+      home assembler but do not use/deposit them;
+    - policy collapse: repeated-action or low-coverage metrics dominate despite
+      nonzero shaped reward.
   - promotion criterion:
     - v23 long-budget must meet or exceed v17's short-budget behavior on final
       completion (`>=5` battery-to-depositor handoffs and `>=4` heart deposits)
       while keeping upstream behavior close to v17;
-    - if it fails, implement a narrower v24 final-completion boost focused only
-      on battery-carrying depositors using the home assembler, still without
-      penalties, scripted actions, or action-permission changes;
+    - if v23 passes but the v17 4M control also improves similarly, treat the
+      effect as budget-driven rather than v23-driven and do not promote the
+      reward design without a clearer ablation;
+    - if v23 fails upstream while v17 4M holds upstream behavior, stop iterating
+      on v23 and revert to the v17 family for the next reward design;
+    - if v23 only fails at final use, implement a narrower v24
+      final-completion boost focused only on battery-carrying depositors using
+      the home assembler, still without penalties, scripted actions, or
+      action-permission changes;
     - do not update `main_richard.tex` unless behavior gates pass.
 
 ## Candidate Commands
 
-These commands should be updated after the implementation lands, but this is
-the intended shape.
+These commands are the current local/sandbox shape. The sandbox launcher can
+wrap them over seeds and machines, but the flags below should stay fixed for
+the Stage-32 v23/v17 comparison. If a sandbox shell is outside `nix develop`,
+prefix `uv run` commands with `METTA_USE_NIX=0`.
 
 Run the environment/version audit:
 
@@ -5264,29 +5347,55 @@ uv run python v3_experiments/run_tribal_behavior_rollouts.py \
   --output-dir v3_experiments/behavioral_reward_results/baselines/random
 ```
 
-Run a short event-reward training gate:
+Run one Stage-32 training seed. Use the same template for the v17 budget
+control by changing `REWARD` and `STAGE` as shown:
 
 ```bash
+SHA=$(git rev-parse --short HEAD)
+SEED=0
+REWARD=event_v23_v17_depositor_rendezvous
+STAGE=stage32_v23_v17_depositor_rendezvous_4m
+# REWARD=event_v17_depositor_staging
+# STAGE=stage32_v17_depositor_staging_4m_control
+ROOT=/workspace/tribal_event_mask_runs/${STAGE}_${SHA}
+
 uv run python v3_experiments/train_canonical_reward_geometry.py \
-  --reward-design event_v1 \
+  --env-backend tribal \
+  --reward-design "$REWARD" \
+  --use-action-mask \
+  --chain-compass-observation \
   --shared-frac 0.0 \
-  --seed 0 \
-  --total-agent-steps 1000000 \
-  --eval-trials 10 \
-  --output v3_experiments/behavioral_reward_results/event_v1_alpha0_seed0.json
+  --seed "$SEED" \
+  --total-agent-steps 4000008 \
+  --eval-trials 5 \
+  --eval-steps 500 \
+  --num-steps 64 \
+  --minibatch-size 512 \
+  --update-epochs 4 \
+  --output "$ROOT/seed${SEED}/result.json" \
+  --checkpoint-path "$ROOT/seed${SEED}/final_model.pt" \
+  --run-name "${STAGE}_seed${SEED}_${SHA}" \
+  --condition-group "$STAGE" \
+  --wandb-mode offline \
+  --device cuda \
+  --log-interval 50
 ```
 
-Generate replays for a checkpoint:
+Generate deterministic behavior-gate replays for a Stage-32 checkpoint:
 
 ```bash
 uv run python v3_experiments/run_tribal_behavior_rollouts.py \
   --policy checkpoint \
-  --checkpoint-path /path/to/checkpoint.pt \
+  --checkpoint-path "$ROOT/seed${SEED}/final_model.pt" \
+  --env-backend tribal \
   --episodes 5 \
-  --steps 240 \
+  --steps 500 \
+  --seed "$SEED" \
+  --chain-compass-observation \
   --save-replays \
   --snapshot-every 20 \
-  --output-dir v3_experiments/behavioral_reward_results/replays/event_v1_alpha0_seed0
+  --output-dir "${ROOT}_behavior/seed${SEED}" \
+  --device cuda
 ```
 
 Validate outputs:
@@ -5356,6 +5465,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Run Stage-17 behavior-derived role audit after the fixed-role probe failed.
 - [x] Resolve the canonical sweep decision after behavior-backed role audit.
 - [x] Update the paper from canonical outputs only.
+- [ ] Package Stage-13/15/16/17/18 into a canonical result bundle with
+      commands, per-seed JSON, aggregate CSV/JSON, checkpoints, replay index,
+      and plot inputs.
 - [x] Recover the old PCA/representation figure contract from paper images.
 - [x] Add representation artifact export and old-style PCA plotting.
 - [x] Add v11 ore/battery handoff instrumentation.
@@ -5403,8 +5515,16 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-31 short v23 sandbox diagnostics.
 - [x] Inspect Stage-31 handoffs, deposits, upstream recovery, and stranded batteries.
 - [ ] Launch Stage-32 v23 longer-budget diagnostics.
+- [ ] Launch Stage-32 v17 4M budget control if v23 is close or ambiguous, or
+      in parallel if sandbox capacity allows.
 - [ ] Inspect Stage-32 handoffs, deposits, upstream recovery, and stranded batteries.
+- [ ] Classify Stage-32 failures as upstream acquisition, handoff, final-use, or
+      policy-collapse failures from replay evidence.
+- [ ] Create the Stage-32 paper-readiness bundle only if behavior gates pass.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
+- [ ] Reconstruct and smoke-test the SMACv2 `10gen_terran` boundary runner.
+- [ ] Rerun SMACv2 3 seeds per reward mode and aggregate the old table schema.
+- [ ] Generate final paper tables and figures only from canonical bundles.
 
 ## Open Questions
 
