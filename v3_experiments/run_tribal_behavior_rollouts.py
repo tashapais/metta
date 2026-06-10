@@ -480,6 +480,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         "event_v18_handoff_rendezvous",
         "event_v19_crafter_home_delivery",
         "event_v20_home_staged_handoff",
+        "event_v21_home_handoff_rendezvous",
     )
     target_aware_handoff_mask = bool(config.get("target_aware_handoff_mask", False)) or (
         config.get("reward_design")
@@ -491,6 +492,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
             "event_v18_handoff_rendezvous",
             "event_v19_crafter_home_delivery",
             "event_v20_home_staged_handoff",
+            "event_v21_home_handoff_rendezvous",
         )
         and chain_affordance_action_mask
     )
@@ -541,6 +543,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v18_handoff_rendezvous",
             "event_v19_crafter_home_delivery",
             "event_v20_home_staged_handoff",
+            "event_v21_home_handoff_rendezvous",
         )
     )
 

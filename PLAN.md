@@ -4866,6 +4866,109 @@ Stage-19 specialization-forcing follow-up:
       upstream ore-to-crafter and battery-craft counts;
     - do not update `main_richard.tex` from v20 unless the behavior gate shows
       stable final-chain behavior across seeds.
+  - Stage-28 v20 sandbox result, commit `e65671676`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `216`, seeds `0,1`;
+      - `relh-sandbox-2` job `212`, seeds `2,3`;
+    - Sky again marked the detached training jobs failed with wrapper return
+      code `141`, but direct artifact inspection confirmed all four
+      `result.json` files and `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage28_v20_home_staged_handoff_1m_e65671676`;
+    - all four result JSONs record
+      `reward_design=event_v20_home_staged_handoff`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - final training readout:
+      - seed `0`: EffRank/n `0.232`, D_act KL `7.020`, D_act JS
+        `0.244`, probe `0.459`, raw return `-6.968`;
+      - seed `1`: EffRank/n `0.222`, D_act KL `7.071`, D_act JS
+        `0.274`, probe `0.554`, raw return `-5.868`;
+      - seed `2`: EffRank/n `0.171`, D_act KL `8.118`, D_act JS
+        `0.257`, probe `0.428`, raw return `-8.099`;
+      - seed `3`: EffRank/n `0.365`, D_act KL `7.619`, D_act JS
+        `0.276`, probe `0.680`, raw return `-6.128`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `218`, seeds `0,1`;
+      - `relh-sandbox-2` job `214`, seeds `2,3`;
+    - aggregate Stage-28 behavior across the `20` evaluation episodes:
+      - `144` ore pickups;
+      - `91` ore-to-crafter targeted handoffs;
+      - `34` battery crafts;
+      - `1` battery-to-depositor targeted handoff;
+      - `1` heart deposit;
+    - per-seed behavior:
+      - seed `0`: `28` ore pickups, `17` ore-to-crafter handoffs,
+        `1` battery craft, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `31` ore pickups, `14` ore-to-crafter handoffs,
+        `4` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `2`: `45` ore pickups, `31` ore-to-crafter handoffs,
+        `15` battery crafts, `1` battery-to-depositor handoff, `1`
+        heart deposit;
+      - seed `3`: `40` ore pickups, `29` ore-to-crafter handoffs,
+        `14` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+    - stranded-inventory inspection showed batteries almost entirely ending on
+      role-1 crafters, with crafters rarely selecting `put`; the only completed
+      chain episode was seed `2`, episode `2`, where the crafter selected one
+      battery put and the depositor used the home assembler;
+    - interpretation: v20 is a useful debugging signal because it recovers one
+      real final-chain completion and improves upstream behavior relative to
+      v19, but it is not paper-ready. It is still worse than the v17 final-chain
+      behavior (`5` battery-to-depositor handoffs, `4` heart deposits) and
+      should not update `main_richard.tex`.
+- Stage-29 v21 home-handoff-rendezvous iteration:
+  - new reward design: `event_v21_home_handoff_rendezvous`;
+  - v21 keeps the v20/v17 structure: target-aware handoff mask,
+    chain-compass observation, role-gated action mask, no penalties, no
+    scripts/demonstrations, and no new action permissions;
+  - v21 changes only positive breadcrumbs at the final bottleneck:
+    - strengthens
+      `crafter_battery_put_to_home_staged_depositor` from `+8.00` to
+      `+20.00` when the crafter carries a battery, is within distance `2` of
+      the home assembler, selects a `put` action, and that exact action is
+      target-aware-mask-valid;
+    - adds capped movement/arrival breadcrumbs for battery-carrying crafters
+      to become adjacent to an empty role-2 depositor already staged within
+      distance `2` of the home assembler:
+      - `crafter_battery_move_toward_home_staged_depositor`: `+0.75` per
+        Manhattan-distance improvement;
+      - `crafter_battery_arrive_adjacent_home_staged_depositor`: `+6.00`;
+    - keeps the existing successful event rewards for
+      `put_battery_to_depositor`, `receive_battery_from_crafter`, and
+      `deposit_heart` as the main terminal rewards.
+  - rationale: v20 showed the upstream chain is being learned, but batteries
+    remain stranded on crafters and the final put action is almost never
+    selected. v21 rewards the learned policy for getting to the exact
+    target-aware handoff opportunity instead of adding negative rewards or
+    scripted behavior.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v20/v21/checkpoint pytest group passed (`8` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/v19/v20/v21
+      checkpoint pytest group passed (`38` tests);
+    - ruff passed for the edited modules;
+    - mock v21 trainer smoke passed and emitted validated JSON;
+    - real Tribal v21 trainer smoke passed and emitted validated JSON;
+    - v21 checkpoint behavior-rollout smoke passed from the real Tribal smoke
+      checkpoint, with checkpoint chain-affordance, role-gated, and
+      target-aware masks all inferred as `true`.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - promote only if v21 recovers stable battery-to-depositor handoffs and
+      heart deposits without losing v20's upstream ore-to-crafter and
+      battery-craft behavior;
+    - if v21 still strands batteries on crafters, the next iteration should
+      revisit action-mask exposure/timing around adjacent home-staged
+      depositors rather than adding penalties.
 
 ## Candidate Commands
 
@@ -5021,8 +5124,14 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-26 short v18 sandbox diagnostics.
 - [x] Inspect Stage-26 handoffs, deposits, rendezvous behavior, and stranded batteries.
 - [x] Implement and smoke v19 crafter-home-delivery breadcrumbs.
-- [ ] Launch Stage-27 short v19 sandbox diagnostics.
-- [ ] Inspect Stage-27 handoffs, deposits, home-delivery behavior, and stranded batteries.
+- [x] Launch Stage-27 short v19 sandbox diagnostics.
+- [x] Inspect Stage-27 handoffs, deposits, home-delivery behavior, and stranded batteries.
+- [x] Implement and smoke v20 home-staged-handoff breadcrumb.
+- [x] Launch Stage-28 short v20 sandbox diagnostics.
+- [x] Inspect Stage-28 handoffs, deposits, final put behavior, and stranded batteries.
+- [x] Implement and smoke v21 home-handoff-rendezvous breadcrumbs.
+- [ ] Launch Stage-29 short v21 sandbox diagnostics.
+- [ ] Inspect Stage-29 handoffs, deposits, final rendezvous behavior, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

@@ -63,6 +63,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES,
     EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS,
     EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES,
+    EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS,
+    EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -111,6 +113,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v19_crafter_home_delivery_details,
     event_v20_home_staged_handoff_bonuses,
     event_v20_home_staged_handoff_details,
+    event_v21_home_handoff_rendezvous_bonuses,
+    event_v21_home_handoff_rendezvous_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -1299,6 +1303,150 @@ def test_event_v20_requires_masked_put_near_home():
     np.testing.assert_allclose(masked_out, v19_near_home)
 
 
+def test_event_v21_home_handoff_rendezvous_details_are_serializable():
+    details = event_v21_home_handoff_rendezvous_details()
+
+    assert details["name"] == "event_v21_home_handoff_rendezvous"
+    assert details["role_names"] == list(EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES)
+    assert details["v21_changes"]["target_aware_handoff_mask"] is True
+    assert details["v21_changes"]["reward_penalties_added"] is False
+    assert details["v21_changes"]["scripted_policy_added"] is False
+    assert details["v21_changes"]["changes_action_permissions"] is False
+    assert "crafter_battery_move_toward_home_staged_depositor" in details["final_mile_action_coefficients"]
+
+
+def test_event_v21_strengthens_masked_home_staged_handoff_beyond_v20():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    put_east = 5 * ACTION_ARGUMENT_COUNT + 3
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3, put_east, MOVE_VERB * ACTION_ARGUMENT_COUNT + 3])
+    action_mask = np.zeros((3, 56), dtype=bool)
+    action_mask[1, put_east] = True
+
+    v20 = event_v20_home_staged_handoff_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v21 = event_v21_home_handoff_rendezvous_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v21[1] - v20[1] == pytest.approx(
+        EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS[
+            "crafter_battery_put_to_home_staged_depositor"
+        ]
+        - EVENT_V20_HOME_STAGED_HANDOFF_ACTION_COEFFICIENTS[
+            "crafter_battery_put_to_home_staged_depositor"
+        ]
+    )
+
+
+def test_event_v21_rewards_crafter_move_to_home_staged_depositor_beyond_v20():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    after[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    before[1, [NAV_AGENT_X, NAV_AGENT_Y, NAV_INVENTORY_BATTERY, NAV_DIST_HOME_ASSEMBLER]] = [5, 5, 1, 3]
+    after[1, [NAV_AGENT_X, NAV_AGENT_Y, NAV_INVENTORY_BATTERY, NAV_DIST_HOME_ASSEMBLER]] = [7, 5, 1, 1]
+    before[2, [NAV_AGENT_X, NAV_AGENT_Y, NAV_DIST_HOME_ASSEMBLER]] = [8, 5, 0]
+    after[2, [NAV_AGENT_X, NAV_AGENT_Y, NAV_DIST_HOME_ASSEMBLER]] = [8, 5, 0]
+    actions = np.array(
+        [
+            MOVE_VERB * ACTION_ARGUMENT_COUNT + 3,
+            MOVE_VERB * ACTION_ARGUMENT_COUNT + 3,
+            MOVE_VERB * ACTION_ARGUMENT_COUNT + 3,
+        ],
+        dtype=np.int64,
+    )
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v20 = event_v20_home_staged_handoff_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v21 = event_v21_home_handoff_rendezvous_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    expected = (
+        2
+        * EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS[
+            "crafter_battery_move_toward_home_staged_depositor"
+        ]
+        + EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS[
+            "crafter_battery_arrive_adjacent_home_staged_depositor"
+        ]
+    )
+    assert v21[0] == pytest.approx(v20[0])
+    assert v21[1] - v20[1] == pytest.approx(expected)
+    assert v21[2] == pytest.approx(v20[2])
+
+
+def test_event_v21_requires_home_staged_depositor_for_rendezvous():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    after[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    before[1, [NAV_AGENT_X, NAV_AGENT_Y, NAV_INVENTORY_BATTERY, NAV_DIST_HOME_ASSEMBLER]] = [5, 5, 1, 3]
+    after[1, [NAV_AGENT_X, NAV_AGENT_Y, NAV_INVENTORY_BATTERY, NAV_DIST_HOME_ASSEMBLER]] = [6, 5, 1, 2]
+    before[2, [NAV_AGENT_X, NAV_AGENT_Y, NAV_DIST_HOME_ASSEMBLER]] = [8, 5, 3]
+    after[2, [NAV_AGENT_X, NAV_AGENT_Y, NAV_DIST_HOME_ASSEMBLER]] = [8, 5, 3]
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v20 = event_v20_home_staged_handoff_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v21 = event_v21_home_handoff_rendezvous_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    np.testing.assert_allclose(v21, v20)
+
+
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)
 
@@ -2127,6 +2275,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v20_home_staged_handoff",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v21_home_handoff_rendezvous",
             "chain_affordance_action_mask": False,
         }
     )
