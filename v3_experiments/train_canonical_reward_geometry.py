@@ -115,6 +115,10 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS,
     EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS,
     EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES,
+    EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_CAPS,
+    EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS,
+    EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_COEFFICIENTS,
+    EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -165,6 +169,8 @@ from v3_experiments.tribal_event_rewards import (  # noqa: E402
     event_v16_handoff_reliability_details,
     event_v17_depositor_staging_bonuses,
     event_v17_depositor_staging_details,
+    event_v18_handoff_rendezvous_bonuses,
+    event_v18_handoff_rendezvous_details,
 )
 
 TRIBAL_VILLAGE_ROOT = REPO_ROOT / "packages" / "tribal_village"
@@ -631,6 +637,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "event_v15_depositor_final_mile",
             "event_v16_handoff_reliability",
             "event_v17_depositor_staging",
+            "event_v18_handoff_rendezvous",
         ),
         default="passive_v0",
         help="Role-shaping reward design. passive_v0 preserves the old observation shaping.",
@@ -1506,6 +1513,17 @@ def _role_shaping_bonuses_for_design(
             gamma=config.gamma,
             num_agents=num_agents,
         )
+    if config.reward_design == "event_v18_handoff_rendezvous":
+        return event_v18_handoff_rendezvous_bonuses(
+            event_stats_delta,
+            event_stats_total,
+            navigation_before=navigation_before,
+            navigation_after=navigation_after,
+            actions=actions,
+            action_mask=action_mask_before,
+            gamma=config.gamma,
+            num_agents=num_agents,
+        )
     raise ValueError(f"unknown reward design: {config.reward_design}")
 
 
@@ -1534,6 +1552,7 @@ def _uses_chain_compass_observation(config: RunnerConfig) -> bool:
         "event_v15_depositor_final_mile",
         "event_v16_handoff_reliability",
         "event_v17_depositor_staging",
+        "event_v18_handoff_rendezvous",
     )
 
 
@@ -1552,6 +1571,7 @@ def _uses_chain_affordance_action_mask(config: RunnerConfig) -> bool:
             "event_v15_depositor_final_mile",
             "event_v16_handoff_reliability",
             "event_v17_depositor_staging",
+            "event_v18_handoff_rendezvous",
         )
     )
 
@@ -1562,6 +1582,7 @@ def _uses_target_aware_handoff_mask(config: RunnerConfig) -> bool:
         "event_v15_depositor_final_mile",
         "event_v16_handoff_reliability",
         "event_v17_depositor_staging",
+        "event_v18_handoff_rendezvous",
     )
 
 
@@ -1725,6 +1746,8 @@ def _reward_design_role_names(config: RunnerConfig) -> list[str]:
         return list(EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES)
     if config.reward_design == "event_v17_depositor_staging":
         return list(EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES)
+    if config.reward_design == "event_v18_handoff_rendezvous":
+        return list(EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES)
     return list(ROLE_NAMES)
 
 
@@ -2090,6 +2113,48 @@ def _reward_design_coefficients(config: RunnerConfig) -> dict[str, Any]:
                 role: dict(coefficients) for role, coefficients in EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS.items()
             },
         }
+    if config.reward_design == "event_v18_handoff_rendezvous":
+        return {
+            "common": {},
+            "task_events": {},
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi_role(s') - Phi_role(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "run_gamma": config.gamma,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES),
+            },
+            "oracle_actions": {
+                "depositor_use_home_assembler": EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ]
+            },
+            "final_mile_actions": {
+                name: coefficient
+                for name, coefficient in EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS.items()
+                if name != "depositor_use_home_assembler"
+            },
+            "final_mile_action_caps": dict(EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_CAPS),
+            "negative_reward_coefficients": {},
+            "chain_affordance_action_mask": {
+                "enabled": _uses_chain_affordance_action_mask(config),
+                "target_aware_handoffs": _uses_target_aware_handoff_mask(config),
+                "allowed_verbs": [
+                    "move",
+                    "supplier_use_mine",
+                    "supplier_put_ore_to_adjacent_crafter",
+                    "crafter_use_converter",
+                    "crafter_put_battery_to_adjacent_depositor",
+                    "depositor_use_assembler",
+                ],
+                "reward_penalties_added": False,
+            },
+            "roles": {
+                role: dict(coefficients)
+                for role, coefficients in EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_COEFFICIENTS.items()
+            },
+        }
     return dict(ROLE_SHAPING_COEFFICIENTS)
 
 
@@ -2218,6 +2283,18 @@ def _reward_design_details(config: RunnerConfig) -> dict[str, Any]:
                 "Relax the v17 target-aware role-gated mask for transfer/ablation diagnostics."
             )
         return details
+    if config.reward_design == "event_v18_handoff_rendezvous":
+        details = event_v18_handoff_rendezvous_details()
+        details["potential_shaping"]["run_gamma"] = config.gamma
+        details["action_affordance_curriculum"]["enabled"] = _uses_chain_affordance_action_mask(config)
+        details["action_affordance_curriculum"]["target_aware_handoffs"] = _uses_target_aware_handoff_mask(config)
+        if not _uses_chain_affordance_action_mask(config):
+            details["action_affordance_curriculum"]["allowed_verbs"] = ["environment_valid_actions"]
+            details["action_affordance_curriculum"]["blocked_successes"] = []
+            details["action_affordance_curriculum"]["purpose"] = (
+                "Relax the v18 target-aware role-gated mask for transfer/ablation diagnostics."
+            )
+        return details
     return {
         "name": "passive_v0",
         "summary": "Original observation-based role shaping from the reconstructed canonical runner.",
@@ -2267,6 +2344,7 @@ def _action_mask_tensor(env: CanonicalEnv, config: RunnerConfig, device: torch.d
             "event_v15_depositor_final_mile",
             "event_v16_handoff_reliability",
             "event_v17_depositor_staging",
+            "event_v18_handoff_rendezvous",
         ),
         target_aware_handoff_mask=_uses_target_aware_handoff_mask(config),
     )

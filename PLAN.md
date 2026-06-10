@@ -4588,6 +4588,104 @@ Stage-19 specialization-forcing follow-up:
       seed, saved replays, and per-seed summaries;
     - promote only if heart deposits and battery-to-depositor handoffs improve
       across seeds rather than concentrating in one best episode.
+  - Stage-25 v17 sandbox result, commit `ea85f4846`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `196`, seeds `0,1`;
+      - `relh-sandbox-2` job `193`, seeds `2,3`;
+    - direct artifact inspection confirmed all four `result.json` files and
+      `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage25_v17_depositor_staging_1m_ea85f4846`;
+    - all four result JSONs record
+      `reward_design=event_v17_depositor_staging`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `198`, seeds `0,1`;
+      - `relh-sandbox-2` job `195`, seeds `2,3`;
+    - aggregate Stage-25 behavior across the `20` evaluation episodes:
+      - `179` ore pickups;
+      - `105` ore-to-crafter targeted handoffs;
+      - `45` battery crafts;
+      - `5` battery-to-depositor targeted handoffs;
+      - `4` heart deposits;
+    - per-seed behavior:
+      - seed `0`: `40` ore pickups, `22` ore-to-crafter handoffs,
+        `15` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `55` ore pickups, `33` ore-to-crafter handoffs,
+        `10` battery crafts, `3` battery-to-depositor handoffs, `3`
+        heart deposits;
+      - seed `2`: `47` ore pickups, `28` ore-to-crafter handoffs,
+        `15` battery crafts, `2` battery-to-depositor handoffs, `1`
+        heart deposit;
+      - seed `3`: `37` ore pickups, `22` ore-to-crafter handoffs,
+        `5` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+    - interpretation: v17 improves upstream chain reliability over v16 but
+      remains too fragile for paper claims. Deposits are still concentrated in
+      seeds `1` and `2`; seeds `0` and `3` learn ore transfer and battery
+      crafting but do not execute the final battery-to-depositor handoff.
+    - failure diagnosis from per-agent stats:
+      - successful episodes are genuine learned role behavior: depositor-role
+        agents receive batteries from crafters and record `deposit_heart`;
+      - failed episodes usually have many `craft_battery` events but no
+        `put_battery_to_depositor`, leaving final battery inventory stranded
+        on agents;
+      - therefore the next bottleneck is not final depositor use, but getting
+        battery-carrying crafters and empty depositors adjacent often enough
+        for the target-aware handoff action.
+- Stage-26 v18 handoff-rendezvous iteration:
+  - new reward design: `event_v18_handoff_rendezvous`;
+  - v18 keeps v16 handoff reliability, the target-aware handoff mask,
+    chain-compass observation, role-gated action mask, and positive-only
+    shaping rule;
+  - v18 does not add penalties, scripted actions, demonstrations, or simulator
+    rule changes;
+  - v18 changes the empty-depositor staging policy from unconditional
+    home-staging to conditional rendezvous:
+    - if no crafter currently carries a battery, empty depositor-role agents
+      still receive v17's positive home-staging breadcrumbs;
+    - once a crafter carries a battery, empty depositor-role agents are rewarded
+      for mask-valid movement toward the nearest battery-carrying crafter;
+    - battery-carrying crafters are rewarded for mask-valid movement toward
+      the nearest empty depositor;
+    - both sides receive capped arrival bonuses when they move from
+      non-adjacent to adjacent to the relevant peer;
+  - added positive-only coefficients:
+    - `crafter_battery_move_toward_empty_depositor`: `+0.50` per Manhattan
+      distance step closed;
+    - `crafter_battery_arrive_adjacent_empty_depositor`: `+4.00`;
+    - `depositor_empty_move_toward_battery_crafter`: `+0.35` per Manhattan
+      distance step closed;
+    - `depositor_empty_arrive_adjacent_battery_crafter`: `+3.00`;
+  - rationale: v17 showed that agents can learn ore transfer and battery
+    crafting, but final completion is bottlenecked by the rendezvous
+    precondition for target-aware `put_battery_to_depositor`. v18 should
+    increase valid handoff opportunities without expanding action permissions
+    or rewarding no-op waiting.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v16/v17/v18/checkpoint pytest group passed (`10` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/checkpoint
+      pytest group passed (`28` tests);
+    - mock v18 trainer smoke passed and emitted validated JSON;
+    - real Tribal v18 trainer smoke passed and emitted validated JSON;
+    - v18 checkpoint behavior-rollout smoke passed from the real Tribal smoke
+      checkpoint.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - promote only if battery-to-depositor handoffs and heart deposits improve
+      across seeds, not only in the best episode;
+    - do not update `main_richard.tex` from v18 unless behavior gates show
+      stable, meaningful final-chain behavior suitable for representation
+      analysis.
 
 ## Candidate Commands
 
@@ -4737,8 +4835,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-24 short v16 sandbox diagnostics.
 - [x] Inspect Stage-24 deposits, depositor movement, and stranded batteries.
 - [x] Implement and smoke v17 depositor-staging breadcrumbs.
-- [ ] Launch Stage-25 short v17 sandbox diagnostics.
-- [ ] Inspect Stage-25 deposits, depositor movement, and stranded batteries.
+- [x] Launch Stage-25 short v17 sandbox diagnostics.
+- [x] Inspect Stage-25 deposits, depositor movement, and stranded batteries.
+- [x] Implement and smoke v18 handoff-rendezvous breadcrumbs.
+- [ ] Launch Stage-26 short v18 sandbox diagnostics.
+- [ ] Inspect Stage-26 handoffs, deposits, rendezvous behavior, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

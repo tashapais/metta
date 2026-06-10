@@ -477,6 +477,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         "event_v15_depositor_final_mile",
         "event_v16_handoff_reliability",
         "event_v17_depositor_staging",
+        "event_v18_handoff_rendezvous",
     )
     target_aware_handoff_mask = bool(config.get("target_aware_handoff_mask", False)) or (
         config.get("reward_design")
@@ -485,6 +486,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
             "event_v15_depositor_final_mile",
             "event_v16_handoff_reliability",
             "event_v17_depositor_staging",
+            "event_v18_handoff_rendezvous",
         )
         and chain_affordance_action_mask
     )
@@ -532,6 +534,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v15_depositor_final_mile",
             "event_v16_handoff_reliability",
             "event_v17_depositor_staging",
+            "event_v18_handoff_rendezvous",
         )
     )
 

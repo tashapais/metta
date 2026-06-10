@@ -26,6 +26,7 @@ EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAME
 EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -531,6 +532,24 @@ EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS = {
     **EVENT_V16_HANDOFF_RELIABILITY_ACTION_CAPS,
     "depositor_empty_move_toward_home": 160,
     "depositor_empty_arrive_adjacent_home": 160,
+}
+
+EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_COEFFICIENTS = EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS
+
+EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS = {
+    **EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS,
+    "crafter_battery_move_toward_empty_depositor": 0.50,
+    "crafter_battery_arrive_adjacent_empty_depositor": 4.00,
+    "depositor_empty_move_toward_battery_crafter": 0.35,
+    "depositor_empty_arrive_adjacent_battery_crafter": 3.00,
+}
+
+EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_CAPS = {
+    **EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS,
+    "crafter_battery_move_toward_empty_depositor": 160,
+    "crafter_battery_arrive_adjacent_empty_depositor": 160,
+    "depositor_empty_move_toward_battery_crafter": 160,
+    "depositor_empty_arrive_adjacent_battery_crafter": 160,
 }
 
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
@@ -1104,6 +1123,40 @@ def event_v17_depositor_staging_bonuses(
     return bonuses
 
 
+def event_v18_handoff_rendezvous_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v16 rewards plus positive rendezvous breadcrumbs for final handoff."""
+
+    bonuses = event_v16_handoff_reliability_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_handoff_rendezvous_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1649,6 +1702,51 @@ def event_v17_depositor_staging_details() -> dict[str, Any]:
     return details
 
 
+def event_v18_handoff_rendezvous_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v18 final-handoff rendezvous diagnostic."""
+
+    details = event_v17_depositor_staging_details()
+    details.update(
+        {
+            "name": "event_v18_handoff_rendezvous",
+            "summary": (
+                "V16 handoff reliability plus positive-only rendezvous breadcrumbs "
+                "for the final battery handoff: battery-carrying crafters move "
+                "toward empty depositors, and empty depositors move toward "
+                "battery-carrying crafters when such a crafter exists."
+            ),
+            "role_names": list(EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": {
+                "depositor_use_home_assembler": EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ]
+            },
+            "final_mile_action_coefficients": {
+                name: coefficient
+                for name, coefficient in EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS.items()
+                if name != "depositor_use_home_assembler"
+            },
+            "final_mile_action_caps": dict(EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_CAPS),
+            "v18_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "purpose": (
+                    "Address Stage-25 v17 evidence: agents learn ore transfer and "
+                    "battery crafting, but many episodes fail because crafters hold "
+                    "batteries without reaching an empty depositor for the final handoff."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -2019,6 +2117,147 @@ def _add_depositor_empty_staging_breadcrumbs(
             bonuses[agent_id] += EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS[
                 "depositor_empty_arrive_adjacent_home"
             ]
+
+
+def _add_handoff_rendezvous_breadcrumbs(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if before is None or after is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    labels = role_labels(before.shape[0], len(EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES))
+
+    battery_crafters = [
+        agent_id
+        for agent_id, row in enumerate(before)
+        if int(labels[agent_id]) == 1 and int(row[NAV_INVENTORY_BATTERY]) > 0
+    ]
+    empty_depositors = [
+        agent_id
+        for agent_id, row in enumerate(before)
+        if int(labels[agent_id]) == 2 and int(row[NAV_INVENTORY_BATTERY]) <= 0
+    ]
+    if not battery_crafters:
+        _add_depositor_empty_staging_breadcrumbs(
+            bonuses,
+            navigation_before,
+            navigation_after,
+            actions,
+            action_mask,
+            event_stats_total,
+        )
+        return
+    if not empty_depositors:
+        return
+
+    action_coefficients = EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS
+    move_caps = {
+        name: _action_cap_eligible(event_stats_total, "action_move", cap, bonuses.shape[0])
+        for name, cap in EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_CAPS.items()
+    }
+
+    for agent_id in battery_crafters:
+        target = _nearest_peer_xy(before, agent_id, empty_depositors)
+        if target is None:
+            continue
+        _add_peer_rendezvous_move_bonus(
+            bonuses,
+            before,
+            after,
+            actions_arr,
+            mask,
+            agent_id,
+            target,
+            move_coefficient=action_coefficients["crafter_battery_move_toward_empty_depositor"],
+            arrival_coefficient=action_coefficients["crafter_battery_arrive_adjacent_empty_depositor"],
+            move_cap=move_caps["crafter_battery_move_toward_empty_depositor"],
+            arrival_cap=move_caps["crafter_battery_arrive_adjacent_empty_depositor"],
+        )
+
+    for agent_id in empty_depositors:
+        target = _nearest_peer_xy(before, agent_id, battery_crafters)
+        if target is None:
+            continue
+        _add_peer_rendezvous_move_bonus(
+            bonuses,
+            before,
+            after,
+            actions_arr,
+            mask,
+            agent_id,
+            target,
+            move_coefficient=action_coefficients["depositor_empty_move_toward_battery_crafter"],
+            arrival_coefficient=action_coefficients["depositor_empty_arrive_adjacent_battery_crafter"],
+            move_cap=move_caps["depositor_empty_move_toward_battery_crafter"],
+            arrival_cap=move_caps["depositor_empty_arrive_adjacent_battery_crafter"],
+        )
+
+
+def _nearest_peer_xy(
+    navigation: np.ndarray,
+    agent_id: int,
+    peer_ids: list[int],
+) -> tuple[int, int] | None:
+    if not peer_ids:
+        return None
+    agent_x = int(navigation[agent_id, NAV_AGENT_X])
+    agent_y = int(navigation[agent_id, NAV_AGENT_Y])
+    best_peer = min(
+        peer_ids,
+        key=lambda peer_id: abs(agent_x - int(navigation[peer_id, NAV_AGENT_X]))
+        + abs(agent_y - int(navigation[peer_id, NAV_AGENT_Y])),
+    )
+    return int(navigation[best_peer, NAV_AGENT_X]), int(navigation[best_peer, NAV_AGENT_Y])
+
+
+def _add_peer_rendezvous_move_bonus(
+    bonuses: np.ndarray,
+    before: np.ndarray,
+    after: np.ndarray,
+    actions: np.ndarray,
+    action_mask: np.ndarray | None,
+    agent_id: int,
+    target_xy: tuple[int, int],
+    *,
+    move_coefficient: float,
+    arrival_coefficient: float,
+    move_cap: np.ndarray,
+    arrival_cap: np.ndarray,
+) -> None:
+    action = int(actions[agent_id])
+    if action // ACTION_ARGUMENT_COUNT != MOVE_VERB or not _mask_allows(action_mask, agent_id, action):
+        return
+
+    before_distance = _manhattan_distance_to_xy(before[agent_id], target_xy)
+    after_distance = _manhattan_distance_to_xy(after[agent_id], target_xy)
+    progress = before_distance - after_distance
+    if progress > 0 and move_cap[agent_id]:
+        bonuses[agent_id] += move_coefficient * progress
+
+    if (
+        _chebyshev_distance_to_xy(before[agent_id], target_xy) > 1
+        and _chebyshev_distance_to_xy(after[agent_id], target_xy) == 1
+        and arrival_cap[agent_id]
+    ):
+        bonuses[agent_id] += arrival_coefficient
+
+
+def _manhattan_distance_to_xy(navigation_row: np.ndarray, target_xy: tuple[int, int]) -> int:
+    target_x, target_y = target_xy
+    return abs(int(navigation_row[NAV_AGENT_X]) - target_x) + abs(int(navigation_row[NAV_AGENT_Y]) - target_y)
+
+
+def _chebyshev_distance_to_xy(navigation_row: np.ndarray, target_xy: tuple[int, int]) -> int:
+    target_x, target_y = target_xy
+    return max(abs(int(navigation_row[NAV_AGENT_X]) - target_x), abs(int(navigation_row[NAV_AGENT_Y]) - target_y))
 
 
 def _valid_navigation_distance(navigation_row: np.ndarray, column: int) -> float | None:
