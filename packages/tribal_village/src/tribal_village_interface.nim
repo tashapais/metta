@@ -97,7 +97,7 @@ proc tribal_village_get_action_stats(
 
   try:
     for i in 0..<MapAgents:
-      let offset = i * 28
+      let offset = i * 32
       if i < globalEnv.stats.len:
         let stats = globalEnv.stats[i]
         stats_buffer[offset + 0] = stats.actionInvalid.int32

@@ -4133,6 +4133,16 @@ Stage-19 specialization-forcing follow-up:
       shared library;
     - v12 checkpoint behavior rollout smoke confirmed the role-gated mask and
       new targeted-handoff metrics.
+- Stage-20 launch attempt 1 was aborted:
+  - launched commit `ba8651a02`, but the first completed behavior summaries had
+    impossible targeted-handoff counts and large off-chain craft/handoff counts;
+  - root cause was instrumentation, not policy behavior: the Nim stats export
+    widened each row to `32` columns but still used the old `i * 28` row stride;
+  - fix: update the stats export stride to `i * 32`;
+  - post-fix validation passed Python syntax checks, separate Nim checks for
+    `tribal_village_interface.nim` and `environment.nim`, a real Tribal v12
+    smoke, and a short checkpoint rollout sanity check with sane zero targeted
+    counters.
 
 ## Candidate Commands
 
