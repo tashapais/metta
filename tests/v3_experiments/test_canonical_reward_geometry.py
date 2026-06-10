@@ -65,6 +65,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES,
     EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS,
     EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES,
+    EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS,
+    EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -115,6 +117,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v20_home_staged_handoff_details,
     event_v21_home_handoff_rendezvous_bonuses,
     event_v21_home_handoff_rendezvous_details,
+    event_v22_v17_targeted_put_bonuses,
+    event_v22_v17_targeted_put_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -1447,6 +1451,119 @@ def test_event_v21_requires_home_staged_depositor_for_rendezvous():
     np.testing.assert_allclose(v21, v20)
 
 
+def test_event_v22_v17_targeted_put_details_are_serializable():
+    details = event_v22_v17_targeted_put_details()
+
+    assert details["name"] == "event_v22_v17_targeted_put"
+    assert details["role_names"] == list(EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES)
+    assert details["v22_changes"]["target_aware_handoff_mask"] is True
+    assert details["v22_changes"]["reward_penalties_added"] is False
+    assert details["v22_changes"]["scripted_policy_added"] is False
+    assert details["v22_changes"]["changes_action_permissions"] is False
+    assert details["v22_changes"]["uses_home_delivery_breadcrumbs"] is False
+    assert "crafter_battery_put_to_targeted_depositor" in details["oracle_action_coefficients"]
+
+
+def test_event_v22_rewards_masked_targeted_put_beyond_v17_without_home_requirement():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    put_east = 5 * ACTION_ARGUMENT_COUNT + 3
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3, put_east, MOVE_VERB * ACTION_ARGUMENT_COUNT + 3])
+    action_mask = np.zeros((3, 56), dtype=bool)
+    action_mask[1, put_east] = True
+
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v22 = event_v22_v17_targeted_put_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v22[0] == pytest.approx(v17[0])
+    assert v22[1] - v17[1] == pytest.approx(
+        EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS[
+            "crafter_battery_put_to_targeted_depositor"
+        ]
+    )
+    assert v22[2] == pytest.approx(v17[2])
+
+
+def test_event_v22_requires_masked_put_and_battery_crafter():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [3, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    put_east = 5 * ACTION_ARGUMENT_COUNT + 3
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3, put_east, MOVE_VERB * ACTION_ARGUMENT_COUNT + 3])
+    action_mask = np.zeros((3, 56), dtype=bool)
+    action_mask[1, put_east] = True
+
+    no_battery_v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    no_battery_v22 = event_v22_v17_targeted_put_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    action_mask[1, put_east] = False
+    masked_v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    masked_v22 = event_v22_v17_targeted_put_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    np.testing.assert_allclose(no_battery_v22, no_battery_v17)
+    np.testing.assert_allclose(masked_v22, masked_v17)
+
+
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)
 
@@ -2281,6 +2398,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v21_home_handoff_rendezvous",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v22_v17_targeted_put",
             "chain_affordance_action_mask": False,
         }
     )

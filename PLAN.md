@@ -4969,6 +4969,93 @@ Stage-19 specialization-forcing follow-up:
     - if v21 still strands batteries on crafters, the next iteration should
       revisit action-mask exposure/timing around adjacent home-staged
       depositors rather than adding penalties.
+  - Stage-29 v21 sandbox result, commit `93ca11fa0`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `219`, seeds `0,1`;
+      - `relh-sandbox-2` job `215`, seeds `2,3`;
+    - both Sky jobs finished successfully and wrote all four `result.json`
+      files and `final_model.pt` checkpoints under
+      `/workspace/tribal_event_mask_runs/stage29_v21_home_handoff_rendezvous_1m_93ca11fa0`;
+    - all four result JSONs record
+      `reward_design=event_v21_home_handoff_rendezvous`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - final training readout:
+      - seed `0`: EffRank/n `0.167`, D_act KL `4.425`, D_act JS
+        `0.183`, probe `0.462`, raw return `-6.390`;
+      - seed `1`: EffRank/n `0.179`, D_act KL `9.582`, D_act JS
+        `0.303`, probe `0.461`, raw return `-5.680`;
+      - seed `2`: EffRank/n `0.228`, D_act KL `8.752`, D_act JS
+        `0.321`, probe `0.453`, raw return `-6.596`;
+      - seed `3`: EffRank/n `0.196`, D_act KL `9.650`, D_act JS
+        `0.325`, probe `0.340`, raw return `-6.363`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `220`, seeds `0,1`;
+      - `relh-sandbox-2` job `216`, seeds `2,3`;
+    - aggregate Stage-29 behavior across the `20` evaluation episodes:
+      - `98` ore pickups;
+      - `46` ore-to-crafter targeted handoffs;
+      - `11` battery crafts;
+      - `3` battery-to-depositor targeted handoffs;
+      - `2` heart deposits;
+    - per-seed behavior:
+      - seed `0`: `26` ore pickups, `16` ore-to-crafter handoffs,
+        `1` battery craft, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `23` ore pickups, `4` ore-to-crafter handoffs,
+        `0` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `2`: `32` ore pickups, `19` ore-to-crafter handoffs,
+        `9` battery crafts, `2` battery-to-depositor handoffs, `2`
+        heart deposits;
+      - seed `3`: `17` ore pickups, `7` ore-to-crafter handoffs,
+        `1` battery craft, `1` battery-to-depositor handoff, `0`
+        heart deposits;
+    - interpretation: v21 improves final handoff counts relative to v20
+      (`3` vs `1`) and heart deposits relative to v20 (`2` vs `1`), but it
+      sacrifices too much upstream behavior relative to v17/v20. It is not
+      paper-ready and should not update `main_richard.tex`.
+- Stage-30 v22 v17-targeted-put iteration:
+  - new reward design: `event_v22_v17_targeted_put`;
+  - v22 backs off the v19/v20/v21 home-delivery/rendezvous movement shaping
+    and returns to v17 as the base, because v17 had the strongest upstream
+    chain and more final completions than v21;
+  - v22 adds only one positive final-action breadcrumb:
+    - reward a role-1 crafter carrying a battery for selecting any
+      target-aware-mask-valid `put` action, regardless of home distance;
+    - the target-aware mask still restricts this to an adjacent role-2
+      depositor, so this does not reward generic put spam or wrong-recipient
+      handoffs;
+    - keep the existing v17 rewards for depositor staging, depositor final
+      mile, receive-battery, and heart deposit.
+  - rationale: v21 showed the final put/action decision benefits from
+    additional positive credit, but home-staged movement shaping can distract
+    from ore transfer and battery crafting. v22 isolates the final action
+    breadcrumb while preserving v17's upstream dynamics.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v20/v21/v22/checkpoint pytest group passed (`11` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/v19/v20/v21/v22
+      checkpoint pytest group passed (`41` tests);
+    - ruff passed for the edited modules;
+    - mock v22 trainer smoke passed and emitted validated JSON;
+    - real Tribal v22 trainer smoke passed and emitted validated JSON;
+    - v22 checkpoint behavior-rollout smoke passed from the real Tribal smoke
+      checkpoint, with checkpoint chain-affordance, role-gated, and
+      target-aware masks all inferred as `true`.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - compare primarily against v17 and v21;
+    - require v22 to recover v17-like upstream behavior and improve or match
+      v17 final battery-to-depositor handoffs and heart deposits;
+    - do not update `main_richard.tex` unless this behavior gate passes.
 
 ## Candidate Commands
 
@@ -5130,8 +5217,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-28 short v20 sandbox diagnostics.
 - [x] Inspect Stage-28 handoffs, deposits, final put behavior, and stranded batteries.
 - [x] Implement and smoke v21 home-handoff-rendezvous breadcrumbs.
-- [ ] Launch Stage-29 short v21 sandbox diagnostics.
-- [ ] Inspect Stage-29 handoffs, deposits, final rendezvous behavior, and stranded batteries.
+- [x] Launch Stage-29 short v21 sandbox diagnostics.
+- [x] Inspect Stage-29 handoffs, deposits, final rendezvous behavior, and stranded batteries.
+- [x] Implement and smoke v22 v17-targeted-put breadcrumbs.
+- [ ] Launch Stage-30 short v22 sandbox diagnostics.
+- [ ] Inspect Stage-30 handoffs, deposits, upstream recovery, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

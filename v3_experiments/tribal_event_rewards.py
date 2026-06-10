@@ -30,6 +30,7 @@ EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -594,6 +595,18 @@ EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ACTION_CAPS = {
     **EVENT_V20_HOME_STAGED_HANDOFF_ACTION_CAPS,
     "crafter_battery_move_toward_home_staged_depositor": 160,
     "crafter_battery_arrive_adjacent_home_staged_depositor": 160,
+}
+
+EVENT_V22_V17_TARGETED_PUT_ROLE_COEFFICIENTS = EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS
+
+EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS = {
+    **EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS,
+    "crafter_battery_put_to_targeted_depositor": 20.00,
+}
+
+EVENT_V22_V17_TARGETED_PUT_ACTION_CAPS = {
+    **EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS,
+    "crafter_battery_put_to_targeted_depositor": 160,
 }
 
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
@@ -1309,6 +1322,39 @@ def event_v21_home_handoff_rendezvous_bonuses(
         bonuses,
         navigation_before,
         navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
+def event_v22_v17_targeted_put_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v17 rewards plus a positive target-aware final-put breadcrumb."""
+
+    bonuses = event_v17_depositor_staging_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_crafter_targeted_battery_handoff_breadcrumb(
+        bonuses,
+        navigation_before,
         actions,
         action_mask,
         event_stats_total,
@@ -2058,6 +2104,61 @@ def event_v21_home_handoff_rendezvous_details() -> dict[str, Any]:
     return details
 
 
+def event_v22_v17_targeted_put_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v22 v17-targeted-put diagnostic."""
+
+    details = event_v17_depositor_staging_details()
+    details.update(
+        {
+            "name": "event_v22_v17_targeted_put",
+            "summary": (
+                "V17 depositor-staging curriculum plus a positive-only "
+                "target-aware final-put breadcrumb for battery-carrying "
+                "crafters. This keeps v17's upstream chain dynamics while "
+                "adding credit at the missing final handoff action."
+            ),
+            "role_names": list(EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V22_V17_TARGETED_PUT_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": {
+                "depositor_use_home_assembler": EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ],
+                "crafter_battery_put_to_targeted_depositor": EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS[
+                    "crafter_battery_put_to_targeted_depositor"
+                ],
+            },
+            "final_mile_action_coefficients": {
+                name: coefficient
+                for name, coefficient in EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS.items()
+                if name
+                not in {
+                    "depositor_use_home_assembler",
+                    "crafter_battery_put_to_targeted_depositor",
+                }
+            },
+            "final_mile_action_caps": dict(EVENT_V22_V17_TARGETED_PUT_ACTION_CAPS),
+            "v22_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "changes_action_permissions": False,
+                "uses_home_delivery_breadcrumbs": False,
+                "purpose": (
+                    "Address Stage-29 v21 evidence: the final put/action credit "
+                    "helped final handoffs, but home-delivery/rendezvous movement "
+                    "hurt upstream ore transfer and battery crafting. Keep the "
+                    "v17 base and credit only the existing valid target-aware put."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -2657,6 +2758,38 @@ def _add_crafter_home_staged_handoff_breadcrumb(
             continue
         if put_cap[agent_id] and _mask_allows(mask, agent_id, action):
             bonuses[agent_id] += coefficient
+
+
+def _add_crafter_targeted_battery_handoff_breadcrumb(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    navigation = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    if navigation is None or actions_arr is None or mask is None:
+        return
+    labels = role_labels(navigation.shape[0], len(EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES))
+    put_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_put",
+        EVENT_V22_V17_TARGETED_PUT_ACTION_CAPS["crafter_battery_put_to_targeted_depositor"],
+        bonuses.shape[0],
+    )
+
+    for agent_id, row in enumerate(navigation):
+        if int(labels[agent_id]) != 1 or int(row[NAV_INVENTORY_BATTERY]) <= 0:
+            continue
+        action = int(actions_arr[agent_id])
+        if action // ACTION_ARGUMENT_COUNT != PUT_VERB:
+            continue
+        if put_cap[agent_id] and _mask_allows(mask, agent_id, action):
+            bonuses[agent_id] += EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS[
+                "crafter_battery_put_to_targeted_depositor"
+            ]
 
 
 def _add_crafter_home_staged_depositor_rendezvous_breadcrumbs(
