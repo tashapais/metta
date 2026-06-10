@@ -162,6 +162,116 @@ Immediate operating plan:
   necessary follow-up analyses are stable. Completed in Overleaf commit
   `eef90a1`.
 
+## SMACv2 Boundary-Condition Rerun Addendum
+
+The paper also contains a separate SMACv2 boundary-condition claim:
+`10gen_terran`, 6 allied agents versus 6 enemies, Terran unit types
+marine/marauder/medivac, individual versus shared feedback, 3 independent seeds
+per condition. This is not part of the Tribal Village behavior-recovery stream,
+but it is relevant to the paper's metric-scope claim.
+
+Current provenance status:
+
+- The Overleaf source at
+  `/Users/relh/Code/overleaf/representation-collapse-paper/samples/main.tex`
+  contains the SMACv2 table values:
+  - Individual: EffRank/n `0.622 +/- 0.256`, D_act `0.134 +/- 0.084`,
+    probe `0.798 +/- 0.049`.
+  - Shared: EffRank/n `0.723 +/- 0.089`, D_act `0.040 +/- 0.031`,
+    probe `0.802 +/- 0.097`.
+- Overleaf commit `1dfe9cf` added these results on 2026-05-13 with the note:
+  6 runs, individual+shared x 3 seeds, all converged; individual rewards used
+  SC2-API HP-delta credit for attackers and heal credit for medivacs.
+- The committed Metta experiment scripts do not contain the referenced
+  `run_smacv2_experiments` runner. Current `v3_experiments/paper_exp_smac.py`
+  and archived `origin/tashapais-gpu0-smac-experiments:run_smac_geom.py`
+  use legacy `smac.env.StarCraft2Env` maps such as `3s5z`, `5m_vs_6m`, and
+  `corridor`, and are not the SMACv2 `10gen_terran` boundary-condition runner.
+- W&B access under the current login resolves `tashapais/metta`, but narrow
+  searches for SMAC, SMACv2, `10gen`, and `terran` did not find the historical
+  runs. Treat the Overleaf numbers as paper provenance only until raw run logs
+  or a rerun reproduce them.
+- The current sandboxes `relh-sandbox-1` and `relh-sandbox-2` are up and idle,
+  but neither currently has StarCraft II, `smac`, or `smacv2` installed.
+
+Rerun plan:
+
+1. Reconstruct a dedicated SMACv2 runner rather than reusing the legacy SMAC
+   scripts. The runner must use
+   `smacv2.env.starcraft2.wrapper.StarCraftCapabilityEnvWrapper` with
+   `map_name="10gen_terran"`,
+   `n_units=6`, `n_enemies=6`, Terran weighted team generation
+   `[marine, marauder, medivac]`, `observe=True`, random start positions,
+   `obs_own_pos=True`, `use_unit_ranges=True`, and `min_attack_range=2`.
+2. Implement two reward modes:
+   - `shared`: broadcast the standard SMACv2 team reward to all agents.
+   - `individual`: derive per-agent SC2-API credit from HP deltas. Marines and
+     marauders receive damage/kill credit on their chosen enemy target, split
+     among co-attackers of the same target. Medivacs receive restored HP credit
+     on their chosen ally target. Any death penalty must be explicit in the
+     config because negative shaping can change learning.
+3. Preserve the paper metric schema:
+   - EffRank/n: entropy effective rank over flattened evaluation embeddings,
+     divided by `n_agents`.
+   - D_act: ordered off-diagonal KL over policy logits.
+   - Probe: 3-way unit-type probe with labels read from SMACv2 unit type
+     metadata for each sampled timestep; chance is `1/3`.
+4. First run a smoke test on one sandbox:
+   - install StarCraft II 4.10 and SMAC maps under a sandbox-local
+     `SC2PATH`;
+   - install `smacv2` from `git+https://github.com/oxwhirl/smacv2.git`;
+   - reset `10gen_terran` with `n_units=6`, `n_enemies=6`;
+   - run random actions for at least one full episode;
+   - verify unit-type labels, action masks, HP-delta individual reward, and
+     replay saving.
+5. Ramp training only after the smoke test:
+   - seed 0, shared and individual, short budget to check nonzero reward and
+     stable PPO loss;
+   - seeds 0..2 for both conditions once the short runs converge or show
+     sensible win/return curves;
+   - save per-seed JSON, checkpoint, W&B/offline logs, and optional SC2
+     replays.
+6. Only update the paper if the rerun reproduces the boundary-condition pattern:
+   EffRank/n overlapping across reward modes, unit-type probe high in both, and
+   D_act higher under individual attribution. If the rerun fails, preserve the
+   old SMACv2 table as unverified historical evidence and revise the paper text
+   accordingly.
+
+Operational details for the reconstruction:
+
+- Official API reference: `https://github.com/oxwhirl/smacv2`. The README
+  states that SMACv2 keeps the SMAC API shape and provides a
+  `StarCraftCapabilityEnvWrapper` example for `10gen_terran`.
+- Official setup reference:
+  `https://github.com/oxwhirl/pymarl/blob/master/install_sc2.sh`. Use the
+  StarCraft II 4.10 Linux archive and the SMAC maps archive; set `SC2PATH` to
+  the sandbox-local StarCraft II install before running smoke tests.
+- The SMACv2 package source confirms that `10gen_terran` is backed by
+  `32x32_flat`, has Terran unit-type bits, and that `n_agents`/`n_enemies` are
+  overridden by the capability config when `team_gen` is active. This is why
+  the paper's 6-vs-6 condition can still use the `10gen_terran` map name.
+- Unit-type labels should be read from SMACv2 state, not inferred from agent id:
+  `env.get_unit_types()`, `env.agents[a].unit_type`, and the
+  `marine_id`/`marauder_id`/`medivac_id` fields are the available runtime hooks
+  after reset.
+- The individual-reward implementation should record the selected target for
+  every attack/heal action before `env.step(actions)`, then compare
+  `previous_enemy_units`/`enemies` and `previous_ally_units`/`agents` after
+  SMACv2 updates units. Shared reward remains the scalar team reward broadcast
+  to all agents.
+- Rerun artifacts should live outside the legacy `results_smac.json` stream,
+  for example under `v3_experiments/smacv2_boundary_results/`, so old SMAC lead
+  time results cannot be mistaken for the boundary-condition table.
+- Minimum JSON schema per seed:
+  `git_sha`, `smacv2_commit_or_version`, `sc2path`, `sc2_version`,
+  `map_name`, `capability_config`, `reward_mode`, `seed`, `total_timesteps`,
+  `final_win_rate`, `final_team_reward`, `effrank_per_agent`,
+  `d_act_ordered_kl`, `d_act_js`, `unit_type_probe_acc`,
+  `unit_type_probe_chance`, and `artifact_paths`.
+- The aggregate script should emit both mean+std and a paper-ready table row
+  while preserving per-seed values, because the old table reports std across
+  three independent training seeds.
+
 ## Research Question
 
 Can shared-parameter MAPPO learn task-relevant differentiated behavior in Tribal
