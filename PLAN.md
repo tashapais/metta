@@ -4686,6 +4686,89 @@ Stage-19 specialization-forcing follow-up:
     - do not update `main_richard.tex` from v18 unless behavior gates show
       stable, meaningful final-chain behavior suitable for representation
       analysis.
+  - Stage-26 v18 sandbox result, commit `a695364a2`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `202`, seeds `0,1`;
+      - `relh-sandbox-2` job `199`, seeds `2,3`;
+    - direct artifact inspection confirmed all four `result.json` files and
+      `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage26_v18_handoff_rendezvous_1m_a695364a2`;
+    - all four result JSONs record
+      `reward_design=event_v18_handoff_rendezvous`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `204`, seeds `0,1`;
+      - `relh-sandbox-2` job `201`, seeds `2,3`;
+    - aggregate Stage-26 behavior across the `20` evaluation episodes:
+      - `121` ore pickups;
+      - `84` ore-to-crafter targeted handoffs;
+      - `11` battery crafts;
+      - `1` battery-to-depositor targeted handoff;
+      - `0` heart deposits;
+    - per-seed behavior:
+      - seed `0`: `46` ore pickups, `35` ore-to-crafter handoffs,
+        `4` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `3` ore pickups, `1` ore-to-crafter handoff,
+        `0` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `2`: `49` ore pickups, `36` ore-to-crafter handoffs,
+        `0` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `3`: `23` ore pickups, `12` ore-to-crafter handoffs,
+        `7` battery crafts, `1` battery-to-depositor handoff, `0`
+        heart deposits;
+    - interpretation: v18 is a regression and should not be used for paper
+      claims or representation plots. Peer rendezvous reduced battery crafting
+      and eliminated heart deposits relative to v17.
+    - failure diagnosis from per-agent stats:
+      - the one successful battery-to-depositor handoff was real
+        correct-role handoff behavior, but the depositor did not deposit;
+      - this is consistent with peer rendezvous pulling the recipient away
+        from the home-assembler context where final use can occur;
+      - therefore v19 should abandon peer targeting and return to v17's
+        home-staged depositor setup.
+- Stage-27 v19 crafter-home-delivery iteration:
+  - new reward design: `event_v19_crafter_home_delivery`;
+  - v19 keeps v17 depositor home staging, the target-aware handoff mask,
+    chain-compass observation, role-gated action mask, and positive-only
+    shaping rule;
+  - v19 does not add penalties, scripted actions, demonstrations, or simulator
+    rule changes;
+  - v19 adds only positive breadcrumbs for role-1 crafters carrying a battery:
+    - `crafter_battery_move_toward_home`: `+0.75` per step of reduced
+      home-assembler distance when the selected action is a mask-valid move,
+      capped by cumulative successful move count;
+    - `crafter_battery_arrive_adjacent_home`: `+6.00` when such a crafter
+      moves from non-adjacent to adjacent to the home assembler, using the same
+      movement cap;
+  - rationale: v17's best episodes deposited hearts when crafters handed
+    batteries to home-staged depositors. v19 tries to increase that same
+    precondition directly by bringing battery-carrying crafters toward the
+    home area, rather than moving depositors away from home toward crafters.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v17/v18/v19/checkpoint pytest group passed (`10` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/v19/checkpoint
+      pytest group passed (`31` tests);
+    - mock v19 trainer smoke passed and emitted validated JSON;
+    - real Tribal v19 trainer smoke passed and emitted validated JSON;
+    - v19 checkpoint behavior-rollout smoke passed from the real Tribal smoke
+      checkpoint.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - compare v19 primarily against v17, not v18, because v18 was a failed
+      branch;
+    - do not update `main_richard.tex` from v19 unless behavior gates recover
+      and stabilize heart deposits across seeds.
 
 ## Candidate Commands
 
@@ -4838,8 +4921,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-25 short v17 sandbox diagnostics.
 - [x] Inspect Stage-25 deposits, depositor movement, and stranded batteries.
 - [x] Implement and smoke v18 handoff-rendezvous breadcrumbs.
-- [ ] Launch Stage-26 short v18 sandbox diagnostics.
-- [ ] Inspect Stage-26 handoffs, deposits, rendezvous behavior, and stranded batteries.
+- [x] Launch Stage-26 short v18 sandbox diagnostics.
+- [x] Inspect Stage-26 handoffs, deposits, rendezvous behavior, and stranded batteries.
+- [x] Implement and smoke v19 crafter-home-delivery breadcrumbs.
+- [ ] Launch Stage-27 short v19 sandbox diagnostics.
+- [ ] Inspect Stage-27 handoffs, deposits, home-delivery behavior, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

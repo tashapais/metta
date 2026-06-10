@@ -59,6 +59,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES,
     EVENT_V18_HANDOFF_RENDEZVOUS_ACTION_COEFFICIENTS,
     EVENT_V18_HANDOFF_RENDEZVOUS_ROLE_NAMES,
+    EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_COEFFICIENTS,
+    EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -103,6 +105,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v17_depositor_staging_details,
     event_v18_handoff_rendezvous_bonuses,
     event_v18_handoff_rendezvous_details,
+    event_v19_crafter_home_delivery_bonuses,
+    event_v19_crafter_home_delivery_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -1094,6 +1098,89 @@ def test_event_v18_falls_back_to_home_staging_without_battery_crafter():
     )
 
 
+def test_event_v19_crafter_home_delivery_details_are_serializable():
+    details = event_v19_crafter_home_delivery_details()
+
+    assert details["name"] == "event_v19_crafter_home_delivery"
+    assert details["role_names"] == list(EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES)
+    assert details["v19_changes"]["target_aware_handoff_mask"] is True
+    assert details["v19_changes"]["reward_penalties_added"] is False
+    assert details["v19_changes"]["scripted_policy_added"] is False
+    assert "crafter_battery_move_toward_home" in details["final_mile_action_coefficients"]
+
+
+def test_event_v19_rewards_battery_crafter_home_delivery_beyond_v17():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [5, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 3
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v19 = event_v19_crafter_home_delivery_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v19[0] == pytest.approx(v17[0])
+    assert v19[1] - v17[1] == pytest.approx(
+        EVENT_V19_CRAFTER_HOME_DELIVERY_ACTION_COEFFICIENTS["crafter_battery_move_toward_home"]
+    )
+    assert v19[2] == pytest.approx(v17[2])
+
+
+def test_event_v19_does_not_reward_empty_crafter_home_delivery():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [5, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 3
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v19 = event_v19_crafter_home_delivery_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    np.testing.assert_allclose(v19, v17)
+
+
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)
 
@@ -1910,6 +1997,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v18_handoff_rendezvous",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v19_crafter_home_delivery",
             "chain_affordance_action_mask": False,
         }
     )
