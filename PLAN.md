@@ -51,7 +51,7 @@ claim ledger instead of treating every ramp result as paper evidence:
 | Event-based Tribal rewards can recover meaningful chain behavior in the reconstructed 12-agent Tribal Village setup. | Supported by Stage-15 behavior gates for Stage-13 alpha0 and alpha0-to-alpha0.6 promoted checkpoints. | Package the result as a provenance bundle with per-seed JSON, replay index, aggregate table, commands, git SHA, and checkpoint paths. |
 | The reconstructed Tribal Village setup does not recover the original fixed `agent_id % 3` role-specialization claim. | Supported by Stage-16 fixed-role probes near chance and Stage-17 behavior-derived role audit showing all agents do all chain stages. | Keep the wording negative and bounded to this reconstruction; do not call it a general MAPPO failure. |
 | Shared reward mixing changes geometry/action diversity after behavior recovery. | Partially supported by Stage-16, but the effect is not the original clean fixed-role story. | Regenerate old-style figures from behavior-valid artifacts and decide whether the paper should present this as geometry-without-specialization rather than role collapse. |
-| v17/v23-style final-mile shaping can produce reliable depositor behavior. | Not supported yet. v17 is the best short-budget final-mile diagnostic; v23 improved v22 but still failed the behavior gate. | Run the Stage-32 budget diagnostic with a v17 budget control, inspect replays, and require final deposits across seeds before representation analysis. |
+| v17/v23-style final-mile shaping can produce reliable depositor behavior. | Not supported, now with budget-control evidence. Stage-32 ran both arms at `4M` steps: v23 collapsed upstream (`70/40/5/0/0` ore/o2c/crafts/handoffs/hearts) and the v17 control held upstream but stranded `33/36` batteries (`150/91/36/1/0`). Longer budgets degrade final-mile completion (v17: `5` handoffs / `4` hearts at 1M vs `1` / `0` at 4M). | Final-mile completion needs a different mechanism than positive-only shaping or budget scaling. Treat the v17-family 1M gate results as the current behavior ceiling for this reconstruction; report the campaign in the paper only as a bounded diagnostic/limitation finding. |
 | SMACv2 `10gen_terran` is a boundary condition where unit type makes EffRank/n saturate while Dact still responds to attribution granularity. | Historical Overleaf evidence only. Runner/log provenance is missing. | Reconstruct the SMACv2 runner, rerun 3 seeds per condition, and update the paper only from new artifacts or explicitly label the table historical/unverified. |
 | The old passive-shaped Tribal Village geometry table is evidence for learned roles. | Rejected. It is diagnostic only. | Keep it out of positive claims; use it only as a failure mode where metrics looked coherent while behavior failed. |
 
@@ -119,6 +119,12 @@ Current uncertainty:
   evidence stream. The paper now states the negative result: reward redesign
   recovers meaningful chain behavior, but the reconstructed setup does not
   support the original MAPPO fixed-role specialization claim.
+- Stage-32 closed the v23 question with a budget-matched v17 control: at `4M`
+  agent steps v23 collapses upstream while v17 holds upstream but strands
+  batteries on crafters with zero deposits. Budget scaling degrades final-mile
+  completion for both designs, so the v17-family 1M short-budget gate results
+  are the current behavior ceiling, and the v11-v23 role-targeted shaping
+  campaign is recorded as a bounded negative result.
 
 Immediate operating plan:
 
@@ -5314,6 +5320,124 @@ Stage-19 specialization-forcing follow-up:
       the home assembler, still without penalties, scripted actions, or
       action-permission changes;
     - do not update `main_richard.tex` unless behavior gates pass.
+- Stage-32 v23/v17 longer-budget result, code commit `576673bc0`:
+  - launch worktrees: the existing
+    `/workspace/tasha_metta_stage31_v23_576673bc0` on both sandboxes. Local
+    HEAD `be56dfa7d` differs from `576673bc0` only by `PLAN.md` edits, so the
+    training code is identical to the validated Stage-31 commit;
+  - both arms ran with the pre-registered Stage-32 flags: `shared_frac=0.0`,
+    `4,000,008` agent steps, `--use-action-mask`,
+    `--chain-compass-observation`, `num-steps 64`, `minibatch 512`,
+    `update-epochs 4`, deterministic behavior gates with `5` episodes x `500`
+    steps per seed (eval seed `32000+seed`), saved replays,
+    `--wandb-mode offline`;
+  - v23 primary arm roots:
+    `/workspace/tribal_event_mask_runs/stage32_v23_v17_depositor_rendezvous_4m_576673bc0`
+    and `..._behavior`;
+  - v17 budget-control roots:
+    `/workspace/tribal_event_mask_runs/stage32_v17_depositor_staging_4m_control_576673bc0`
+    and `..._behavior`;
+  - sandbox capacity allowed running the control in parallel, so both arms
+    launched simultaneously as combined train+behavior jobs:
+    - `relh-sandbox-1` Sky job `225` (v23, seeds `0,1`) and job `226`
+      (v17 control, seeds `0,1`), both succeeded in ~29-30 min;
+    - `relh-sandbox-2` Sky job `221` (v23, seeds `2,3`) and job `222`
+      (v17 control, seeds `2,3`), both succeeded in ~29 min;
+    - all eight `result.json` files, eight `final_model.pt` checkpoints, and
+      eight `rollout_metrics.json` behavior summaries were present after the
+      jobs finished.
+  - Stage-32 v23 4M training metrics:
+
+    | Seed | EffRank/n | Dact KL | Dact JS | Probe | Raw return |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `0.1848` | `7.1793` | `0.2766` | `0.3575` | `-7.2875` |
+    | `1` | `0.1759` | `6.1302` | `0.2450` | `0.4669` | `-7.5993` |
+    | `2` | `0.1967` | `5.7108` | `0.2318` | `0.5043` | `-5.9663` |
+    | `3` | `0.1410` | `6.0214` | `0.2328` | `0.4095` | `-5.5748` |
+
+  - Stage-32 v17 4M control training metrics:
+
+    | Seed | EffRank/n | Dact KL | Dact JS | Probe | Raw return |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `0.2163` | `8.1792` | `0.3350` | `0.4013` | `-5.5198` |
+    | `1` | `0.1536` | `5.7296` | `0.1965` | `0.4798` | `-6.5665` |
+    | `2` | `0.2027` | `7.5784` | `0.2771` | `0.3834` | `-6.5930` |
+    | `3` | `0.2286` | `10.2340` | `0.3551` | `0.5599` | `-5.3148` |
+
+  - Stage-32 v23 4M behavior gate over `20` evaluation episodes
+    (`4` seeds x `5` episodes x `500` steps; stranded = final battery
+    inventory at episode end, summed over episodes):
+
+    | Seed | Ore pickups | Ore-to-crafter | Battery crafts | Battery-to-depositor | Heart deposits | Stranded batteries |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `15` | `7` | `1` | `0` | `0` | `1` |
+    | `1` | `39` | `26` | `1` | `0` | `0` | `1` |
+    | `2` | `15` | `6` | `3` | `0` | `0` | `3` |
+    | `3` | `1` | `1` | `0` | `0` | `0` | `0` |
+    | **Total** | **`70`** | **`40`** | **`5`** | **`0`** | **`0`** | **`5`** |
+
+  - Stage-32 v17 4M control behavior gate over `20` evaluation episodes:
+
+    | Seed | Ore pickups | Ore-to-crafter | Battery crafts | Battery-to-depositor | Heart deposits | Stranded batteries |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `49` | `28` | `10` | `0` | `0` | `8` |
+    | `1` | `33` | `22` | `7` | `0` | `0` | `7` |
+    | `2` | `16` | `8` | `4` | `1` | `0` | `4` |
+    | `3` | `52` | `33` | `15` | `0` | `0` | `14` |
+    | **Total** | **`150`** | **`91`** | **`36`** | **`1`** | **`0`** | **`33`** |
+
+  - Stage-32 replay evidence (battery inventory traced through snapshot
+    frames):
+    - v17 control seed `3` episode `2` (upstream-strong failure): all four
+      role-1 crafters (agents `1,4,7,10`) crafted batteries by steps
+      `60-120` and held them to step `480`; no crafter ever handed off;
+    - v17 control seed `2` episode `4` (the only handoff in either arm):
+      one crafter-to-depositor battery handoff occurred near step `60`, and
+      the role-2 depositor (agent `11`) then held the battery for the
+      remaining `420` steps without depositing;
+    - v23 seed `3` episode `4` (representative dead seed): no agent ever
+      held a battery; four of five seed-3 episodes have zero ore pickups
+      while mean move fraction stays at `0.999`;
+    - replay roots:
+      `/workspace/tribal_event_mask_runs/stage32_v23_v17_depositor_rendezvous_4m_576673bc0_behavior/seed<k>/replays/`
+      and
+      `/workspace/tribal_event_mask_runs/stage32_v17_depositor_staging_4m_control_576673bc0_behavior/seed<k>/replays/`.
+  - Stage-32 failure classification (pre-registered buckets):
+    - v23 4M: upstream acquisition failure, with policy-collapse signs in
+      seeds `2,3` (multiple zero-event episodes despite ~`0.999` move
+      fraction). Ore pickups fell from `143` (v23 1M) to `70` and battery
+      crafts from `29` to `5`, far below the v17 short-budget baseline;
+    - v17 4M control: handoff failure. Upstream behavior approximately holds
+      (`150/91/36` vs `179/105/45` at 1M), but `33` of `36` crafted
+      batteries end episodes stranded on crafters, with `1`
+      battery-to-depositor handoff and `0` heart deposits. The single
+      handoff episode also shows a final-use failure (the depositor held the
+      battery without depositing);
+    - neither arm is a final-use-only failure, so the pre-registered narrow
+      v24 final-completion boost is not triggered.
+  - Stage-32 decision:
+    - v23 long-budget fails the promotion criterion outright (`0`
+      battery-to-depositor handoffs and `0` heart deposits vs the required
+      `>=5` and `>=4`) and should not update `main_richard.tex` as positive
+      evidence;
+    - the pre-registered upstream rule applies: v23 failed upstream while the
+      v17 4M control held upstream behavior, so stop iterating on the v23
+      design and revert to the v17 family for any next reward design;
+    - the budget control is the key scientific result of this stage: extra
+      budget degrades deterministic final-mile behavior for both designs.
+      v17 went from `5` handoffs / `4` hearts at 1M to `1` handoff / `0`
+      hearts at 4M with the same code, masks, and eval protocol. Combined
+      with the earlier strict-v10 2M-to-10M degradation, short budgets
+      (~1M-2M) remain the only regime where this reconstruction completes
+      the final chain at all under positive-only shaping;
+    - paper-facing consequence: the role-targeted final-mile shaping
+      campaign (v11-v23, Stages 19-32) is now a bounded negative result.
+      Thirteen positive-only reward designs over role-gated affordances plus
+      a 4x budget ramp did not produce reliable role-specialized chain
+      completion, and budget scaling made it worse. This strengthens the
+      paper's behavior-first negative narrative and belongs in
+      `main_richard.tex` only as a clearly-labeled diagnostic/limitation
+      finding, not as a behavior-validated positive stream.
 
 ## Candidate Commands
 
@@ -5514,13 +5638,16 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Implement and smoke v23 v17-depositor-rendezvous breadcrumbs.
 - [x] Launch Stage-31 short v23 sandbox diagnostics.
 - [x] Inspect Stage-31 handoffs, deposits, upstream recovery, and stranded batteries.
-- [ ] Launch Stage-32 v23 longer-budget diagnostics.
-- [ ] Launch Stage-32 v17 4M budget control if v23 is close or ambiguous, or
+- [x] Launch Stage-32 v23 longer-budget diagnostics.
+- [x] Launch Stage-32 v17 4M budget control if v23 is close or ambiguous, or
       in parallel if sandbox capacity allows.
-- [ ] Inspect Stage-32 handoffs, deposits, upstream recovery, and stranded batteries.
-- [ ] Classify Stage-32 failures as upstream acquisition, handoff, final-use, or
+- [x] Inspect Stage-32 handoffs, deposits, upstream recovery, and stranded batteries.
+- [x] Classify Stage-32 failures as upstream acquisition, handoff, final-use, or
       policy-collapse failures from replay evidence.
-- [ ] Create the Stage-32 paper-readiness bundle only if behavior gates pass.
+- [x] Create the Stage-32 paper-readiness bundle only if behavior gates pass.
+      (Gates failed in both arms; no bundle created per the gate-fail rule.)
+- [x] Update `main_richard.tex` with the bounded negative finding from the
+      v11-v23 role-targeted shaping campaign and the Stage-32 budget control.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 - [ ] Reconstruct and smoke-test the SMACv2 `10gen_terran` boundary runner.
 - [ ] Rerun SMACv2 3 seeds per reward mode and aggregate the old table schema.
