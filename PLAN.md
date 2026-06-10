@@ -5056,6 +5056,103 @@ Stage-19 specialization-forcing follow-up:
     - require v22 to recover v17-like upstream behavior and improve or match
       v17 final battery-to-depositor handoffs and heart deposits;
     - do not update `main_richard.tex` unless this behavior gate passes.
+  - Stage-30 v22 sandbox result, commit `6292d9c4a`:
+    - training root:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a`;
+    - behavior root:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior`;
+    - launch worktree on both sandboxes:
+      `/workspace/tasha_metta_stage30_v22_6292d9c4a`;
+    - training jobs:
+      - `relh-sandbox-1` Sky job `221`, seeds `0,1`, succeeded;
+      - `relh-sandbox-2` Sky job `217`, seeds `2,3`, succeeded;
+    - behavior jobs:
+      - `relh-sandbox-1` Sky job `222`, seeds `0,1`, succeeded;
+      - `relh-sandbox-2` Sky job `218`, seeds `2,3`, succeeded.
+    - all four `result.json` files and all four `final_model.pt`
+      checkpoints were present after training.
+  - Stage-30 v22 training metrics:
+
+    | Seed | EffRank/n | Dact KL | Dact JS | Probe | Raw return |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `0.2174` | `9.9356` | `0.3597` | `0.4741` | `-5.4698` |
+    | `1` | `0.1499` | `9.6559` | `0.3283` | `0.4298` | `-6.7195` |
+    | `2` | `0.1977` | `8.3558` | `0.2791` | `0.4272` | `-5.9532` |
+    | `3` | `0.1415` | `8.0587` | `0.2768` | `0.3994` | `-5.0383` |
+
+  - Stage-30 v22 behavior gate over `20` evaluation episodes
+    (`4` seeds x `5` episodes x `500` steps):
+
+    | Seed | Ore pickups | Ore-to-crafter | Battery crafts | Battery-to-depositor | Heart deposits |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `30` | `21` | `5` | `0` | `0` |
+    | `1` | `23` | `15` | `3` | `2` | `0` |
+    | `2` | `35` | `19` | `5` | `0` | `0` |
+    | `3` | `13` | `4` | `1` | `0` | `0` |
+    | **Total** | **`101`** | **`59`** | **`14`** | **`2`** | **`0`** |
+
+  - Stage-30 v22 replay artifacts:
+    - seed `0` examples:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed0/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed0/replays/episode_001.jsonl`;
+    - seed `1` examples:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed1/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed1/replays/episode_001.jsonl`;
+    - seed `2` examples:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed2/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed2/replays/episode_001.jsonl`;
+    - seed `3` examples:
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed3/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage30_v22_v17_targeted_put_1m_6292d9c4a_behavior/seed3/replays/episode_001.jsonl`.
+  - Stage-30 v22 decision:
+    - failed the paper behavior gate;
+    - v22 strands most crafted batteries in inventory and produces no heart
+      deposits in the deterministic gate;
+    - compared with v17 (`179` ore pickups, `105` ore-to-crafter handoffs,
+      `45` battery crafts, `5` battery-to-depositor handoffs, `4` hearts),
+      v22 is worse upstream and worse on final deposits;
+    - compared with v21, v22 preserves more upstream activity but loses the
+      nonzero heart deposits;
+    - do not update `main_richard.tex` from v22.
+- Stage-31 v23 depositor-rendezvous iteration:
+  - new reward design: `event_v23_v17_depositor_rendezvous`;
+  - v23 keeps v17 as the base and keeps v22's positive target-aware final-put
+    breadcrumb;
+  - v23 adds only two capped positive breadcrumbs after a role-1 crafter has a
+    battery:
+    - `crafter_battery_move_toward_empty_depositor`: reward masked movement
+      that decreases distance to the nearest empty role-2 depositor;
+    - `crafter_battery_arrive_adjacent_empty_depositor`: reward becoming
+      adjacent to that empty depositor.
+  - rationale:
+    - v22 shows the core failure remains stranded batteries, not lack of ore
+      pickup alone;
+    - v18-style bidirectional rendezvous and v19-v21 home-delivery shaping
+      disrupted upstream behavior, so v23 only moves the crafter side after
+      the battery already exists;
+    - empty depositors keep the v17 home-staging incentive; v23 does not add
+      depositor-chases-crafter rewards, penalties, scripted actions, or new
+      action permissions.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v21/v22/v23/checkpoint pytest group passed (`11` tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/v18/v19/v20/v21/v22/v23
+      checkpoint pytest group passed (`44` tests);
+    - ruff passed for the edited modules;
+    - mock v23 trainer smoke passed at `/tmp/v23_mock_smoke_dRODr7`;
+    - real Tribal v23 trainer smoke passed at `/tmp/v23_tribal_smoke_fvqpLo`;
+    - v23 checkpoint behavior-rollout smoke passed at
+      `/tmp/v23_behavior_smoke_QqwQPX`.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - compare primarily against v17, v21, and v22;
+    - require v23 to recover v17-like upstream behavior and improve or match
+      v17 final battery-to-depositor handoffs and heart deposits;
+    - do not update `main_richard.tex` unless this behavior gate passes.
 
 ## Candidate Commands
 
@@ -5220,8 +5317,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-29 short v21 sandbox diagnostics.
 - [x] Inspect Stage-29 handoffs, deposits, final rendezvous behavior, and stranded batteries.
 - [x] Implement and smoke v22 v17-targeted-put breadcrumbs.
-- [ ] Launch Stage-30 short v22 sandbox diagnostics.
-- [ ] Inspect Stage-30 handoffs, deposits, upstream recovery, and stranded batteries.
+- [x] Launch Stage-30 short v22 sandbox diagnostics.
+- [x] Inspect Stage-30 handoffs, deposits, upstream recovery, and stranded batteries.
+- [x] Implement and smoke v23 v17-depositor-rendezvous breadcrumbs.
+- [ ] Launch Stage-31 short v23 sandbox diagnostics.
+- [ ] Inspect Stage-31 handoffs, deposits, upstream recovery, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

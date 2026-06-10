@@ -67,6 +67,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES,
     EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS,
     EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES,
+    EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS,
+    EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -119,6 +121,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v21_home_handoff_rendezvous_details,
     event_v22_v17_targeted_put_bonuses,
     event_v22_v17_targeted_put_details,
+    event_v23_v17_depositor_rendezvous_bonuses,
+    event_v23_v17_depositor_rendezvous_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -1562,6 +1566,106 @@ def test_event_v22_requires_masked_put_and_battery_crafter():
 
     np.testing.assert_allclose(no_battery_v22, no_battery_v17)
     np.testing.assert_allclose(masked_v22, masked_v17)
+
+
+def test_event_v23_v17_depositor_rendezvous_details_are_serializable():
+    details = event_v23_v17_depositor_rendezvous_details()
+
+    assert details["name"] == "event_v23_v17_depositor_rendezvous"
+    assert details["role_names"] == list(EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES)
+    assert details["v23_changes"]["target_aware_handoff_mask"] is True
+    assert details["v23_changes"]["reward_penalties_added"] is False
+    assert details["v23_changes"]["scripted_policy_added"] is False
+    assert details["v23_changes"]["changes_action_permissions"] is False
+    assert details["v23_changes"]["depositor_chases_crafter"] is False
+    assert "crafter_battery_move_toward_empty_depositor" in details["final_mile_action_coefficients"]
+
+
+def test_event_v23_rewards_crafter_moving_toward_empty_depositor_beyond_v22():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    after[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [3, 5], [5, 5]]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [4, 5], [5, 5]]
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    move_east = MOVE_VERB * ACTION_ARGUMENT_COUNT + 3
+    actions = np.array([move_east, move_east, move_east])
+    action_mask = np.zeros((3, 56), dtype=bool)
+    action_mask[1, move_east] = True
+
+    v22 = event_v22_v17_targeted_put_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v23 = event_v23_v17_depositor_rendezvous_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v23[0] == pytest.approx(v22[0])
+    assert v23[1] - v22[1] == pytest.approx(
+        EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+            "crafter_battery_move_toward_empty_depositor"
+        ]
+        + EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+            "crafter_battery_arrive_adjacent_empty_depositor"
+        ]
+    )
+    assert v23[2] == pytest.approx(v22[2])
+
+
+def test_event_v23_does_not_reward_empty_depositor_chasing_crafter():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    after[:, [NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 5
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [3, 5], [6, 5]]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [3, 5], [5, 5]]
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    move_west = MOVE_VERB * ACTION_ARGUMENT_COUNT + 7
+    actions = np.array([move_west, move_west, move_west])
+    action_mask = np.zeros((3, 56), dtype=bool)
+    action_mask[2, move_west] = True
+
+    v22 = event_v22_v17_targeted_put_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v23 = event_v23_v17_depositor_rendezvous_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    np.testing.assert_allclose(v23, v22)
 
 
 def test_effective_rank_uses_entropy_of_singular_values():

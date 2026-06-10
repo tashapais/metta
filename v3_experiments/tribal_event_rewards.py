@@ -31,6 +31,7 @@ EVENT_V19_CRAFTER_HOME_DELIVERY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAM
 EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -607,6 +608,20 @@ EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS = {
 EVENT_V22_V17_TARGETED_PUT_ACTION_CAPS = {
     **EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS,
     "crafter_battery_put_to_targeted_depositor": 160,
+}
+
+EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_COEFFICIENTS = EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS
+
+EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS = {
+    **EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS,
+    "crafter_battery_move_toward_empty_depositor": 0.50,
+    "crafter_battery_arrive_adjacent_empty_depositor": 4.00,
+}
+
+EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_CAPS = {
+    **EVENT_V22_V17_TARGETED_PUT_ACTION_CAPS,
+    "crafter_battery_move_toward_empty_depositor": 160,
+    "crafter_battery_arrive_adjacent_empty_depositor": 160,
 }
 
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
@@ -1355,6 +1370,40 @@ def event_v22_v17_targeted_put_bonuses(
     _add_crafter_targeted_battery_handoff_breadcrumb(
         bonuses,
         navigation_before,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
+def event_v23_v17_depositor_rendezvous_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v22 rewards plus positive crafter-to-depositor rendezvous breadcrumbs."""
+
+    bonuses = event_v22_v17_targeted_put_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_crafter_empty_depositor_rendezvous_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
         actions,
         action_mask,
         event_stats_total,
@@ -2159,6 +2208,64 @@ def event_v22_v17_targeted_put_details() -> dict[str, Any]:
     return details
 
 
+def event_v23_v17_depositor_rendezvous_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v23 depositor-rendezvous diagnostic."""
+
+    details = event_v22_v17_targeted_put_details()
+    details.update(
+        {
+            "name": "event_v23_v17_depositor_rendezvous",
+            "summary": (
+                "V22 v17-targeted-put rewards plus small positive-only "
+                "movement and arrival breadcrumbs for battery-carrying crafters "
+                "to become adjacent to an empty depositor. Empty depositors keep "
+                "the v17 home-staging incentives; this does not make depositors "
+                "chase crafters or change action permissions."
+            ),
+            "role_names": list(EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs)
+                for role, coeffs in EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": {
+                "depositor_use_home_assembler": EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ],
+                "crafter_battery_put_to_targeted_depositor": EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+                    "crafter_battery_put_to_targeted_depositor"
+                ],
+            },
+            "final_mile_action_coefficients": {
+                name: coefficient
+                for name, coefficient in EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS.items()
+                if name
+                not in {
+                    "depositor_use_home_assembler",
+                    "crafter_battery_put_to_targeted_depositor",
+                }
+            },
+            "final_mile_action_caps": dict(EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_CAPS),
+            "v23_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "changes_action_permissions": False,
+                "uses_home_delivery_breadcrumbs": False,
+                "depositor_chases_crafter": False,
+                "purpose": (
+                    "Address Stage-30 v22 evidence: crafters still produce "
+                    "batteries but leave most of them stranded. Add dense "
+                    "positive credit only after a crafter has a battery and "
+                    "moves toward an empty depositor."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -2790,6 +2897,78 @@ def _add_crafter_targeted_battery_handoff_breadcrumb(
             bonuses[agent_id] += EVENT_V22_V17_TARGETED_PUT_ACTION_COEFFICIENTS[
                 "crafter_battery_put_to_targeted_depositor"
             ]
+
+
+def _add_crafter_empty_depositor_rendezvous_breadcrumbs(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if before is None or after is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    labels = role_labels(before.shape[0], len(EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES))
+
+    empty_depositors = [
+        agent_id
+        for agent_id, row in enumerate(before)
+        if int(labels[agent_id]) == 2 and int(row[NAV_INVENTORY_BATTERY]) <= 0
+    ]
+    if not empty_depositors:
+        return
+
+    battery_crafters = [
+        agent_id
+        for agent_id, row in enumerate(before)
+        if int(labels[agent_id]) == 1 and int(row[NAV_INVENTORY_BATTERY]) > 0
+    ]
+    if not battery_crafters:
+        return
+
+    move_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_CAPS[
+            "crafter_battery_move_toward_empty_depositor"
+        ],
+        bonuses.shape[0],
+    )
+    arrival_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_CAPS[
+            "crafter_battery_arrive_adjacent_empty_depositor"
+        ],
+        bonuses.shape[0],
+    )
+
+    for agent_id in battery_crafters:
+        target = _nearest_peer_xy(before, agent_id, empty_depositors)
+        if target is None:
+            continue
+        _add_peer_rendezvous_move_bonus(
+            bonuses,
+            before,
+            after,
+            actions_arr,
+            mask,
+            agent_id,
+            target,
+            move_coefficient=EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+                "crafter_battery_move_toward_empty_depositor"
+            ],
+            arrival_coefficient=EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS[
+                "crafter_battery_arrive_adjacent_empty_depositor"
+            ],
+            move_cap=move_cap,
+            arrival_cap=arrival_cap,
+        )
 
 
 def _add_crafter_home_staged_depositor_rendezvous_breadcrumbs(
