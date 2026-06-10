@@ -52,6 +52,9 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES,
     EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS,
     EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES,
+    EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS,
+    EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS,
+    EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -90,6 +93,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v14_target_aware_handoff_details,
     event_v15_depositor_final_mile_bonuses,
     event_v15_depositor_final_mile_details,
+    event_v16_handoff_reliability_bonuses,
+    event_v16_handoff_reliability_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -836,6 +841,68 @@ def test_event_v15_rewards_depositor_arrival_beyond_v14():
     assert v15[2] - v14[2] == pytest.approx(
         EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_move_toward_home"]
         + EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_COEFFICIENTS["depositor_battery_arrive_adjacent_home"]
+    )
+
+
+def test_event_v16_handoff_reliability_details_are_serializable():
+    details = event_v16_handoff_reliability_details()
+
+    assert details["name"] == "event_v16_handoff_reliability"
+    assert details["role_names"] == list(EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES)
+    assert details["v16_changes"]["target_aware_handoff_mask"] is True
+    assert details["v16_changes"]["reward_penalties_added"] is False
+    assert details["v16_changes"]["scripted_policy_added"] is False
+    assert details["role_coefficients"] == EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS
+
+
+def test_event_v16_strengthens_battery_handoff_credit_beyond_v15():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    stat_index = {name: idx for idx, name in enumerate(SIMULATOR_STAT_COLUMNS)}
+    stats[1, stat_index["put_battery_to_depositor"]] = 1
+    stats[2, stat_index["receive_battery_from_crafter"]] = 1
+
+    v15 = event_v15_depositor_final_mile_bonuses(stats, stats, num_agents=3)
+    v16 = event_v16_handoff_reliability_bonuses(stats, stats, num_agents=3)
+
+    assert v16[0] == pytest.approx(v15[0])
+    assert v16[1] - v15[1] == pytest.approx(
+        EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS["crafter_logistics"]["put_battery_to_depositor"] - 4.0
+    )
+    assert v16[2] - v15[2] == pytest.approx(
+        EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS["depositor"]["receive_battery_from_crafter"] - 8.0
+    )
+
+
+def test_event_v16_strengthens_final_depositor_use_beyond_v15():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [7, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 1
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    actions = np.array([USE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v15 = event_v15_depositor_final_mile_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=before,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v16 = event_v16_handoff_reliability_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=before,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v16[2] - v15[2] == pytest.approx(
+        EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS["depositor_use_home_assembler"] - 2.0
     )
 
 
@@ -1637,6 +1704,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v15_depositor_final_mile",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v16_handoff_reliability",
             "chain_affordance_action_mask": False,
         }
     )

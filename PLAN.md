@@ -4405,15 +4405,101 @@ Stage-19 specialization-forcing follow-up:
       `checkpoint_role_gated_chain_mask=true`,
       `checkpoint_target_aware_handoff_mask=true`, and
       `chain_compass_observation=true`.
+  - Stage-23 v15 sandbox result, commit `80b116ae2`:
+    - staged fresh sandbox worktrees at `/workspace/tasha_metta_stage23_v15`
+      on both `relh-sandbox-1` and `relh-sandbox-2`;
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `183`, seeds `0,1`;
+      - `relh-sandbox-2` job `178`, seeds `2,3`;
+    - Sky again marked the detached jobs failed with return code `141`, but
+      direct artifact inspection confirmed all four `result.json` files and
+      `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage23_v15_depositor_final_mile_1m_80b116ae2`;
+    - all four result JSONs record
+      `reward_design=event_v15_depositor_final_mile`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `186`, seeds `0,1`;
+      - `relh-sandbox-2` job `181`, seeds `2,3`;
+    - aggregate Stage-23 behavior across the `20` evaluation episodes:
+      - `111` ore pickups;
+      - `59` ore-to-crafter targeted handoffs;
+      - `27` battery crafts;
+      - `3` battery-to-depositor targeted handoffs;
+      - `1` heart deposit;
+    - per-seed behavior:
+      - seed `0`: `19` ore pickups, `7` ore-to-crafter handoffs,
+        `2` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `22` ore pickups, `14` ore-to-crafter handoffs,
+        `8` battery crafts, `1` battery-to-depositor handoff, `0`
+        heart deposits;
+      - seed `2`: `41` ore pickups, `19` ore-to-crafter handoffs,
+        `13` battery crafts, `2` battery-to-depositor handoffs, `1`
+        heart deposit;
+      - seed `3`: `29` ore pickups, `19` ore-to-crafter handoffs,
+        `4` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+    - best diagnostic episode was seed `2`, episode `3`:
+      `9` ore pickups, `6` ore-to-crafter handoffs, `5` battery crafts,
+      `2` battery-to-depositor handoffs, and `1` heart deposit;
+      replay path:
+      `/workspace/tribal_event_mask_runs/stage23_v15_depositor_final_mile_1m_80b116ae2_behavior/seed2/replays/episode_003.jsonl`;
+    - replay and per-agent stats confirm the one successful deposit was the
+      right kind of behavior: depositor-role agent `11` received a battery from
+      a crafter and recorded `deposit_heart=1`; the assembler heart count rose
+      from `5` to `6` by the next recorded snapshot;
+    - v15 is therefore a partial behavioral success, not a paper-ready result.
+      It proves the learned-policy chain can complete ore -> battery ->
+      depositor -> heart at least once, but the completion rate is too low and
+      final batteries are still often stranded on crafters or depositors.
+- Stage-24 v16 handoff-reliability iteration:
+  - new reward design: `event_v16_handoff_reliability`;
+  - v16 keeps the v14/v15 target-aware handoff mask, chain-compass
+    observation, role-gated action mask, and positive-only shaping rule;
+  - v16 does not add penalties, scripted actions, demonstrations, or simulator
+    rule changes;
+  - v16 changes only the positive coefficients implicated by the Stage-23
+    bottleneck:
+    - crafter `put_battery_to_depositor`: `4.0 -> 16.0`;
+    - depositor `receive_battery_from_crafter`: `8.0 -> 14.0`;
+    - depositor `deposit_heart`: `70.0 -> 80.0`;
+    - depositor valid home-assembler `use`: `2.0 -> 6.0`;
+    - depositor battery move toward home: `0.50 -> 0.75`;
+    - depositor adjacent-home arrival: `4.00 -> 6.00`;
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v15/v16/target-aware/checkpoint pytest group passed (`9`
+      tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/checkpoint
+      pytest group passed (`22` tests);
+    - mock v16 trainer smoke passed and emitted validated JSON;
+    - real Tribal v16 trainer smoke passed and emitted validated JSON;
+    - v16 checkpoint behavior-rollout smoke passed with
+      `checkpoint_chain_affordance_action_mask=true`,
+      `checkpoint_role_gated_chain_mask=true`,
+      `checkpoint_target_aware_handoff_mask=true`, and
+      `chain_compass_observation=true`;
+    - behavior aggregate schema uses suffixed fields such as
+      `resource_pickups_by_type_total` and
+      `raw_env_reward_total_mean`; per-episode metrics retain the direct
+      unsuffixed event keys.
   - launch plan after push:
     - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
       `0,1,2,3` split across `relh-sandbox-1/2`;
     - run deterministic behavior gates with `5` episodes x `500` steps per
       seed, saved replays, and per-seed summaries;
-    - promote only if heart deposits recover and final inventories show fewer
-      stranded depositor batteries than v14. If v15 still stalls, do not update
-      Overleaf; inspect whether the issue is home navigation, assembler
-      cooldown/respawn drain, or final `use` selection.
+    - compare directly against v14 and v15 on ore pickups, ore-to-crafter
+      handoffs, battery crafts, battery-to-depositor handoffs, heart deposits,
+      final battery inventory, and depositor home distance for battery
+      carriers;
+    - update `main_richard.tex` only if deposits and replay evidence become
+      stable enough to support a behavior-backed representation rerun.
 
 ## Candidate Commands
 
@@ -4557,8 +4643,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-22 short v14 sandbox diagnostics.
 - [x] Inspect Stage-22 deposits, correct-recipient handoffs, and stranded batteries.
 - [x] Implement and smoke v15 depositor-final-mile breadcrumbs.
-- [ ] Launch Stage-23 short v15 sandbox diagnostics.
-- [ ] Inspect Stage-23 deposits, depositor movement, and stranded batteries.
+- [x] Launch Stage-23 short v15 sandbox diagnostics.
+- [x] Inspect Stage-23 deposits, depositor movement, and stranded batteries.
+- [x] Implement and smoke v16 handoff-reliability breadcrumbs.
+- [ ] Launch Stage-24 short v16 sandbox diagnostics.
+- [ ] Inspect Stage-24 deposits, depositor movement, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions
