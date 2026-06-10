@@ -4169,6 +4169,21 @@ Stage-19 specialization-forcing follow-up:
     smoke. The first rollout smoke used a shared default `/tmp/checkpoints`
     checkpoint path in parallel with the mock smoke and corrupted the temporary
     checkpoint; rerunning with an explicit unique checkpoint path passed.
+- Stage-21 v13 result, commit `0d0001048`:
+  - launched seeds `0,1,2,3` with `1,000,008` agent steps each;
+  - v13 did not recover reliable depositor behavior. Per-seed heart deposits
+    were `0,0,2,11`, for `13` total versus v11's `24` and v12's `8`;
+  - v13 did improve one previously failed seed (`seed3`, from v11 `0` to v13
+    `11`) but degraded acquisition in the other seeds, especially `seed1`;
+  - total battery handoffs were `63` and correct battery-to-depositor handoffs
+    were `22`, so the final bottleneck remains unstable and many batteries are
+    still stranded at episode end;
+  - interpretation: this no longer looks like a simple reward-scale issue.
+    The next iteration should target the role-gated affordance surface: allow
+    `put_ore` only toward adjacent crafters and `put_battery` only toward
+    adjacent depositors, while otherwise leaving movement free. This is a
+    cleaner curriculum than rewarding wrong-recipient handoffs and hoping the
+    policy later discovers the intended receiver.
 
 ## Candidate Commands
 
@@ -4306,8 +4321,9 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Fix v12 stats stride bug and relaunch Stage-20.
 - [x] Document that fixed v12 is cleaner but not a promotion candidate.
 - [x] Implement and smoke v13 depositor-use breadcrumb.
-- [ ] Launch Stage-21 short v13 sandbox diagnostics.
-- [ ] Inspect Stage-21 deposits, correct-recipient handoffs, and stranded batteries.
+- [x] Launch Stage-21 short v13 sandbox diagnostics.
+- [x] Inspect Stage-21 deposits, correct-recipient handoffs, and stranded batteries.
+- [ ] Implement v14 target-aware handoff affordance mask.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions
