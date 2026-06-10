@@ -465,7 +465,10 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         config,
         disable_override=args.disable_checkpoint_chain_affordance_action_mask,
     )
-    role_gated_chain_mask = config.get("reward_design") == "event_v11_role_gated_chain_handoffs"
+    role_gated_chain_mask = config.get("reward_design") in (
+        "event_v11_role_gated_chain_handoffs",
+        "event_v12_role_gated_depositor_reliability",
+    )
     chain_affordance_extra_verbs = (
         ()
         if not chain_affordance_action_mask
@@ -500,7 +503,11 @@ def _checkpoint_uses_chain_affordance_action_mask(
         return False
     return bool(config.get("chain_affordance_action_mask", False)) or (
         config.get("reward_design")
-        in ("event_v10_chain_affordance_compass_breadcrumbs", "event_v11_role_gated_chain_handoffs")
+        in (
+            "event_v10_chain_affordance_compass_breadcrumbs",
+            "event_v11_role_gated_chain_handoffs",
+            "event_v12_role_gated_depositor_reliability",
+        )
     )
 
 

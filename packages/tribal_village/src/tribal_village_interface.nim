@@ -128,8 +128,12 @@ proc tribal_village_get_action_stats(
         stats_buffer[offset + 25] = stats.lanternPlant.int32
         stats_buffer[offset + 26] = stats.putOre.int32
         stats_buffer[offset + 27] = stats.putBattery.int32
+        stats_buffer[offset + 28] = stats.putOreToCrafter.int32
+        stats_buffer[offset + 29] = stats.putBatteryToDepositor.int32
+        stats_buffer[offset + 30] = stats.receiveOreFromSupplier.int32
+        stats_buffer[offset + 31] = stats.receiveBatteryFromCrafter.int32
       else:
-        for col in 0..<28:
+        for col in 0..<32:
           stats_buffer[offset + col] = 0
     return 1
   except:

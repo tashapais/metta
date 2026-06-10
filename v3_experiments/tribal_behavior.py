@@ -39,6 +39,10 @@ SIMULATOR_STAT_COLUMNS = (
     "lantern_plant",
     "put_ore",
     "put_battery",
+    "put_ore_to_crafter",
+    "put_battery_to_depositor",
+    "receive_ore_from_supplier",
+    "receive_battery_from_crafter",
 )
 ACTION_STAT_COLUMNS = SIMULATOR_STAT_COLUMNS
 INVENTORY_COLUMNS = (
@@ -216,6 +220,7 @@ def aggregate_episode_metrics(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         "crafting_outputs_by_type",
         "deposits_by_type",
         "handoffs_by_type",
+        "role_targeted_handoffs_by_type",
         "combat_events",
         "lifecycle_events",
         "inventory_delta_by_type",
@@ -314,6 +319,12 @@ def _summarize_simulator_action_stats(stats: np.ndarray | None, verb_names: list
             "crafting_outputs_by_type": _zero_keys("battery", "spear", "lantern", "armor", "bread"),
             "deposits_by_type": _zero_keys("heart"),
             "handoffs_by_type": _zero_keys("ore", "battery", "armor", "bread"),
+            "role_targeted_handoffs_by_type": _zero_keys(
+                "ore_to_crafter",
+                "battery_to_depositor",
+                "ore_received_by_crafter",
+                "battery_received_by_depositor",
+            ),
             "combat_events": _zero_keys("tumor_kill", "spawner_kill", "agent_kill"),
             "lifecycle_events": _zero_keys("death", "respawn", "lantern_plant"),
             "task_event_count": 0,
@@ -352,6 +363,12 @@ def _summarize_simulator_action_stats(stats: np.ndarray | None, verb_names: list
         "armor": totals_by_column["put_armor"],
         "bread": totals_by_column["put_bread"],
     }
+    role_targeted_handoffs = {
+        "ore_to_crafter": totals_by_column["put_ore_to_crafter"],
+        "battery_to_depositor": totals_by_column["put_battery_to_depositor"],
+        "ore_received_by_crafter": totals_by_column["receive_ore_from_supplier"],
+        "battery_received_by_depositor": totals_by_column["receive_battery_from_crafter"],
+    }
     combat = {
         "tumor_kill": totals_by_column["tumor_kill"],
         "spawner_kill": totals_by_column["spawner_kill"],
@@ -372,6 +389,7 @@ def _summarize_simulator_action_stats(stats: np.ndarray | None, verb_names: list
         "crafting_outputs_by_type": crafting,
         "deposits_by_type": deposits,
         "handoffs_by_type": handoffs,
+        "role_targeted_handoffs_by_type": role_targeted_handoffs,
         "combat_events": combat,
         "lifecycle_events": lifecycle,
         "task_event_count": int(task_event_count),

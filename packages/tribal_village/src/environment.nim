@@ -220,6 +220,10 @@ type
     actionPut*: int      # Action 5: GIVE to teammate
     putOre*: int
     putBattery*: int
+    putOreToCrafter*: int
+    putBatteryToDepositor*: int
+    receiveOreFromSupplier*: int
+    receiveBatteryFromCrafter*: int
     resourceWater*: int
     resourceWheat*: int
     resourceWood*: int
@@ -868,6 +872,9 @@ proc putAction(env: Environment, id: int, agent: Thing, argument: int) =
     env.updateObservations(AgentInventoryOreLayer, agent.pos, agent.inventoryOre)
     env.updateObservations(AgentInventoryOreLayer, target.pos, target.inventoryOre)
     inc env.stats[id].putOre
+    if agent.agentId mod 3 == 0 and target.agentId mod 3 == 1:
+      inc env.stats[id].putOreToCrafter
+      inc env.stats[target.agentId].receiveOreFromSupplier
     transferred = true
   elif agent.inventoryBattery > 0 and target.inventoryBattery < MapObjectAgentMaxInventory:
     let giveAmt = min(agent.inventoryBattery, MapObjectAgentMaxInventory - target.inventoryBattery)
@@ -876,6 +883,9 @@ proc putAction(env: Environment, id: int, agent: Thing, argument: int) =
     env.updateObservations(AgentInventoryBatteryLayer, agent.pos, agent.inventoryBattery)
     env.updateObservations(AgentInventoryBatteryLayer, target.pos, target.inventoryBattery)
     inc env.stats[id].putBattery
+    if agent.agentId mod 3 == 1 and target.agentId mod 3 == 2:
+      inc env.stats[id].putBatteryToDepositor
+      inc env.stats[target.agentId].receiveBatteryFromCrafter
     transferred = true
   # Give armor if we have any and target has none
   elif agent.inventoryArmor > 0 and target.inventoryArmor == 0:

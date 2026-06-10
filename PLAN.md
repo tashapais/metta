@@ -4103,6 +4103,36 @@ Stage-19 specialization-forcing follow-up:
   - interpretation: continue iterating v11 before launching reward-mixing
     representation sweeps. The next intervention should target reliable
     depositor battery-to-home completion without adding negative rewards.
+- Stage-20 v12 depositor-reliability iteration:
+  - diagnosis from the Stage-19 per-agent counters: depositors in failed seeds
+    received batteries but often ended episodes still holding them, while
+    generic `put_ore` and `put_battery` counters rewarded handoffs to any
+    receiver role;
+  - this was RL with shaped rewards, not scripted behavior. The policy still
+    chose movement, timing, handoff direction, and final use actions. The strong
+    curriculum was the role-gated action mask, which restricts each role's
+    non-movement verbs to the intended chain affordance;
+  - v12 keeps the positive-only shaping rule and adds no penalties;
+  - new simulator counters distinguish correct-recipient handoffs:
+    `put_ore_to_crafter`, `put_battery_to_depositor`,
+    `receive_ore_from_supplier`, and `receive_battery_from_crafter`;
+  - v12 reward changes:
+    - supplier still gets ore pickup reward but gets the main handoff reward
+      only when ore goes to a crafter;
+    - crafter gets positive credit for receiving ore from a supplier, crafting
+      batteries, and handing batteries to a depositor;
+    - depositor gets positive credit for receiving a battery from a crafter and
+      a larger `deposit_heart` reward;
+    - depositor empty/home and battery/home potential scales are increased so
+      battery-to-home completion is less sparse;
+  - local validation passed:
+    - Python syntax check;
+    - Nim `environment.nim` check;
+    - mock v12 trainer smoke;
+    - real Tribal v12 trainer smoke, including rebuild of the 32-column stats
+      shared library;
+    - v12 checkpoint behavior rollout smoke confirmed the role-gated mask and
+      new targeted-handoff metrics.
 
 ## Candidate Commands
 
@@ -4234,8 +4264,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-19 short v11 sandbox diagnostics.
 - [x] Inspect Stage-19 handoff/craft/deposit counters before scaling.
 - [x] Rerun old-style representation plots for the Stage-19 alpha0 diagnostic.
-- [ ] Iterate v11 depositor reliability before shared-fraction representation sweeps.
-- [ ] Rerun old-style representation plots only for behavior-valid v11 reward-mixing streams.
+- [x] Implement v12 depositor-reliability shaping and correct-recipient handoff counters.
+- [ ] Launch Stage-20 short v12 sandbox diagnostics.
+- [ ] Inspect Stage-20 correct-recipient handoffs and depositor completion before scaling.
+- [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions
 

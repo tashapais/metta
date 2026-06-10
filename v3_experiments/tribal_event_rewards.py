@@ -20,6 +20,7 @@ EVENT_V8_CLEAN_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V9_POTENTIAL_CHAIN_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V10_CHAIN_AFFORDANCE_COMPASS_ROLE_NAMES = EVENT_V1_ROLE_NAMES
 EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES = ("supplier", "crafter_logistics", "depositor")
+EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -419,6 +420,44 @@ EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES = {
     "depositor_battery_to_home": 0.12,
 }
 
+EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_COEFFICIENTS = {
+    "supplier": {
+        "resource_ore": 2.0,
+        "put_ore": 0.5,
+        "put_ore_to_crafter": 10.0,
+    },
+    "crafter_logistics": {
+        "receive_ore_from_supplier": 4.0,
+        "craft_battery": 10.0,
+        "put_battery": 0.5,
+        "put_battery_to_depositor": 16.0,
+    },
+    "depositor": {
+        "receive_battery_from_crafter": 14.0,
+        "deposit_heart": 70.0,
+    },
+}
+
+EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS = {
+    "supplier_empty_to_mine": 0.0,
+    "supplier_ore_to_converter": 4.0,
+    "crafter_empty_to_mine": 0.0,
+    "crafter_ore_to_converter": 5.0,
+    "crafter_battery_to_home": 8.0,
+    "depositor_empty_to_home": 4.0,
+    "depositor_battery_to_home": 14.0,
+}
+
+EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES = {
+    "supplier_empty_to_mine": 0.04,
+    "supplier_ore_to_converter": 0.08,
+    "crafter_empty_to_mine": 0.03,
+    "crafter_ore_to_converter": 0.10,
+    "crafter_battery_to_home": 0.08,
+    "depositor_empty_to_home": 0.10,
+    "depositor_battery_to_home": 0.25,
+}
+
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
     "resource_wheat": -0.10,
@@ -782,6 +821,37 @@ def event_v11_role_gated_chain_handoff_bonuses(
     return bonuses
 
 
+def event_v12_role_gated_depositor_reliability_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v11 rewards with correct-recipient handoffs and stronger depositor breadcrumbs."""
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    if stats is not None:
+        _add_role_coefficients(
+            bonuses,
+            stats,
+            EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES,
+            EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_COEFFICIENTS,
+        )
+    _add_role_gated_chain_potential_bonuses(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        gamma=gamma,
+        stage_offsets=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS,
+        closeness_scales=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1088,6 +1158,49 @@ def event_v11_role_gated_chain_handoff_details() -> dict[str, Any]:
     return details
 
 
+def event_v12_role_gated_depositor_reliability_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v12 depositor reliability diagnostic."""
+
+    details = event_v11_role_gated_chain_handoff_details()
+    details.update(
+        {
+            "name": "event_v12_role_gated_depositor_reliability",
+            "summary": (
+                "V11 diagnostic curriculum with positive-only, correct-recipient handoff rewards "
+                "and stronger depositor receive/home breadcrumbs."
+            ),
+            "role_names": list(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs)
+                for role, coeffs in EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_ROLE_COEFFICIENTS.items()
+            },
+            "potential_shaping": {
+                "formula": "F(s,s') = gamma * Phi_role(s') - Phi_role(s)",
+                "default_gamma": EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+                "max_distance": EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE,
+                "stage_offsets": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS),
+                "target_closeness_scales": dict(EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES),
+            },
+            "v12_changes": {
+                "correct_recipient_handoff_counters": [
+                    "put_ore_to_crafter",
+                    "put_battery_to_depositor",
+                    "receive_ore_from_supplier",
+                    "receive_battery_from_crafter",
+                ],
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "purpose": (
+                    "Improve depositor battery-to-home completion while measuring whether "
+                    "handoffs are going to the intended role."
+                ),
+            },
+            "simulator_stat_columns": list(SIMULATOR_STAT_COLUMNS),
+        }
+    )
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -1254,15 +1367,30 @@ def _add_role_gated_chain_potential_bonuses(
     navigation_after: np.ndarray | None,
     *,
     gamma: float,
+    stage_offsets: dict[str, float] = EVENT_V11_ROLE_GATED_CHAIN_STAGE_OFFSETS,
+    closeness_scales: dict[str, float] = EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES,
 ) -> None:
     before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
     after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
     if before is None or after is None:
         return
-    bonuses += gamma * _role_gated_chain_potential_values(after) - _role_gated_chain_potential_values(before)
+    bonuses += gamma * _role_gated_chain_potential_values(
+        after,
+        stage_offsets=stage_offsets,
+        closeness_scales=closeness_scales,
+    ) - _role_gated_chain_potential_values(
+        before,
+        stage_offsets=stage_offsets,
+        closeness_scales=closeness_scales,
+    )
 
 
-def _role_gated_chain_potential_values(navigation: np.ndarray) -> np.ndarray:
+def _role_gated_chain_potential_values(
+    navigation: np.ndarray,
+    *,
+    stage_offsets: dict[str, float],
+    closeness_scales: dict[str, float],
+) -> np.ndarray:
     potentials = np.zeros(navigation.shape[0], dtype=np.float64)
     labels = role_labels(navigation.shape[0], len(EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES))
     for agent_id, row in enumerate(navigation):
@@ -1272,8 +1400,8 @@ def _role_gated_chain_potential_values(navigation: np.ndarray) -> np.ndarray:
         clipped_distance = max(0.0, min(EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE, distance))
         closeness = EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE - clipped_distance
         potentials[agent_id] = (
-            EVENT_V11_ROLE_GATED_CHAIN_STAGE_OFFSETS[stage_name]
-            + EVENT_V11_ROLE_GATED_CHAIN_CLOSENESS_SCALES[stage_name] * closeness
+            stage_offsets[stage_name]
+            + closeness_scales[stage_name] * closeness
         )
     return potentials
 
