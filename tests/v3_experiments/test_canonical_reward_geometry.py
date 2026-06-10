@@ -55,6 +55,8 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS,
     EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS,
     EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES,
+    EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS,
+    EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -95,6 +97,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v15_depositor_final_mile_details,
     event_v16_handoff_reliability_bonuses,
     event_v16_handoff_reliability_details,
+    event_v17_depositor_staging_bonuses,
+    event_v17_depositor_staging_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -906,6 +910,88 @@ def test_event_v16_strengthens_final_depositor_use_beyond_v15():
     )
 
 
+def test_event_v17_depositor_staging_details_are_serializable():
+    details = event_v17_depositor_staging_details()
+
+    assert details["name"] == "event_v17_depositor_staging"
+    assert details["role_names"] == list(EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES)
+    assert details["v17_changes"]["target_aware_handoff_mask"] is True
+    assert details["v17_changes"]["reward_penalties_added"] is False
+    assert details["v17_changes"]["scripted_policy_added"] is False
+    assert "depositor_empty_move_toward_home" in details["final_mile_action_coefficients"]
+
+
+def test_event_v17_rewards_empty_depositor_staging_beyond_v16():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [5, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 3
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v16 = event_v16_handoff_reliability_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v17[:2].tolist() == pytest.approx(v16[:2].tolist())
+    assert v17[2] - v16[2] == pytest.approx(
+        EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS["depositor_empty_move_toward_home"]
+    )
+
+
+def test_event_v17_does_not_add_empty_staging_when_depositor_has_battery():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [5, 5, 8, 5]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y, NAV_HOME_ASSEMBLER_X, NAV_HOME_ASSEMBLER_Y]] = [6, 5, 8, 5]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 3
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    after[2, NAV_INVENTORY_BATTERY] = 1
+    actions = np.array([MOVE_VERB * ACTION_ARGUMENT_COUNT + 3] * 3, dtype=np.int64)
+    action_mask = np.ones((3, 56), dtype=bool)
+
+    v16 = event_v16_handoff_reliability_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=actions,
+        action_mask=action_mask,
+        num_agents=3,
+    )
+
+    assert v17[2] == pytest.approx(v16[2])
+
+
 def test_effective_rank_uses_entropy_of_singular_values():
     assert effective_rank(np.eye(4)) == pytest.approx(4.0)
 
@@ -1710,6 +1796,12 @@ def test_checkpoint_chain_affordance_mask_infers_legacy_v10_config():
     assert _checkpoint_uses_chain_affordance_action_mask(
         {
             "reward_design": "event_v16_handoff_reliability",
+            "chain_affordance_action_mask": False,
+        }
+    )
+    assert _checkpoint_uses_chain_affordance_action_mask(
+        {
+            "reward_design": "event_v17_depositor_staging",
             "chain_affordance_action_mask": False,
         }
     )

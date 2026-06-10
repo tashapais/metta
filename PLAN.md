@@ -4500,6 +4500,94 @@ Stage-19 specialization-forcing follow-up:
       carriers;
     - update `main_richard.tex` only if deposits and replay evidence become
       stable enough to support a behavior-backed representation rerun.
+  - Stage-24 v16 sandbox result, commit `63a85a597`:
+    - launched `1,000,008` agent-step alpha0 diagnostics:
+      - `relh-sandbox-1` job `189`, seeds `0,1`;
+      - `relh-sandbox-2` job `188`, seeds `2,3`;
+    - Sky marked the detached jobs failed with return code `141`, but direct
+      artifact inspection confirmed all four `result.json` files and
+      `final_model.pt` checkpoints were present under
+      `/workspace/tribal_event_mask_runs/stage24_v16_handoff_reliability_1m_63a85a597`;
+    - all four result JSONs record
+      `reward_design=event_v16_handoff_reliability`,
+      `chain_compass_observation=true`,
+      `chain_affordance_action_mask=true`, and
+      `target_aware_handoff_mask=true`;
+    - behavior gates used deterministic checkpoint rollouts with
+      `5` episodes x `500` steps per seed, saved replays, and
+      `--chain-compass-observation`:
+      - `relh-sandbox-1` job `191`, seeds `0,1`;
+      - `relh-sandbox-2` job `190`, seeds `2,3`;
+    - aggregate Stage-24 behavior across the `20` evaluation episodes:
+      - `142` ore pickups;
+      - `83` ore-to-crafter targeted handoffs;
+      - `32` battery crafts;
+      - `4` battery-to-depositor targeted handoffs;
+      - `3` heart deposits;
+    - per-seed behavior:
+      - seed `0`: `42` ore pickups, `21` ore-to-crafter handoffs,
+        `7` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+      - seed `1`: `45` ore pickups, `31` ore-to-crafter handoffs,
+        `12` battery crafts, `3` battery-to-depositor handoffs, `3`
+        heart deposits;
+      - seed `2`: `51` ore pickups, `28` ore-to-crafter handoffs,
+        `13` battery crafts, `1` battery-to-depositor handoff, `0`
+        heart deposits;
+      - seed `3`: `4` ore pickups, `3` ore-to-crafter handoffs,
+        `0` battery crafts, `0` battery-to-depositor handoffs, `0`
+        heart deposits;
+    - best diagnostic episode was seed `1`, episode `0`:
+      `12` ore pickups, `10` ore-to-crafter handoffs, `5` battery crafts,
+      `3` battery-to-depositor handoffs, and `3` heart deposits;
+      replay path:
+      `/workspace/tribal_event_mask_runs/stage24_v16_handoff_reliability_1m_63a85a597_behavior/seed1/replays/episode_000.jsonl`;
+    - replay and per-agent stats confirm the three deposits are the intended
+      learned behavior: depositor-role agents `2`, `5`, and `11` each received
+      one battery from a crafter and recorded `deposit_heart=1`;
+    - interpretation: v16 is a real improvement over v15 but is still not a
+      promotion candidate. It demonstrates repeated correct-role deposits in
+      one episode, but the behavior is seed/episode fragile and many crafted
+      batteries remain on crafters when no adjacent depositor is staged.
+- Stage-25 v17 depositor-staging iteration:
+  - new reward design: `event_v17_depositor_staging`;
+  - v17 keeps v16 rewards, the target-aware handoff mask, chain-compass
+    observation, role-gated action mask, and positive-only shaping rule;
+  - v17 does not add penalties, scripted actions, demonstrations, or simulator
+    rule changes;
+  - v17 adds only two positive breadcrumbs for empty depositor-role agents:
+    - `depositor_empty_move_toward_home`: `+0.25` per step of reduced
+      home-assembler distance when the selected action is a mask-valid move,
+      capped by cumulative successful move count;
+    - `depositor_empty_arrive_adjacent_home`: `+2.00` when such a depositor
+      moves from non-adjacent to adjacent to the home assembler, using the same
+      movement cap;
+  - rationale: v16 made deposits correct when battery handoff occurs, but
+    handoff remains rare because crafters often finish holding batteries near
+    home without a staged adjacent depositor. v17 should make empty depositors
+    available near home without rewarding no-op waiting or changing the action
+    rules.
+  - local validation before sandbox launch:
+    - Python compile passed for reward, trainer, rollout, and focused test
+      modules;
+    - focused v15/v16/v17/target-aware/checkpoint pytest group passed (`12`
+      tests);
+    - broader chain-affordance/chain-compass/v10/v14/v15/v16/v17/checkpoint
+      pytest group passed (`25` tests);
+    - mock v17 trainer smoke passed and emitted validated JSON;
+    - real Tribal v17 trainer smoke passed and emitted validated JSON;
+    - v17 checkpoint behavior-rollout smoke passed with
+      `checkpoint_chain_affordance_action_mask=true`,
+      `checkpoint_role_gated_chain_mask=true`,
+      `checkpoint_target_aware_handoff_mask=true`, and
+      `chain_compass_observation=true`.
+  - launch plan after validation and push:
+    - run the same short `1,000,008` agent-step alpha0 diagnostic for seeds
+      `0,1,2,3` split across `relh-sandbox-1/2`;
+    - run deterministic behavior gates with `5` episodes x `500` steps per
+      seed, saved replays, and per-seed summaries;
+    - promote only if heart deposits and battery-to-depositor handoffs improve
+      across seeds rather than concentrating in one best episode.
 
 ## Candidate Commands
 
@@ -4646,8 +4734,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-23 short v15 sandbox diagnostics.
 - [x] Inspect Stage-23 deposits, depositor movement, and stranded batteries.
 - [x] Implement and smoke v16 handoff-reliability breadcrumbs.
-- [ ] Launch Stage-24 short v16 sandbox diagnostics.
-- [ ] Inspect Stage-24 deposits, depositor movement, and stranded batteries.
+- [x] Launch Stage-24 short v16 sandbox diagnostics.
+- [x] Inspect Stage-24 deposits, depositor movement, and stranded batteries.
+- [x] Implement and smoke v17 depositor-staging breadcrumbs.
+- [ ] Launch Stage-25 short v17 sandbox diagnostics.
+- [ ] Inspect Stage-25 deposits, depositor movement, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions

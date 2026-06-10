@@ -25,6 +25,7 @@ EVENT_V13_ROLE_GATED_DEPOSITOR_USE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_
 EVENT_V14_TARGET_AWARE_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V15_DEPOSITOR_FINAL_MILE_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -517,6 +518,20 @@ EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS = {
 }
 
 EVENT_V16_HANDOFF_RELIABILITY_ACTION_CAPS = dict(EVENT_V15_DEPOSITOR_FINAL_MILE_ACTION_CAPS)
+
+EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS = EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS
+
+EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS = {
+    **EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS,
+    "depositor_empty_move_toward_home": 0.25,
+    "depositor_empty_arrive_adjacent_home": 2.00,
+}
+
+EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS = {
+    **EVENT_V16_HANDOFF_RELIABILITY_ACTION_CAPS,
+    "depositor_empty_move_toward_home": 160,
+    "depositor_empty_arrive_adjacent_home": 160,
+}
 
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
@@ -1055,6 +1070,40 @@ def event_v16_handoff_reliability_bonuses(
     return bonuses
 
 
+def event_v17_depositor_staging_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v16 rewards plus positive staging breadcrumbs for empty depositors."""
+
+    bonuses = event_v16_handoff_reliability_bonuses(
+        event_stats_delta,
+        event_stats_total,
+        navigation_before=navigation_before,
+        navigation_after=navigation_after,
+        actions=actions,
+        action_mask=action_mask,
+        gamma=gamma,
+        num_agents=num_agents,
+    )
+    _add_depositor_empty_staging_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
 def event_v1_reward_design_details() -> dict[str, Any]:
     """Return a JSON-serializable description of the event-v1 reward design."""
 
@@ -1556,6 +1605,50 @@ def event_v16_handoff_reliability_details() -> dict[str, Any]:
     return details
 
 
+def event_v17_depositor_staging_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v17 depositor staging diagnostic."""
+
+    details = event_v16_handoff_reliability_details()
+    details.update(
+        {
+            "name": "event_v17_depositor_staging",
+            "summary": (
+                "V16 handoff reliability plus positive-only staging breadcrumbs "
+                "for empty depositors to move toward and arrive adjacent to the "
+                "home assembler before they receive a battery."
+            ),
+            "role_names": list(EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs) for role, coeffs in EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS.items()
+            },
+            "oracle_action_coefficients": {
+                "depositor_use_home_assembler": EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS[
+                    "depositor_use_home_assembler"
+                ]
+            },
+            "final_mile_action_coefficients": {
+                name: coefficient
+                for name, coefficient in EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS.items()
+                if name != "depositor_use_home_assembler"
+            },
+            "final_mile_action_caps": dict(EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS),
+            "v17_changes": {
+                "changes_rewards": True,
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "purpose": (
+                    "Address Stage-24 v16 evidence: completed deposits are correct when "
+                    "depositors receive batteries, but many crafters still end episodes "
+                    "holding batteries because an adjacent depositor is not reliably staged."
+                ),
+            },
+        }
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -1876,6 +1969,56 @@ def _add_depositor_final_mile_breadcrumbs(
             and arrival_cap[agent_id]
         ):
             bonuses[agent_id] += action_coefficients["depositor_battery_arrive_adjacent_home"]
+
+
+def _add_depositor_empty_staging_breadcrumbs(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    actions: np.ndarray | None,
+    action_mask: np.ndarray | None,
+    event_stats_total: np.ndarray | None,
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    actions_arr = _validate_actions(actions, bonuses.shape[0])
+    if before is None or after is None or actions_arr is None:
+        return
+    mask = _validate_action_mask(action_mask, bonuses.shape[0])
+    labels = role_labels(before.shape[0], len(EVENT_V17_DEPOSITOR_STAGING_ROLE_NAMES))
+    move_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS["depositor_empty_move_toward_home"],
+        bonuses.shape[0],
+    )
+    arrival_cap = _action_cap_eligible(
+        event_stats_total,
+        "action_move",
+        EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS["depositor_empty_arrive_adjacent_home"],
+        bonuses.shape[0],
+    )
+
+    progress = _positive_distance_progress(before, after, NAV_DIST_HOME_ASSEMBLER)
+    for agent_id, row in enumerate(before):
+        if int(labels[agent_id]) != 2 or int(row[NAV_INVENTORY_BATTERY]) > 0:
+            continue
+        action = int(actions_arr[agent_id])
+        if action // ACTION_ARGUMENT_COUNT != MOVE_VERB or not _mask_allows(mask, agent_id, action):
+            continue
+        if progress[agent_id] > 0.0 and move_cap[agent_id]:
+            bonuses[agent_id] += (
+                EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS["depositor_empty_move_toward_home"]
+                * progress[agent_id]
+            )
+        if (
+            row[NAV_DIST_HOME_ASSEMBLER] > 1
+            and after[agent_id, NAV_DIST_HOME_ASSEMBLER] == 1
+            and arrival_cap[agent_id]
+        ):
+            bonuses[agent_id] += EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS[
+                "depositor_empty_arrive_adjacent_home"
+            ]
 
 
 def _valid_navigation_distance(navigation_row: np.ndarray, column: int) -> float | None:
