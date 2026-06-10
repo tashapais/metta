@@ -272,6 +272,33 @@ Operational details for the reconstruction:
   while preserving per-seed values, because the old table reports std across
   three independent training seeds.
 
+## Paper Maintenance Protocol
+
+The Overleaf repository now has two paper entry points:
+
+- `samples/main.tex`: Tasha's restored pre-Richard-edit paper baseline from
+  Overleaf commit `21f1ea4`. Do not fold pilot diagnostics or reconstructed
+  negative results into this file directly.
+- `samples/main_richard.tex`: the living evidence-gated draft. Update this file
+  as new Tribal Village or SMACv2 evidence becomes behavior-validated and
+  provenance-clean.
+
+Rules for future paper updates:
+
+1. Every quantitative claim in `main_richard.tex` must be traceable to a local
+   JSON artifact, W&B run, checkpoint path, exact git SHA, or explicit
+   historical Overleaf commit.
+2. Claims from old paper text that lack raw runner/log provenance should be
+   labeled as historical or pending rerun until reproduced.
+3. Do not update the paper from geometry metrics alone. For Tribal Village,
+   first confirm behavior gates: no-op/random comparison, nonzero chain events,
+   replay sanity, and per-agent task counters.
+4. When more seeds finish, update `main_richard.tex` only after the aggregate
+   script emits mean, std, per-seed values, and any changed interpretation.
+5. Push each coherent paper update with the corresponding `PLAN.md` or result
+   artifact provenance update, so the paper never drifts away from the current
+   evidence stream.
+
 ## Research Question
 
 Can shared-parameter MAPPO learn task-relevant differentiated behavior in Tribal
