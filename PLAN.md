@@ -5153,6 +5153,86 @@ Stage-19 specialization-forcing follow-up:
     - require v23 to recover v17-like upstream behavior and improve or match
       v17 final battery-to-depositor handoffs and heart deposits;
     - do not update `main_richard.tex` unless this behavior gate passes.
+  - Stage-31 v23 sandbox result, commit `576673bc0`:
+    - training root:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0`;
+    - behavior root:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior`;
+    - launch worktree on both sandboxes:
+      `/workspace/tasha_metta_stage31_v23_576673bc0`;
+    - training jobs:
+      - `relh-sandbox-1` Sky job `223`, seeds `0,1`, succeeded;
+      - `relh-sandbox-2` Sky job `219`, seeds `2,3`, succeeded;
+    - behavior jobs:
+      - `relh-sandbox-1` Sky job `224`, seeds `0,1`, succeeded;
+      - `relh-sandbox-2` Sky job `220`, seeds `2,3`, succeeded;
+    - all four `result.json` files and all four `final_model.pt`
+      checkpoints were present after training.
+  - Stage-31 v23 training metrics:
+
+    | Seed | EffRank/n | Dact KL | Dact JS | Probe | Raw return |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `0.2260` | `8.3913` | `0.2976` | `0.4651` | `-6.8680` |
+    | `1` | `0.2348` | `8.4833` | `0.2967` | `0.4486` | `-5.3965` |
+    | `2` | `0.1911` | `8.4645` | `0.2727` | `0.4601` | `-5.8913` |
+    | `3` | `0.1776` | `7.3003` | `0.2529` | `0.4717` | `-5.8448` |
+
+  - Stage-31 v23 behavior gate over `20` evaluation episodes
+    (`4` seeds x `5` episodes x `500` steps):
+
+    | Seed | Ore pickups | Ore-to-crafter | Battery crafts | Battery-to-depositor | Heart deposits |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | `0` | `46` | `27` | `11` | `1` | `0` |
+    | `1` | `28` | `18` | `4` | `0` | `0` |
+    | `2` | `37` | `23` | `9` | `1` | `1` |
+    | `3` | `32` | `20` | `5` | `1` | `0` |
+    | **Total** | **`143`** | **`88`** | **`29`** | **`3`** | **`1`** |
+
+  - Stage-31 v23 replay artifacts:
+    - seed `0` examples:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed0/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed0/replays/episode_001.jsonl`;
+    - seed `1` examples:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed1/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed1/replays/episode_001.jsonl`;
+    - seed `2` examples:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed2/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed2/replays/episode_001.jsonl`;
+    - seed `3` examples:
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed3/replays/episode_000.jsonl`,
+      `/workspace/tribal_event_mask_runs/stage31_v23_v17_depositor_rendezvous_1m_576673bc0_behavior/seed3/replays/episode_001.jsonl`.
+  - Stage-31 v23 decision:
+    - failed the paper behavior gate and should not update
+      `main_richard.tex`;
+    - v23 is nevertheless a better diagnostic signal than v22: upstream
+      behavior improved from `101/59/14` to `143/88/29` for
+      ore/ore-to-crafter/battery crafts, final handoffs improved from `2` to
+      `3`, and heart deposits improved from `0` to `1`;
+    - compared with v17, v23 remains weaker across the whole chain
+      (`143/88/29/3/1` vs `179/105/45/5/4`);
+    - compared with v21, v23 recovers much stronger upstream behavior
+      (`143/88/29` vs `98/46/11`) and matches battery-to-depositor handoffs
+      (`3`), but loses one heart deposit (`1` vs `2`);
+    - the next sensible ramp is a longer-budget v23 diagnostic before adding
+      more reward terms, because v23 improved the immediate v22 failure mode
+      without changing permissions or adding penalties.
+- Stage-32 v23 longer-budget ramp plan:
+  - purpose: test whether the v23 positive-only crafter-depositor rendezvous
+    signal matures with more training, rather than immediately adding another
+    reward term;
+  - run `event_v23_v17_depositor_rendezvous`, `shared_frac=0.0`, seeds
+    `0,1,2,3`, same masks and PPO settings as Stage 31, but with a larger
+    `4,000,008` agent-step budget;
+  - use deterministic behavior gates with `5` episodes x `500` steps per seed,
+    saved replays, and the same chain counters;
+  - promotion criterion:
+    - v23 long-budget must meet or exceed v17's short-budget behavior on final
+      completion (`>=5` battery-to-depositor handoffs and `>=4` heart deposits)
+      while keeping upstream behavior close to v17;
+    - if it fails, implement a narrower v24 final-completion boost focused only
+      on battery-carrying depositors using the home assembler, still without
+      penalties, scripted actions, or action-permission changes;
+    - do not update `main_richard.tex` unless behavior gates pass.
 
 ## Candidate Commands
 
@@ -5320,8 +5400,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Launch Stage-30 short v22 sandbox diagnostics.
 - [x] Inspect Stage-30 handoffs, deposits, upstream recovery, and stranded batteries.
 - [x] Implement and smoke v23 v17-depositor-rendezvous breadcrumbs.
-- [ ] Launch Stage-31 short v23 sandbox diagnostics.
-- [ ] Inspect Stage-31 handoffs, deposits, upstream recovery, and stranded batteries.
+- [x] Launch Stage-31 short v23 sandbox diagnostics.
+- [x] Inspect Stage-31 handoffs, deposits, upstream recovery, and stranded batteries.
+- [ ] Launch Stage-32 v23 longer-budget diagnostics.
+- [ ] Inspect Stage-32 handoffs, deposits, upstream recovery, and stranded batteries.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 
 ## Open Questions
