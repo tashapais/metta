@@ -716,7 +716,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
 
         cutoff = 0.8 * total_steps
         late = [ep for ep in corrected_probe_episodes if ep[2] >= cutoff]
-        q = max(1, n_agents // 4)
+        # Protocol v2: top-k vs bottom-k extremes. k=1 (most/least contributing
+        # agent) after v1's quartile rule (k=3) skipped >90% of episodes for
+        # ties -- ground-truth contributions in this arena are heavily tied.
+        q = int(cfg.get("probe_extremes", 1))
         Xs, ys, groups = [], [], []
         skipped_ties = 0
         for group_id, (embs_ep, true_rets, _) in enumerate(late):
@@ -733,7 +736,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         probe_results = {
             "probe_accuracy": 0.5, "probe_accuracy_std": 0.0,
             "probe_chance": 0.5, "probe_lift": 0.0, "n_samples": len(ys),
-            "probe_schema": "corrected_true_return_quartiles_groupkfold_final20pct",
+            "probe_schema": f"corrected_true_return_extremes_k{q}_groupkfold_final20pct",
             "probe_episodes_used": n_groups,
             "probe_episodes_skipped_ties": skipped_ties,
         }
@@ -847,8 +850,10 @@ def main():
     parser.add_argument("--probe_episodes",   type=int, default=200)
     parser.add_argument("--corrected_probe",  action="store_true",
                         help="Label BOTH conditions with ground-truth per-agent returns "
-                             "(pre-sharing), balanced quartile labels with strict separation, "
+                             "(pre-sharing), balanced top-k/bottom-k labels with strict separation, "
                              "GroupKFold by episode, final-20%%-of-training embeddings only")
+    parser.add_argument("--probe_extremes",   type=int, default=1,
+                        help="k for top-k vs bottom-k corrected-probe labels per episode")
     parser.add_argument("--out_dir",          type=str,
                         default=os.path.dirname(os.path.abspath(__file__)),
                         help="Directory for per-seed result JSONs")
@@ -859,6 +864,7 @@ def main():
         contrastive          = args.contrastive,
         reward_cl            = args.reward_cl,
         corrected_probe      = args.corrected_probe,
+        probe_extremes       = args.probe_extremes,
         separate_encoders    = args.separate_encoders,
         num_agents           = args.num_agents,
         gpu                  = args.gpu,

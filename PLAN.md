@@ -5704,6 +5704,29 @@ Corrected rerun pre-registration (2026-06-11):
   `probe_episodes_used`/`skipped_ties` per run: if tie-skipping leaves too
   few episodes (<5 groups or <50 samples), the run reports the fallback
   and the protocol (not the claim) is revisited.
+- Protocol v1 result, commit `ed90af380` (Sky jobs `229-233` on
+  `relh-sandbox-1` individual, `225-229` on `relh-sandbox-2` shared, all
+  10 SUCCEEDED, ~10 min/run, results under
+  `/workspace/tribal_event_mask_runs/exp4_corrected_probe_ed90af380/`):
+  - the strict top-3/bottom-3 quartile rule skipped `70-79` of `~80`
+    late-slice episodes in every run; `9/10` runs fell below the validity
+    threshold (`<5` groups or `<50` samples) and reported the fallback;
+  - the one valid run (individual seed `1`, `10` episodes, `60` samples)
+    scored `0.550`;
+  - informative side-finding: ground-truth per-agent returns in this
+    arena are heavily tied (most agents score zero per episode), so
+    "who is contributing" has thin per-episode signal at quartile
+    granularity. Win rates and returns match the original runs
+    (individual mean win `0.333`, shared `0.278`).
+- Protocol v2 pre-registration (per the v1 revision rule; same claim,
+  same interpretation rule, only the label granularity changes):
+  - labels = top-1 vs bottom-1 agent by ground-truth return per episode
+    (`--probe_extremes 1`), strict inequality still required, all other
+    elements unchanged (final-20% slice, GroupKFold(5), identical code in
+    both conditions, chance `0.500` by construction);
+  - validity threshold unchanged (`>=5` groups, `>=50` samples, i.e.
+    `>=25` separated episodes per run);
+  - relaunch all 10 runs at the new commit.
 
 ## Candidate Commands
 
