@@ -432,6 +432,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if cfg.get("trunc_bootstrap"): cond += "_tb"
     if cfg.get("seed_maps"):       cond += "_seedmaps"
     if cfg.get("batch_adv_norm"):  cond += "_ban"
+    if float(cfg.get("target_kl", 0.0)) > 0: cond += "_kl"
+    if float(cfg.get("adv_std_floor", 0.0)) > 0: cond += "_gate"
+    if cfg.get("event_gate"):      cond += "_eg"
+    if float(cfg.get("vf_coef", 0.5)) != 0.5: cond += "_vf"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -461,6 +465,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     anneal_lr = bool(cfg.get("anneal_lr", False))
     trunc_bootstrap = bool(cfg.get("trunc_bootstrap", False))
     batch_adv_norm = bool(cfg.get("batch_adv_norm", False))
+    target_kl = float(cfg.get("target_kl", 0.0))        # 0 = off
+    adv_std_floor = float(cfg.get("adv_std_floor", 0.0))  # 0 = off
+    event_gate = bool(cfg.get("event_gate", False))
+    vf_coef = float(cfg.get("vf_coef", 0.5))
 
     T          = cfg["num_steps"]
     E          = cfg["num_envs"]
@@ -514,6 +522,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
 
     while global_step < total_steps:
         # ---- Rollout ----
+        rollout_reward_events = 0
         for step in range(T):
             obs_buf[step] = obs
             obs_t = torch.tensor(
@@ -531,6 +540,11 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             obs, rews, dones, ep_rets, trunc_obs = env.step(
                 acts_np, global_step=global_step, reward_type=reward_type
             )
+
+            # Count true environment reward events BEFORE the bootstrap patch
+            # (the patch writes gamma*V into the final step, which would make
+            # every truncated rollout look reward-bearing).
+            rollout_reward_events += int(np.count_nonzero(rews))
 
             if trunc_bootstrap and trunc_obs:
                 # Time-limit episodes are not true terminals: add the
@@ -645,7 +659,18 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             frac = max(0.0, 1.0 - global_step / total_steps)
             for pg_group in optimizer.param_groups:
                 pg_group["lr"] = cfg["lr"] * frac
-        if batch_adv_norm:
+        # Advantage noise gate: at peak-policy reward sparsity, >half of
+        # rollouts contain ZERO reward events; normalizing their pure
+        # critic-noise advantages to unit variance and applying 48 coherent
+        # Adam steps is a verified collapse mechanism (cycle-2 N1). Skip the
+        # whole update for rollouts whose raw advantage scale is below the
+        # floor -- there is nothing there to learn from.
+        raw_adv_std = float(flat_adv.std())
+        skip_update = (
+            (adv_std_floor > 0.0 and raw_adv_std < adv_std_floor)
+            or (event_gate and rollout_reward_events == 0)
+        )
+        if batch_adv_norm and not skip_update:
             # Normalize once over the full rollout batch. Per-minibatch
             # normalization rescales reward-free 512-sample minibatches
             # (common at this reward sparsity) from near-zero variance to
@@ -656,7 +681,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         total_pg, total_vl, total_ent, total_cl, total_rcl = 0.0, 0.0, 0.0, 0.0, 0.0
         n_updates = 0
 
-        for _ in range(epochs):
+        kl_stop = False
+        for _ in range(0 if skip_update else epochs):
+            if kl_stop:
+                break
             np.random.shuffle(idx)
             for start in range(0, n_total, mb_size):
                 mb      = idx[start:start + mb_size]
@@ -674,12 +702,19 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                 _, new_logp, ent, new_val, _, _ = policy.get_action_and_value(
                     mb_obs, mb_acts, agent_ids=mb_agent_ids)
                 ratio = torch.exp(new_logp - mb_logp)
+                if target_kl > 0.0:
+                    with torch.no_grad():
+                        # k3 estimator: E[(r-1) - log r] >= 0
+                        approx_kl = ((ratio - 1.0) - (new_logp - mb_logp)).mean().item()
+                    if approx_kl > target_kl:
+                        kl_stop = True
+                        break
                 pg = torch.max(
                     -mb_adv * ratio,
                     -mb_adv * ratio.clamp(0.8, 1.2)
                 ).mean()
                 vl   = F.mse_loss(new_val, mb_ret)
-                loss = pg + 0.5 * vl - 0.01 * ent.mean()
+                loss = pg + vf_coef * vl - 0.01 * ent.mean()
 
                 cl_val = torch.tensor(0.0, device=device)
                 if use_cl:
@@ -969,6 +1004,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "trunc_bootstrap":    trunc_bootstrap,
         "seed_maps":          bool(cfg.get("seed_maps", False)),
         "batch_adv_norm":     batch_adv_norm,
+        "target_kl":          target_kl,
+        "adv_std_floor":      adv_std_floor,
+        "event_gate":         event_gate,
+        "vf_coef":            vf_coef,
         "gate_best_checkpoint": probe_results.get("gate_best_checkpoint"),
         "seed":               seed,
         "num_agents":         n_agents,
@@ -1041,6 +1080,21 @@ def main():
                         help="Normalize advantages once over the full rollout batch instead "
                              "of per-minibatch (prevents unit-variance rescaling of "
                              "reward-free minibatches)")
+    parser.add_argument("--target_kl",        type=float, default=0.0,
+                        help="Early-stop PPO epochs when approx KL exceeds this "
+                             "(0 = off; 0.02 is the standard choice)")
+    parser.add_argument("--adv_std_floor",    type=float, default=0.0,
+                        help="Skip the entire PPO update for rollouts whose raw advantage "
+                             "std is below this floor (0 = off). Cycle-2 verified that "
+                             ">half of peak-policy rollouts carry zero reward events and "
+                             "their normalized critic noise drives the collapse")
+    parser.add_argument("--vf_coef",          type=float, default=0.5,
+                        help="Value-loss coefficient (cycle-2: value gradients dominate "
+                             "the shared trunk at 0.5; 0.25 recommended)")
+    parser.add_argument("--event_gate",       action="store_true",
+                        help="Skip the PPO update for rollouts containing zero true "
+                             "environment reward events (calibration-free version of "
+                             "the advantage noise gate)")
     parser.add_argument("--update_epochs",    type=int, default=8,
                         help="PPO epochs per rollout (original recipe: 8; stability "
                              "pilot: 4 to halve sample reuse)")
@@ -1071,6 +1125,10 @@ def main():
         trunc_bootstrap      = args.trunc_bootstrap,
         seed_maps            = args.seed_maps,
         batch_adv_norm       = args.batch_adv_norm,
+        target_kl            = args.target_kl,
+        adv_std_floor        = args.adv_std_floor,
+        event_gate           = args.event_gate,
+        vf_coef              = args.vf_coef,
         lr                   = 3e-4,
         gamma                = 0.99,
         gae_lambda           = 0.95,
@@ -1094,6 +1152,10 @@ def main():
     if args.trunc_bootstrap:   cond += "_tb"
     if args.seed_maps:         cond += "_seedmaps"
     if args.batch_adv_norm:    cond += "_ban"
+    if args.target_kl > 0:     cond += "_kl"
+    if args.adv_std_floor > 0: cond += "_gate"
+    if args.event_gate:        cond += "_eg"
+    if args.vf_coef != 0.5:    cond += "_vf"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds

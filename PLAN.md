@@ -6013,6 +6013,44 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     obs-unnormalized (raw uint8 token buffers, ~81% padding=255, no
     input scaling into the MLP), C6 unclipped value loss through the
     shared trunk, C2 no KL guard on 48 reuse steps/rollout.
+- Cycle-2 verifier verdicts (`auto_rl/bug_fix/mech_verify_cycle_2.md`):
+  - N1 VERIFIED LIVE (the A-4 explainer): batch-level adv normalization
+    moved C1's pathology up a level, not away. A real rollout with
+    `0/6144` nonzero rewards had its pure critic-noise advantages (raw
+    std `0.081`) renormalized to unit variance and applied for 48
+    coherent Adam steps; approx-KL reached `0.012` and realized ratios
+    drifted to `[0.70, 1.55]` despite clipping. At peak sparsity ~55% of
+    rollouts are pure-noise updates;
+  - C2 VERIFIED: no KL guard of any kind exists; standard `target_kl`
+    early stop is ~6 lines, low risk;
+  - C6 SUPPORTED: the value term is the LARGEST trunk gradient at init
+    (norm `1.34` vs policy `0.75`) despite a small-looking loss;
+    `vf_coef 0.25` is the right-sized remedy;
+  - C10 REFUTED as root cause: LayerNorm directly after the first
+    Linear makes layer 1 scale-invariant, Adam neutralizes the
+    padding/signal gradient asymmetry, and the input distribution is
+    stationary. `obs/255` remains optional hygiene only;
+  - N2 (paper-relevant): the embedding head receives NO gradient under
+    the plain PPO loss -- all historical baseline probe/geometry metrics
+    read a fixed random 128->64 projection of trunk features. Applies
+    equally to both conditions, but must be disclosed alongside any
+    geometry claims;
+  - N3: Adam's noise floor blunts rescaling-based fixes; gating and KL
+    stops are the robust class.
+- Phase A-5 pre-registration (flag-gated, all on top of the A-4 stack):
+  - `--event_gate`: skip the PPO update for rollouts with zero true
+    environment reward events (counted pre-bootstrap-patch;
+    calibration-free version of the verifier's noise gate);
+  - `--target_kl 0.02`: early-stop PPO epochs on approx-KL (k3
+    estimator);
+  - `--vf_coef 0.25`: halve value-gradient pressure on the shared trunk;
+  - arms: same 5 seeds (individual `0,1,2`, shared `0,1`), 5M steps;
+    A-4 runs are the matched controls;
+  - success criterion unchanged: `final >= 0.8 x p90` on a majority;
+  - if A-5 passes: adopt the recipe and proceed to the full 2x5 gate
+    experiment + differentiation gate; if it fails: run the critic on
+    cycles 1-2 and reassess whether the residual decay is environment
+    nonstationarity rather than optimization.
 
 ## Candidate Commands
 
