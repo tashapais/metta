@@ -5499,6 +5499,133 @@ Stage-19 specialization-forcing follow-up:
       handoff, final-use, policy collapse) from replay evidence before any
       v25 design;
     - do not update `main_richard.tex` unless behavior gates pass.
+  - Stage-33 result, code commit `2dc74e1f1`:
+    - worktrees `/workspace/tasha_metta_stage33_v24_2dc74e1f1` on both
+      sandboxes, clean at `2dc74e1f1`;
+    - jobs (combined train+behavior, all SUCCEEDED in ~8-9.5 min):
+      - `relh-sandbox-1` Sky job `227` (v24, seeds `0,1`) and `228`
+        (v17 control, seeds `0,1`);
+      - `relh-sandbox-2` Sky job `223` (v24, seeds `2,3`) and `224`
+        (v17 control, seeds `2,3`);
+    - v24 roots:
+      `/workspace/tribal_event_mask_runs/stage33_v24_v17_handoff_potential_1m_2dc74e1f1`
+      and `..._behavior`; v17 control roots:
+      `/workspace/tribal_event_mask_runs/stage33_v17_depositor_staging_1m_control_2dc74e1f1`
+      and `..._behavior`.
+  - Stage-33 v24 behavior gate over `20` episodes (per-seed
+    ore/o2c/crafts/b2d/hearts/stranded):
+    - seed `0`: `14/7/5/0/0/3`; seed `1`: `33/14/2/1/0/2`;
+      seed `2`: `19/10/7/0/0/5`; seed `3`: `26/12/1/0/0/1`;
+    - totals: `92` ore, `43` ore-to-crafter, `15` battery crafts,
+      `1` battery-to-depositor, `0` hearts, `11` stranded.
+  - Stage-33 v17 control behavior gate over `20` episodes:
+    - seed `0`: `27/19/4/0/0/2`; seed `1`: `25/15/3/1/0/1`;
+      seed `2`: `27/20/3/0/0/2`; seed `3`: `8/1/0/0/0/0`;
+    - totals: `87` ore, `55` ore-to-crafter, `10` battery crafts,
+      `1` battery-to-depositor, `0` hearts, `5` stranded.
+  - Stage-33 training metrics (seed: EffRank/n, Dact KL, Dact JS, probe,
+    raw return):
+    - v24: `0`: `0.1621/8.8185/0.2805/0.5215/-5.2400`;
+      `1`: `0.2770/10.0631/0.3386/0.4838/-6.3363`;
+      `2`: `0.1686/7.5000/0.2677/0.4454/-6.7278`;
+      `3`: `0.1722/6.5560/0.2327/0.4312/-6.1580`;
+    - v17 control: `0`: `0.2155/7.2002/0.2526/0.3466/-6.0698`;
+      `1`: `0.1819/8.5654/0.2804/0.4366/-6.6980`;
+      `2`: `0.1643/9.3139/0.3160/0.4042/-6.6628`;
+      `3`: `0.1884/8.2239/0.3063/0.3585/-5.8465`.
+  - Stage-33 decision:
+    - v24 fails promotion: it ties the contemporaneous v17 control on final
+      completion (`1` handoff vs `1`, `0` hearts vs `0`) instead of beating
+      it. Upstream is mixed (more crafts `15` vs `10`, fewer ore-to-crafter
+      handoffs `43` vs `55`). The retargeted potential did not convert
+      battery-holding into adjacency or handoffs;
+    - the more important finding is the control itself: v17 at the same
+      budget and protocol produced `87/55/10/1/0` versus Stage-25's
+      historical `179/105/45/5/4`. The v17 family's best final-mile result
+      does not reproduce across fresh training runs and eval seeds. The
+      Stage-25 "5 handoffs / 4 hearts" bar was run-level luck, not a stable
+      property of the design;
+    - failure classification: handoff failure in both arms (batteries
+      crafted then stranded: `11/15` for v24, `5/10` for v17), zero final
+      uses anywhere; v17 seed `3` additionally shows upstream acquisition
+      failure (`8/1/0`);
+    - conclusion: the positive-only shaping campaign is concluded. With
+      budget scaling ruled out (Stage-32) and the best design's completions
+      now shown to be unreproducible run-to-run noise (Stage-33), no further
+      v2x reward iteration is justified. The next intervention must be
+      structural (environment/action-surface redesign, Coworld migration, or
+      a different experiment stream), not another shaped-reward variant;
+    - `main_richard.tex` already carries the bounded negative claim from
+      Stage-32; Stage-33 strengthens it (the Table~`tab:shaping` "Staging,
+      1M" row should be read as a best-observed, not reproducible, result —
+      fold this caveat into the next paper edit).
+
+## Arena Exp-4 Probe Audit: 2026-06-11
+
+Context: Tasha's original `paper_exp_reward_type.py` runs (wandb project
+`tashapais/representation-collapse`, 2026-02-27) are the source of the
+"individual probe `0.784 +/- 0.068` vs shared `0.502 +/- 0.007`" claim.
+These are arena (cogames `make_arena`, 12-agent, 5M steps, single shared
+PPO policy) runs, a separate stream from the Tribal Village MAPPO
+reconstruction. Audited runs: individual `bswht815, 6htfbjes, mnzynfmk,
+m9ibxhrq, isvll1u7`; shared `vilbrhtl, n1ee7uzj, 63ebzghl, quue0asw,
+ud88lyms`.
+
+What reproduces and is real:
+
+- The raw accuracy gap is consistent across all five seed pairs
+  (individual `0.667-0.837`, shared `0.491-0.509`).
+- The policies do real arena work: win rates individual mean `0.330`,
+  shared mean `0.239`; positive mean returns in both conditions.
+- EffRank/n is HIGHER under shared rewards (`0.70-0.91+`) than individual
+  (`0.52-0.78`), so any collapse is semantic, not geometric, in this
+  stream.
+
+What does not survive scrutiny (from the runs' own logged metrics and
+output logs):
+
+- The two conditions used different chance baselines: individual
+  `probe_chance = 0.932-0.965` (labels ~`95/5` imbalanced), shared exactly
+  `0.500` (balanced). The headline `0.784` vs `0.502` compares accuracies
+  on different tasks.
+- By the script's own `final/probe_lift`, every individual seed is
+  NEGATIVE (`-0.287` to `-0.096`): the probe performs worse than
+  majority-class guessing against its own baseline. Shared lift is ~`0`.
+- The executed label code differed between condition groups: individual
+  runs (launched 00:12Z) produced ~`95/5` labels; shared runs (launched
+  01:16Z) produced exactly balanced labels matching the committed
+  argsort-rank rule in `ce4d46ba8`, whose balanced construction cannot
+  produce a `0.95` chance. The committed code is therefore not the code
+  that generated the individual numbers.
+- Under shared rewards per-agent returns are identical by construction
+  (team-mean broadcast), so rank labels under ties collapse to a fixed
+  agent-index split: the shared probe measures agent-identity decoding,
+  not contribution decoding, and ~chance is close to guaranteed.
+- Probe samples (`n=4848` = 404 episodes x 12 agents in both audited runs)
+  span the ENTIRE training run, mixing random-init and converged-policy
+  embeddings rather than probing the final encoder.
+- The win-rate gap (`0.330` vs `0.239`, n=5/condition, overlapping ranges)
+  is suggestive but not significant on its own (t ~ 1.4).
+
+Verdict:
+
+- The write-off of the ORIGINAL Tribal Village MAPPO claims in `main.tex`
+  (probe `0.921` -> `0.371`) stands; that is a different stream that
+  failed behavior audits.
+- The arena Exp-4 gap is a real, reproducible RAW difference, but the
+  current probe construction cannot support the "feedback attribution
+  determines role decodability" interpretation as-is.
+- The hypothesis remains testable with a cheap corrected design:
+  - identical pre-registered label code for both conditions;
+  - labels from GROUND-TRUTH per-agent returns in both conditions (the env
+    wrapper computes true per-agent rewards before team-averaging, so the
+    shared condition can be trained on shared reward but LABELED by true
+    individual contribution);
+  - balanced rank labels, stratified held-out evaluation, probe fit only
+    on final-policy embeddings (last-K-episode collection);
+  - ~30 min/seed at 5M steps on the L4 sandboxes; 5 seeds/condition fits
+    one sandbox in an afternoon.
+- Do not edit `main_richard.tex` from this audit alone; rerun first.
 
 ## Candidate Commands
 
@@ -5710,9 +5837,14 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
 - [x] Update `main_richard.tex` with the bounded negative finding from the
       v11-v23 role-targeted shaping campaign and the Stage-32 budget control.
 - [x] Implement and smoke v24 handoff-potential retargeting.
-- [ ] Launch Stage-33 short v24 diagnostics with a contemporaneous v17 control.
-- [ ] Inspect Stage-33 handoffs, deposits, upstream recovery, and stranded batteries.
-- [ ] Classify Stage-33 failures from replay evidence before any v25 design.
+- [x] Launch Stage-33 short v24 diagnostics with a contemporaneous v17 control.
+- [x] Inspect Stage-33 handoffs, deposits, upstream recovery, and stranded batteries.
+- [x] Classify Stage-33 failures from replay evidence before any v25 design.
+      (Handoff failure both arms; v17 control does not reproduce Stage-25;
+      shaping campaign concluded — no v25.)
+- [x] Audit Tasha's arena Exp-4 wandb runs for the probe claim provenance.
+- [ ] Rerun the arena reward-type experiment with the corrected ground-truth
+      contribution probe before using its numbers in any paper.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 - [ ] Reconstruct and smoke-test the SMACv2 `10gen_terran` boundary runner.
 - [ ] Rerun SMACv2 3 seeds per reward mode and aggregate the old table schema.
