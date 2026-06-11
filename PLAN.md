@@ -5668,6 +5668,43 @@ Verdict:
     one sandbox in an afternoon.
 - Do not edit `main_richard.tex` from this audit alone; rerun first.
 
+Corrected rerun pre-registration (2026-06-11):
+
+- Script change: `--corrected_probe` flag in
+  `v3_experiments/paper_exp_reward_type.py`:
+  - the env wrapper now accumulates GROUND-TRUTH per-agent returns before
+    any reward-sharing transform, in both conditions;
+  - labels: per episode, top-quartile vs bottom-quartile agents by
+    ground-truth return (3 vs 3 at 12 agents), requiring strict separation
+    (`min(top) > max(bottom)`); tied episodes are SKIPPED and counted, never
+    arbitrarily labeled;
+  - probe data restricted to episodes completed in the final 20% of
+    training (final-policy embeddings), evaluated with `GroupKFold(5)` over
+    episodes so no episode spans train and test;
+  - identical label and evaluation code runs in both reward conditions;
+    chance is `0.500` by construction in both.
+- Local validation: `py_compile` passed; label-invariant unit checks passed
+  (all-tied episodes skipped, boundary-crossing ties skipped, clean
+  separations labeled correctly); CPU smokes at 40k and 150k steps
+  exercised both guard paths (no late episodes -> fallback `0.5`; 12 late
+  episodes all tie-skipped under an untrained policy -> fallback with
+  counts reported in the JSON).
+- Launch plan: 12 agents, 5M steps, seeds `0-4` for both `individual` and
+  `shared`, one Sky job per seed, `WANDB_MODE=offline`, results under
+  `/workspace/tribal_event_mask_runs/exp4_corrected_probe_<sha>/`;
+  `relh-sandbox-1` runs the individual arm, `relh-sandbox-2` the shared
+  arm (5 jobs per box on 4 GPUs, ~32 min per run).
+- Interpretation rule (pre-registered): if the corrected probe gap
+  (individual above chance, shared at/near chance, matched `0.500`
+  baselines) survives, the feedback-attribution decodability claim is
+  supported and `main_richard.tex` Experiment 4 gains a positive result;
+  if individual is also at chance, or both are above chance, the original
+  claim is unsupported/reframed accordingly. Either way the paper is
+  updated only from these artifacts. Also report
+  `probe_episodes_used`/`skipped_ties` per run: if tie-skipping leaves too
+  few episodes (<5 groups or <50 samples), the run reports the fallback
+  and the protocol (not the claim) is revisited.
+
 ## Candidate Commands
 
 These commands are the current local/sandbox shape. The sandbox launcher can

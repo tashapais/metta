@@ -39,6 +39,7 @@ Run names: paper_reward_{reward_type}[_contrastive]_18agents_seed{N}
 """
 import argparse
 import json
+import os
 import time
 from collections import deque
 
@@ -234,6 +235,10 @@ class MettaGridVecEnv:
 
         self.episode_steps   = np.zeros(num_envs, dtype=np.int32)
         self.episode_returns = np.zeros((num_envs, num_agents), dtype=np.float32)
+        # Ground-truth per-agent returns, accumulated BEFORE any reward
+        # sharing transform. Used by the corrected probe so both reward
+        # conditions can be labeled with identical semantics.
+        self.episode_true_returns = np.zeros((num_envs, num_agents), dtype=np.float32)
 
     def _reset_sim(self, i: int, seed_offset: int = 0):
         self.sims[i].close()
@@ -241,6 +246,7 @@ class MettaGridVecEnv:
         self.sims[i] = Simulation(cfg, seed=seed_offset + i)
         self.episode_steps[i]   = 0
         self.episode_returns[i] = 0.0
+        self.episode_true_returns[i] = 0.0
 
     def get_obs(self) -> np.ndarray:
         obs_list = []
@@ -267,6 +273,7 @@ class MettaGridVecEnv:
             self.episode_steps[i] += 1
 
             rews = sim._c_sim.rewards().copy()  # per-agent
+            self.episode_true_returns[i] += rews
 
             if reward_type == "shared":
                 # All agents get the team-mean reward → identical gradient signal
@@ -287,7 +294,8 @@ class MettaGridVecEnv:
             if done:
                 all_ep_returns.append((
                     float(self.episode_returns[i].sum()),
-                    self.episode_returns[i].copy()   # per-agent returns for probe
+                    self.episode_returns[i].copy(),       # training returns (post-sharing)
+                    self.episode_true_returns[i].copy(),  # ground-truth returns (pre-sharing)
                 ))
                 self._reset_sim(i, seed_offset=global_step)
 
@@ -392,6 +400,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if use_cl:        cond += "_contrastive"
     if use_reward_cl: cond += "_rewardCL"
     if use_sep_enc:   cond += "_sepenc"
+    if cfg.get("corrected_probe"): cond += "_correctedprobe"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -444,6 +453,12 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     probe_embeddings: list[np.ndarray] = []
     probe_labels:     list[int]        = []
 
+    # Corrected probe: per-episode (terminal embeddings, ground-truth returns,
+    # global_step) tuples. Labeled identically in both reward conditions after
+    # training, restricted to the final slice of training.
+    corrected_probe = bool(cfg.get("corrected_probe", False))
+    corrected_probe_episodes: list[tuple[np.ndarray, np.ndarray, int]] = []
+
     # Episode buffer for reward-conditioned SupCon.
     # Stores (obs: np.ndarray (n_agents, obs_dim), rank_labels: np.ndarray (n_agents,))
     # for completed episodes. We store obs (not embs) so we can re-forward with
@@ -477,15 +492,21 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             val_buf[step]   = vals.cpu().numpy().reshape(E, n_agents)
             emb_buf[step]   = embs.cpu().numpy().reshape(E, n_agents, -1)
             logit_buf[step] = lgts.cpu().numpy().reshape(E, n_agents, n_actions)
-            recent_returns.extend([total_ret for total_ret, _ in ep_rets])
+            recent_returns.extend([ep[0] for ep in ep_rets])
 
             # Collect probe + episode-buffer data from completed episodes
             embs_np = embs.cpu().numpy().reshape(E, n_agents, -1)
             ep_idx  = 0
             for env_i in range(E):
                 if dones[env_i] and ep_idx < len(ep_rets):
-                    _, per_agent_rets = ep_rets[ep_idx]
+                    _, per_agent_rets, true_per_agent_rets = ep_rets[ep_idx]
                     ep_idx += 1
+                    if corrected_probe:
+                        corrected_probe_episodes.append((
+                            embs_np[env_i].copy(),         # (n_agents, emb_dim) at terminal step
+                            true_per_agent_rets.copy(),    # ground-truth pre-sharing returns
+                            global_step,
+                        ))
                     if len(per_agent_rets) >= 2:
                         # Use argsort so top/bottom halves are always balanced,
                         # even when all returns are equal (e.g. shared reward collapse).
@@ -684,7 +705,54 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "probe_accuracy": 0.0, "probe_accuracy_std": 0.0,
         "probe_chance": 0.5, "probe_lift": 0.0, "n_samples": 0,
     }
-    if len(probe_embeddings) >= 50:
+    if corrected_probe:
+        # Corrected probe: identical label semantics in both reward conditions.
+        # Labels come from GROUND-TRUTH per-agent returns (computed before any
+        # reward sharing), restricted to episodes from the final 20% of
+        # training (final-policy embeddings), using balanced top/bottom
+        # quartile labels with strict separation, evaluated with GroupKFold
+        # over episodes so no episode contributes to both train and test.
+        from sklearn.model_selection import GroupKFold, cross_val_score as cvs
+
+        cutoff = 0.8 * total_steps
+        late = [ep for ep in corrected_probe_episodes if ep[2] >= cutoff]
+        q = max(1, n_agents // 4)
+        Xs, ys, groups = [], [], []
+        skipped_ties = 0
+        for group_id, (embs_ep, true_rets, _) in enumerate(late):
+            order = np.argsort(true_rets)
+            bottom, top = order[:q], order[-q:]
+            if true_rets[top].min() <= true_rets[bottom].max():
+                skipped_ties += 1   # no strict separation — labels would be arbitrary
+                continue
+            for a in top:
+                Xs.append(embs_ep[a]); ys.append(1); groups.append(group_id)
+            for a in bottom:
+                Xs.append(embs_ep[a]); ys.append(0); groups.append(group_id)
+        n_groups = len(set(groups))
+        probe_results = {
+            "probe_accuracy": 0.5, "probe_accuracy_std": 0.0,
+            "probe_chance": 0.5, "probe_lift": 0.0, "n_samples": len(ys),
+            "probe_schema": "corrected_true_return_quartiles_groupkfold_final20pct",
+            "probe_episodes_used": n_groups,
+            "probe_episodes_skipped_ties": skipped_ties,
+        }
+        if n_groups >= 5 and len(ys) >= 50:
+            X = StandardScaler().fit_transform(np.array(Xs, dtype=np.float32))
+            y = np.array(ys, dtype=np.int64)
+            g = np.array(groups)
+            clf = LogisticRegression(max_iter=1000, C=1.0, random_state=0)
+            scores = cvs(clf, X, y, cv=GroupKFold(n_splits=5), groups=g, scoring="accuracy")
+            chance = float(max(y.mean(), 1 - y.mean()))
+            probe_results.update({
+                "probe_accuracy":     float(scores.mean()),
+                "probe_accuracy_std": float(scores.std()),
+                "probe_chance":       chance,
+                "probe_lift":         float(scores.mean() - chance),
+            })
+        print(f"[{run_name}] Corrected probe: episodes_used={n_groups} "
+              f"skipped_ties={skipped_ties} n_samples={len(ys)}")
+    elif len(probe_embeddings) >= 50:
         X   = np.array(probe_embeddings, dtype=np.float32)
         y   = np.array(probe_labels,     dtype=np.int64)
         if len(np.unique(y)) < 2:
@@ -733,7 +801,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "contrastive":        use_cl,
         "reward_cl":          use_reward_cl,
         "condition":          cond,
-        "probe_schema":       "binary_return_top_bottom",
+        "probe_schema":       probe_results.get("probe_schema", "binary_return_top_bottom"),
+        "probe_episodes_used": probe_results.get("probe_episodes_used"),
+        "probe_episodes_skipped_ties": probe_results.get("probe_episodes_skipped_ties"),
+        "probe_n_samples":    probe_results.get("n_samples"),
         "seed":               seed,
         "num_agents":         n_agents,
         "run_name":           run_name,
@@ -774,12 +845,20 @@ def main():
                         help="First seed index (allows parallel per-seed GPU runs)")
     parser.add_argument("--total_timesteps",  type=int, default=5_000_000)
     parser.add_argument("--probe_episodes",   type=int, default=200)
+    parser.add_argument("--corrected_probe",  action="store_true",
+                        help="Label BOTH conditions with ground-truth per-agent returns "
+                             "(pre-sharing), balanced quartile labels with strict separation, "
+                             "GroupKFold by episode, final-20%%-of-training embeddings only")
+    parser.add_argument("--out_dir",          type=str,
+                        default=os.path.dirname(os.path.abspath(__file__)),
+                        help="Directory for per-seed result JSONs")
     args = parser.parse_args()
 
     cfg = dict(
         reward_type          = args.reward_type,
         contrastive          = args.contrastive,
         reward_cl            = args.reward_cl,
+        corrected_probe      = args.corrected_probe,
         separate_encoders    = args.separate_encoders,
         num_agents           = args.num_agents,
         gpu                  = args.gpu,
@@ -806,6 +885,7 @@ def main():
     if args.contrastive:       cond += "_contrastive"
     if args.reward_cl:         cond += "_rewardCL"
     if args.separate_encoders: cond += "_sepenc"
+    if args.corrected_probe:   cond += "_correctedprobe"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds
@@ -819,9 +899,9 @@ def main():
 
     # Each per-seed process writes a seed-specific file; merge script combines them.
     seed_tag = f"s{args.seed_start}" if args.num_seeds == 1 else f"s{args.seed_start}-{seed_end-1}"
-    out_path = (
-        f"/home/ubuntu/metta/v3_experiments/"
-        f"results_reward_{cond}_{args.num_agents}agents_{seed_tag}.json"
+    out_path = os.path.join(
+        args.out_dir,
+        f"results_reward_{cond}_{args.num_agents}agents_{seed_tag}.json",
     )
     with open(out_path, "w") as f:
         json.dump(all_results, f, indent=2)
