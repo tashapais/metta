@@ -5995,6 +5995,24 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     and the differentiation gate; if it fails: continue the bug-hunt
     debate cycles with the verifier/critic on the remaining suspects
     (value-loss clipping, actor-critic interference).
+- Phase A-4 result, commit `9da9e1f35` (5 Sky jobs `phaseA4-*`, all
+  SUCCEEDED, results under
+  `/workspace/tribal_event_mask_runs/phaseA4_allfixes_9da9e1f35/`):
+  - FAIL against the 0.8 bar (`0/5`): final/p90 individual
+    `0.24, 0.54, 0.25`, shared `0.55, 0.60` -- but collapse is softer
+    than A-1/2/3 worst cases (`0.07-0.14`) and the shared arm no longer
+    craters;
+  - instrument breakthrough: with seeded maps + fixes, contribution
+    separation jumped (k=1 separated fractions `52%/73%` on individual
+    seeds 1-2 vs ~`30%` before), and the corrected probe produced its
+    first valid above-chance readings: individual `0.597` (n=84) and
+    `0.564` (n=64) vs shared at chance. Directionally consistent with
+    the feedback-attribution hypothesis, but measured on still-degrading
+    policies -- diagnostic only, NOT paper evidence;
+  - cycle-2 verification dispatched on remaining suspects: C10
+    obs-unnormalized (raw uint8 token buffers, ~81% padding=255, no
+    input scaling into the MLP), C6 unclipped value loss through the
+    shared trunk, C2 no KL guard on 48 reuse steps/rollout.
 
 ## Candidate Commands
 
