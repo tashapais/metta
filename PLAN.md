@@ -5727,6 +5727,42 @@ Corrected rerun pre-registration (2026-06-11):
   - validity threshold unchanged (`>=5` groups, `>=50` samples, i.e.
     `>=25` separated episodes per run);
   - relaunch all 10 runs at the new commit.
+- Protocol v2 result, commit `c22d2b24a` (10 Sky jobs `exp4cpv2-*`, all
+  SUCCEEDED ~8-9 min, results under
+  `/workspace/tribal_event_mask_runs/exp4_corrected_probe_v2_c22d2b24a/`):
+  - per-run probe outcomes (acc / episodes used of ~80 / n):
+    - individual: seed `0`: `0.5857` / `35` / `70` (VALID);
+      seed `1`: fallback / `16` / `32`; seed `2`: `0.4133` / `28` / `56`
+      (VALID); seed `3`: fallback / `17` / `34`; seed `4`: fallback /
+      `21` / `42`;
+    - shared: seed `0`: fallback / `19` / `38`; seed `1`: fallback /
+      `18` / `36`; seed `2`: fallback / `12` / `24`; seed `3`: fallback /
+      `10` / `20`; seed `4`: `0.5033` / `28` / `56` (VALID);
+  - valid-run summary: individual `0.586` and `0.413` (pooled,
+    sample-weighted `0.509`), shared `0.503`. Chance is `0.500` for all,
+    by construction;
+  - win rates remain directionally consistent with prior runs
+    (individual mean `0.308`, shared `0.261`, n=5 each, overlapping);
+  - even at k=1, `56-88%` of late episodes are tie-skipped, confirming
+    sparse per-agent contribution variance in this arena.
+- Verdict (per the pre-registered interpretation rule):
+  - the corrected probe finds chance-level ground-truth-contribution
+    decoding in BOTH reward conditions. The original
+    "individual `0.784` vs shared `0.502`" gap does not survive matched
+    baselines and identical label code: it was an artifact of the
+    asymmetric probe construction, not a property of the
+    representations;
+  - the feedback-attribution decodability claim is unsupported in this
+    environment. Additionally, the tie statistics show this arena is a
+    weak instrument for the question (most agents contribute
+    indistinguishably in most episodes), so a future positive test needs
+    an environment with denser per-agent contribution variance;
+  - the surviving real signal is behavioral: individual rewards
+    consistently produce higher win rates than shared (directionally
+    stable across the original and both corrected reruns, though not
+    individually significant at n=5);
+  - `main_richard.tex` Experiment 4 updated from these artifacts per the
+    pre-registered rule.
 
 ## Candidate Commands
 
@@ -5944,8 +5980,11 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
       (Handoff failure both arms; v17 control does not reproduce Stage-25;
       shaping campaign concluded — no v25.)
 - [x] Audit Tasha's arena Exp-4 wandb runs for the probe claim provenance.
-- [ ] Rerun the arena reward-type experiment with the corrected ground-truth
+- [x] Rerun the arena reward-type experiment with the corrected ground-truth
       contribution probe before using its numbers in any paper.
+      (v1 quartile protocol tie-saturated; v2 extremes protocol valid runs
+      show chance-level decoding in both conditions. Claim unsupported;
+      recorded and folded into main_richard.tex.)
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 - [ ] Reconstruct and smoke-test the SMACv2 `10gen_terran` boundary runner.
 - [ ] Rerun SMACv2 3 seeds per reward mode and aggregate the old table schema.
