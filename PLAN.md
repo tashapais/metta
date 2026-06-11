@@ -5925,6 +5925,27 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     contribution density;
   - if A-3 fails: escalate to the structured `rl.bug_fix` adversarial
     debugging pipeline on this recipe before any environment work.
+- Phase A-3 result, commit `7d1dd8fe7` (5 Sky jobs `phaseA3-*`, all
+  SUCCEEDED, results under
+  `/workspace/tribal_event_mask_runs/phaseA3_truncboot_7d1dd8fe7/`):
+  - FAIL against the majority rule: final/p90 ratios individual
+    `0.77, 0.17, 0.07` (seeds 0-2), shared `0.86, 0.53` (seeds 0-1);
+    `1/5` clear pass;
+  - informative split: truncation bootstrapping STRONGLY helped the
+    shared arm (`0.15/0.14 -> 0.86/0.53`), consistent with the
+    value-bias mechanism, but the individual arm regressed (A-2's
+    stable seed 2 went `0.99 -> 0.07`);
+  - meta-observation across A-1/A-2/A-3: which seeds survive flips
+    between variants; collapse appears stochastic and seed-dominated at
+    n=2-3 per arm. Single-factor ablations at this sample size cannot
+    isolate the cause;
+  - per the pre-registered rule, escalating to the structured
+    `rl.bug_fix` adversarial debugging pipeline on
+    `v3_experiments/paper_exp_reward_type.py`, with the A-1/2/3
+    evidence as steering and remaining suspects: per-minibatch
+    advantage normalization, the separate SupCon optimizer step path,
+    unclipped value loss, mid-rollout reset/GAE interactions, and
+    map-regeneration nonstationarity (`seed_offset=global_step`).
 
 ## Candidate Commands
 
