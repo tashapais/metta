@@ -105,3 +105,39 @@ seeds flip across recipe variants.
 | entropy collapse | - | - | OUT_OF_SCOPE | measured, ruled out |
 | LR/epochs as root cause | - | - | EXHAUSTED | A-1 ablated |
 | combat dynamics | - | - | EXHAUSTED | A-2 ablated (contributing) |
+
+## Cycle 1 verifier verdicts (mech_verify_cycle_1.md)
+
+- C1 SUPPORTED (analytic: ~25% of minibatches zero reward signal at peak,
+  >=95% of samples pure critic noise; runtime fraction still unmeasured —
+  watch-item, instrument line 634 if A-4 fails). Fix implemented:
+  --batch_adv_norm. Status -> STRENGTHENED.
+- C4 SUPPORTED (code-order fact: team-mean transform inside env.step precedes
+  the per-agent patch). Self-reference sub-claim REFINED AWAY (standard TD
+  bootstrapping). Fix implemented: team-mean bootstrap in shared arm.
+  Status -> VERIFIED.
+- C5 SUPPORTED statically AND empirically (same seed -> different maps
+  pre-fix; explicit map_builder.seed -> identical). Fix implemented:
+  --seed_maps. Status -> VERIFIED.
+- C7 SUPPORTED statically AND empirically (requires_grad=False, param grads
+  bit-identical with/without the term). Fix implemented: gradient-attached
+  re-encoding. Status -> VERIFIED.
+
+## New claims from cycle 1
+
+### C8 — contrastive-as-seed-perturbation
+- Status: VERIFIED (verifier empirical)
+- Claim: historical --contrastive runs differed from baselines ONLY through
+  torch RNG stream perturbation (96 extra draws/rollout); InfoNCE conditions
+  were effectively reseeded baselines. Same dead wiring exists in
+  paper_exp_contrastive.py (lines 359, 423-431).
+- Consequence: historical Exp-5 InfoNCE conclusions ("InfoNCE collapses the
+  probe", CLAUDE.md) need re-attribution — the observed differences were
+  seed noise, compounded by C5 (unseeded maps).
+- Next: record in PLAN.md; flag for paper claim ledger.
+
+### C9 — shared-condition steal cancellation
+- Status: PLAUSIBLE_BUT_UNPROVEN
+- Claim: with combat on, paired +1/-1 steal events cancel to zero in the
+  team-mean reward — an unstated asymmetry between conditions (shared never
+  "sees" theft). Moot under --no_combat; relevant to historical combat runs.
