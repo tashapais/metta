@@ -1,5 +1,11 @@
 # Behavioral Reward Redesign and MAPPO Geometry Rerun Plan
 
+> MIGRATED (2026-06-11): active work moved to `Metta-AI/metta` branch
+> `relh-arena-probe-migration` (commit `40a60df853`); Tribal follow-ups
+> will target `Metta-AI/coworld-tribal-village` main. This fork is the
+> archive for the Tribal v10-v24 campaign and Phases A-1..A-5; the live
+> PLAN.md is in the new repo.
+
 ## Summary
 
 We are pivoting the Tribal Village representation experiment from a provenance
