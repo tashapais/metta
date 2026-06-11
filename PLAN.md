@@ -5607,6 +5607,47 @@ output logs):
 - The win-rate gap (`0.330` vs `0.239`, n=5/condition, overlapping ranges)
   is suggestive but not significant on its own (t ~ 1.4).
 
+Forensic timeline (2026-06-11 follow-up; all times UTC, 2026-02-26/27):
+
+- `23:49-00:05`: three waves of seed-0 batch launches crash within 0-7
+  minutes (launcher/script debugging; 17 failed/crashed runs).
+- `00:12:22`: the first working batch launches seed 0 of every condition
+  from the pre-commit script (version A: no `reward_cl` config keys,
+  threshold-style labels). The individual runs finish normally. ALL FOUR
+  shared-condition runs train the full budget and then die at the
+  end-of-training probe. Run `b29c3pyp`
+  (`paper_reward_shared_12agents_seed0`, failed at `2368s`) preserves the
+  traceback: sklearn `LogisticRegression` raised "This solver needs
+  samples of at least 2 classes in the data, but the data contains only
+  one class: 0". Version A's label rule produced zero positive labels
+  when all per-agent returns are tied at the team mean, which also
+  explains the ~`95/5` imbalance under individual rewards (a
+  greater-than-threshold rule that few agents clear).
+- `00:44-01:16`: individual 12ag seeds 1-2 launch, still version A.
+- `01:16:57`: the fixed script (version B: argsort balanced rank labels
+  whose code comment cites exactly this failure -- "even when all returns
+  are equal (e.g. shared reward collapse)" -- plus a single-class guard
+  and the new reward-CL SupCon machinery) relaunches the shared arm and
+  the rewardCL runs. These now complete, scoring ~`0.50` on labels that
+  are an arbitrary fixed agent-index split under tied returns.
+- `01:23:32`: version B committed as `ce4d46ba8` (`paper_exp_reward_type.py`
+  is a NEW file in this commit, so version A was never committed;
+  co-authored with Claude Sonnet 4.6).
+- `01:46-02:15`: individual 12ag seeds 3-4 launch and STILL run version A
+  (`reward_cl` keys absent from their configs) -- the individual arm was
+  never rerun under the fixed labels.
+- `04:48:13`: result JSONs committed as `9391a951a` with the
+  chance/lift mismatch recorded in the files (individual lift `-0.287`
+  to `-0.096`) but unflagged; the headline accuracy comparison was used
+  anyway.
+- Conclusion: the cross-condition incomparability was created by an
+  asymmetric crash fix. The probe crashed only on the shared condition;
+  the 1am fix changed the label semantics; only the shared arm was
+  relaunched. Nothing about the night suggests bad faith -- the fix looks
+  principled in isolation -- but the two headline numbers come from
+  different measurement instruments, and the logged lift that would have
+  caught it was never read.
+
 Verdict:
 
 - The write-off of the ORIGINAL Tribal Village MAPPO claims in `main.tex`
