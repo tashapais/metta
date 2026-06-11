@@ -5804,6 +5804,51 @@ Meaningful-training prerequisite (2026-06-11, after Richard's review):
   These can be sequenced: arena stabilization first as a pilot; if
   contributions remain sparse even at peak, the environment, not the
   recipe, is the binding constraint.
+- Richard's direction (2026-06-11): runs should not collapse at all --
+  collapse is a training-stability bug in the recipe, and peak-window
+  probing is a workaround, not the fix. Fix the recipe first; keep peak
+  tracking only as the diagnostic that proves no-collapse. Coworld
+  Tribal Village migration happens only after the arena recipe is
+  sorted.
+
+Phase A-1 stability pilot (pre-registered 2026-06-11):
+
+- Collapse diagnosis from run `bswht815` histories: NOT entropy collapse
+  (policy entropy stays `1.24-1.40` of max `ln(5)=1.61`; entropy bonus
+  `0.01` is present), value loss tiny, action diversity rising while
+  return falls. Prime suspects are sample-reuse churn and step size:
+  `update_epochs=8` (96 gradient steps per 6,144-sample rollout, ~2x
+  typical PPO reuse) with constant `lr=3e-4` and no annealing.
+- Metric note for honesty: the logged `win_rate` is the fraction of
+  recent episodes with positive team return, not vs-opponent wins.
+- Harness changes at this commit (defaults preserve the original recipe
+  exactly):
+  - `--anneal_lr`: linear LR decay to zero over training;
+  - `--update_epochs N` (original `8`; pilot uses `4`);
+  - `--probe_at_peak`: corrected-probe episodes selected from the
+    rolling-quality peak window (within 80% of run peak) instead of the
+    final 20%; saves a best-quality checkpoint
+    (`<run>_best.pt`); emits differentiation-gate diagnostics
+    (`gate_peak_quality`, `gate_final_quality`,
+    `gate_separated_frac_k1`, `gate_separable_frac_quartile`).
+- Pilot arms (5 runs, 5M steps, 12 agents): stable recipe
+  (`--anneal_lr --update_epochs 4 --corrected_probe --probe_at_peak`)
+  for individual seeds `0,1,2` and shared seeds `0,1`. Controls: the
+  exp4-corrected-probe v2 runs (same code lineage, original recipe,
+  fresh) and the original February curves.
+- Success criteria (pre-registered):
+  - no-collapse: `gate_final_quality >= 0.8 * gate_peak_quality` on a
+    majority of stable-recipe seeds;
+  - no performance cost: stable-recipe `gate_peak_quality` within ~20%
+    of the original recipe's peak on matched seeds;
+- Decision rule:
+  - pass -> adopt the stable recipe, run the full Phase A gate
+    experiment (2 conditions x 5 seeds), and evaluate the
+    differentiation gate (contribution variance at a healthy policy);
+    Phase B vs Coworld migration is decided by contribution density at
+    the no-collapse policy;
+  - fail -> deeper bug hunt in the training code (coefficients, GAE,
+    masking) before any environment work.
 
 ## Candidate Commands
 

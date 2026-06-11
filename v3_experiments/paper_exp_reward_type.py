@@ -401,6 +401,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if use_reward_cl: cond += "_rewardCL"
     if use_sep_enc:   cond += "_sepenc"
     if cfg.get("corrected_probe"): cond += "_correctedprobe"
+    if cfg.get("probe_at_peak"):   cond += "_peak"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -425,6 +426,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                             n_agents=n_agents,
                             separate_encoders=cfg.get("separate_encoders", False)).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg["lr"], eps=1e-5)
+    anneal_lr = bool(cfg.get("anneal_lr", False))
 
     T          = cfg["num_steps"]
     E          = cfg["num_envs"]
@@ -454,10 +456,21 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     probe_labels:     list[int]        = []
 
     # Corrected probe: per-episode (terminal embeddings, ground-truth returns,
-    # global_step) tuples. Labeled identically in both reward conditions after
-    # training, restricted to the final slice of training.
+    # global_step, policy_quality) tuples. Labeled identically in both reward
+    # conditions after training. Episode selection is either the final slice
+    # of training (default) or the peak-quality window (--probe_at_peak).
     corrected_probe = bool(cfg.get("corrected_probe", False))
-    corrected_probe_episodes: list[tuple[np.ndarray, np.ndarray, int]] = []
+    probe_at_peak = bool(cfg.get("probe_at_peak", False))
+    corrected_probe_episodes: list[tuple[np.ndarray, np.ndarray, int, float]] = []
+    # Rolling policy-quality estimate: mean episode return over the last 50
+    # completed episodes. Used to tag probe episodes and to checkpoint the
+    # peak policy (Phase A: probe the peak, not the post-collapse endpoint).
+    quality_window: deque = deque(maxlen=50)
+    best_quality = float("-inf")
+    best_quality_step = 0
+    best_ckpt_path = None
+    if corrected_probe and cfg.get("out_dir"):
+        best_ckpt_path = os.path.join(cfg["out_dir"], f"{run_name}_best.pt")
 
     # Episode buffer for reward-conditioned SupCon.
     # Stores (obs: np.ndarray (n_agents, obs_dim), rank_labels: np.ndarray (n_agents,))
@@ -502,11 +515,27 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                     _, per_agent_rets, true_per_agent_rets = ep_rets[ep_idx]
                     ep_idx += 1
                     if corrected_probe:
+                        quality_window.append(float(per_agent_rets.sum()))
+                        policy_quality = float(np.mean(quality_window))
                         corrected_probe_episodes.append((
                             embs_np[env_i].copy(),         # (n_agents, emb_dim) at terminal step
                             true_per_agent_rets.copy(),    # ground-truth pre-sharing returns
                             global_step,
+                            policy_quality,
                         ))
+                        if (
+                            len(quality_window) == quality_window.maxlen
+                            and policy_quality > best_quality
+                        ):
+                            best_quality = policy_quality
+                            best_quality_step = global_step
+                            if best_ckpt_path is not None:
+                                torch.save(
+                                    {"model_state_dict": policy.state_dict(),
+                                     "global_step": global_step,
+                                     "policy_quality": policy_quality},
+                                    best_ckpt_path,
+                                )
                     if len(per_agent_rets) >= 2:
                         # Use argsort so top/bottom halves are always balanced,
                         # even when all returns are equal (e.g. shared reward collapse).
@@ -560,6 +589,10 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         flat_ret  = ret_buf.reshape(n_total)
 
         # ---- PPO updates ----
+        if anneal_lr:
+            frac = max(0.0, 1.0 - global_step / total_steps)
+            for pg_group in optimizer.param_groups:
+                pg_group["lr"] = cfg["lr"] * frac
         idx = np.arange(n_total)
         total_pg, total_vl, total_ent, total_cl, total_rcl = 0.0, 0.0, 0.0, 0.0, 0.0
         n_updates = 0
@@ -714,15 +747,36 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         # over episodes so no episode contributes to both train and test.
         from sklearn.model_selection import GroupKFold, cross_val_score as cvs
 
-        cutoff = 0.8 * total_steps
-        late = [ep for ep in corrected_probe_episodes if ep[2] >= cutoff]
+        if probe_at_peak and corrected_probe_episodes:
+            # Phase A selection: probe episodes collected while the rolling
+            # policy quality was within 80% of its run peak, i.e. embeddings
+            # from the policy at (or near) its behavioral best rather than
+            # the potentially degraded endpoint.
+            peak_q = max(ep[3] for ep in corrected_probe_episodes)
+            if peak_q > 0:
+                threshold = 0.8 * peak_q
+                late = [ep for ep in corrected_probe_episodes if ep[3] >= threshold]
+            else:
+                ranked = sorted(corrected_probe_episodes, key=lambda ep: ep[3], reverse=True)
+                late = ranked[: max(1, len(ranked) // 5)]
+            selection = "peak_quality_window"
+        else:
+            cutoff = 0.8 * total_steps
+            late = [ep for ep in corrected_probe_episodes if ep[2] >= cutoff]
+            selection = "final20pct"
         # Protocol v2: top-k vs bottom-k extremes. k=1 (most/least contributing
         # agent) after v1's quartile rule (k=3) skipped >90% of episodes for
         # ties -- ground-truth contributions in this arena are heavily tied.
         q = int(cfg.get("probe_extremes", 1))
         Xs, ys, groups = [], [], []
         skipped_ties = 0
-        for group_id, (embs_ep, true_rets, _) in enumerate(late):
+        quartile_separable = 0
+        q_gate = max(1, n_agents // 4)
+        for group_id, ep in enumerate(late):
+            embs_ep, true_rets = ep[0], ep[1]
+            g_order = np.argsort(true_rets)
+            if true_rets[g_order[-q_gate:]].min() > true_rets[g_order[:q_gate]].max():
+                quartile_separable += 1
             order = np.argsort(true_rets)
             bottom, top = order[:q], order[-q:]
             if true_rets[top].min() <= true_rets[bottom].max():
@@ -733,12 +787,29 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             for a in bottom:
                 Xs.append(embs_ep[a]); ys.append(0); groups.append(group_id)
         n_groups = len(set(groups))
+        final_quality = float(np.mean(quality_window)) if quality_window else 0.0
         probe_results = {
             "probe_accuracy": 0.5, "probe_accuracy_std": 0.0,
             "probe_chance": 0.5, "probe_lift": 0.0, "n_samples": len(ys),
-            "probe_schema": f"corrected_true_return_extremes_k{q}_groupkfold_final20pct",
+            "probe_schema": f"corrected_true_return_extremes_k{q}_groupkfold_{selection}",
             "probe_episodes_used": n_groups,
             "probe_episodes_skipped_ties": skipped_ties,
+            # Differentiation-gate diagnostics (Phase A):
+            "gate_episodes_selected": len(late),
+            "gate_separated_frac_k1": (
+                round(1.0 - skipped_ties / len(late), 4) if late else 0.0
+            ),
+            "gate_separable_frac_quartile": (
+                round(quartile_separable / len(late), 4) if late else 0.0
+            ),
+            "gate_peak_quality": round(best_quality, 4) if best_quality > float("-inf") else None,
+            "gate_peak_quality_step": best_quality_step,
+            "gate_final_quality": round(final_quality, 4),
+            "gate_best_checkpoint": (
+                best_ckpt_path
+                if best_ckpt_path is not None and os.path.exists(best_ckpt_path)
+                else None
+            ),
         }
         if n_groups >= 5 and len(ys) >= 50:
             X = StandardScaler().fit_transform(np.array(Xs, dtype=np.float32))
@@ -808,6 +879,13 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "probe_episodes_used": probe_results.get("probe_episodes_used"),
         "probe_episodes_skipped_ties": probe_results.get("probe_episodes_skipped_ties"),
         "probe_n_samples":    probe_results.get("n_samples"),
+        "gate_episodes_selected": probe_results.get("gate_episodes_selected"),
+        "gate_separated_frac_k1": probe_results.get("gate_separated_frac_k1"),
+        "gate_separable_frac_quartile": probe_results.get("gate_separable_frac_quartile"),
+        "gate_peak_quality":  probe_results.get("gate_peak_quality"),
+        "gate_peak_quality_step": probe_results.get("gate_peak_quality_step"),
+        "gate_final_quality": probe_results.get("gate_final_quality"),
+        "gate_best_checkpoint": probe_results.get("gate_best_checkpoint"),
         "seed":               seed,
         "num_agents":         n_agents,
         "run_name":           run_name,
@@ -854,6 +932,17 @@ def main():
                              "GroupKFold by episode, final-20%%-of-training embeddings only")
     parser.add_argument("--probe_extremes",   type=int, default=1,
                         help="k for top-k vs bottom-k corrected-probe labels per episode")
+    parser.add_argument("--probe_at_peak",    action="store_true",
+                        help="Select corrected-probe episodes from the peak policy-quality "
+                             "window (rolling 50-episode mean return within 80%% of run peak) "
+                             "instead of the final 20%% of training; also saves the best "
+                             "checkpoint and emits differentiation-gate diagnostics")
+    parser.add_argument("--anneal_lr",        action="store_true",
+                        help="Linearly anneal the learning rate to zero over training "
+                             "(stability fix for late-training return collapse)")
+    parser.add_argument("--update_epochs",    type=int, default=8,
+                        help="PPO epochs per rollout (original recipe: 8; stability "
+                             "pilot: 4 to halve sample reuse)")
     parser.add_argument("--out_dir",          type=str,
                         default=os.path.dirname(os.path.abspath(__file__)),
                         help="Directory for per-seed result JSONs")
@@ -865,6 +954,8 @@ def main():
         reward_cl            = args.reward_cl,
         corrected_probe      = args.corrected_probe,
         probe_extremes       = args.probe_extremes,
+        probe_at_peak        = args.probe_at_peak,
+        out_dir              = args.out_dir,
         separate_encoders    = args.separate_encoders,
         num_agents           = args.num_agents,
         gpu                  = args.gpu,
@@ -873,7 +964,8 @@ def main():
         max_steps            = 1024,
         total_timesteps      = args.total_timesteps,
         minibatch_size       = 512,
-        update_epochs        = 8,
+        update_epochs        = args.update_epochs,
+        anneal_lr            = args.anneal_lr,
         lr                   = 3e-4,
         gamma                = 0.99,
         gae_lambda           = 0.95,
@@ -892,6 +984,7 @@ def main():
     if args.reward_cl:         cond += "_rewardCL"
     if args.separate_encoders: cond += "_sepenc"
     if args.corrected_probe:   cond += "_correctedprobe"
+    if args.probe_at_peak:     cond += "_peak"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds
