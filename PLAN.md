@@ -5764,6 +5764,47 @@ Corrected rerun pre-registration (2026-06-11):
   - `main_richard.tex` Experiment 4 updated from these artifacts per the
     pre-registered rule.
 
+Meaningful-training prerequisite (2026-06-11, after Richard's review):
+
+- Learning-curve diagnosis from the original runs (wandb history,
+  `charts/mean_return`): the individual-reward policy peaks in
+  mid-training and then degrades (seed 0: mean return `0.243 -> 0.680 ->
+  0.960` over the first three fifths, then `0.865 -> 0.365` in the last
+  two), while the shared-reward policy stays flat (`~0.29-0.42`
+  throughout). Our corrected probe samples the final 20% of training, so
+  for the individual arm it probed a POST-COLLAPSE policy.
+- Revised interpretation of the corrected null: it is a precondition
+  failure, not a refutation. Two preconditions failed at measurement
+  time: (1) per-agent contributions are tied in most episodes
+  (v1 tie-saturation), and (2) the policy being probed had already
+  degraded from its behavioral peak. The same more-training-degrades
+  pattern appeared in the Tribal strict-v10 10M ramp and Stage-32.
+- Roadmap before any further attribution/representation claims:
+  - Phase A ("make training meaningful"): fix the training recipe so
+    agents reach and PRESERVE competent, differentiated behavior.
+    Candidate levers: peak/best-return checkpointing (probe the peak,
+    not the final step), entropy/LR schedules or early stop at peak,
+    and/or migration to an environment where specialization is
+    behaviorally necessary (Coworld Tribal Village richer variant or a
+    heterogeneous-agent arena without observable role bits).
+  - Differentiation gate (pre-registered, must pass before Phase B):
+    (a) behavioral competence at the probed checkpoint (win rate above
+    scripted/random baselines; return at or near run peak, not
+    degraded); (b) contribution variance: at most ~50% of gate episodes
+    tie-skipped at k=1, with a nonzero fraction separable at quartile
+    granularity; (c) for role claims, per-agent event-counter
+    heterogeneity.
+  - Phase B: only after the gate passes, rerun individual-vs-shared
+    with the corrected probe at the PEAK checkpoint, plus geometry
+    metrics and the behavior-derived role audit. This is the actual
+    test of the feedback-attribution hypothesis.
+- Open decision for Richard/Tasha: stabilize the existing arena recipe
+  (cheap, same harness, peak checkpointing is a small patch) vs migrate
+  to a contribution-dense environment (bigger lift, better instrument).
+  These can be sequenced: arena stabilization first as a pilot; if
+  contributions remain sparse even at peak, the environment, not the
+  recipe, is the binding constraint.
+
 ## Candidate Commands
 
 These commands are the current local/sandbox shape. The sandbox launcher can
