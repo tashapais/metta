@@ -5887,6 +5887,44 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     from ground-truth contributions) becomes the Phase B instrument,
     with the differentiation gate evaluated on these runs. If no-combat
     still collapses, proceed to the optimizer/GAE bug hunt.
+- Phase A-2 result, commit `2ca63c9b1` (5 Sky jobs `phaseA2-*`, all
+  SUCCEEDED, results under
+  `/workspace/tribal_event_mask_runs/phaseA2_nocombat_2ca63c9b1/`):
+  - PARTIAL: no-combat helps the individual arm (final/peak ratios
+    `0.52, 0.69, 0.99` vs A-1's `0.25, 0.90, 0.25`) but the shared arm
+    still collapses hard (`0.15, 0.14`); `1/5` seeds pass -> FAIL
+    against the pre-registered majority rule;
+  - conclusion: combat dynamics are a contributing factor, not the root
+    cause. Per the A-2 rule, proceed to the GAE/bootstrapping bug hunt.
+- Phase A-3 truncation-bootstrap pre-registration:
+  - root-cause suspect from the rollout code: time-limit truncation is
+    treated as a TRUE terminal. Arena episodes essentially always end
+    by `max_steps`, and GAE bootstraps zero there instead of `V(s_T)`.
+    The resulting value bias grows in proportion to `V` as the policy
+    improves -- a mechanism that specifically produces "peak then
+    collapse, worse the better the run was", consistent with crashes at
+    near-zero LR and with the shared arm (which rose latest) collapsing
+    hardest;
+  - harness changes at this commit:
+    - `--trunc_bootstrap`: the env returns pre-reset final observations
+      for time-limit episodes, and the trainer adds
+      `gamma * V(final obs)` to the last reward (standard
+      truncation-aware bootstrapping). Episode-return metrics and probe
+      labels remain computed from unpatched env rewards;
+    - `gate_quality_p90` added to results: a noise-robust peak estimate
+      (the max of a rolling mean is biased upward), giving a fairer
+      no-collapse ratio `final/p90`;
+  - arms: stable recipe + no-combat + trunc-bootstrap, same seeds
+    (individual `0,1,2`, shared `0,1`), 5M steps; A-2 runs are the
+    matched no-bootstrap controls;
+  - success criterion: `final >= 0.8 x p90(quality)` on a majority of
+    seeds, with peak quality not below A-2's;
+  - if A-3 passes: adopt recipe (anneal_lr + epochs 4 + no_combat +
+    trunc_bootstrap), run the full 2x5 gate experiment, evaluate the
+    differentiation gate, and decide Phase B vs Coworld migration on
+    contribution density;
+  - if A-3 fails: escalate to the structured `rl.bug_fix` adversarial
+    debugging pipeline on this recipe before any environment work.
 
 ## Candidate Commands
 

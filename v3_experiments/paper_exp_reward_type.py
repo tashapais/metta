@@ -267,6 +267,10 @@ class MettaGridVecEnv:
         all_rewards   = np.zeros((self.num_envs, self.num_agents), dtype=np.float32)
         all_dones     = np.zeros(self.num_envs, dtype=np.float32)
         all_ep_returns = []
+        # Pre-reset observations for episodes ending by TIME LIMIT, so the
+        # caller can bootstrap V(s_T) instead of treating truncation as a
+        # true terminal (zero future value).
+        truncated_final_obs: list[tuple[int, np.ndarray]] = []
 
         for i, sim in enumerate(self.sims):
             sim._c_sim.actions()[:] = actions[i].astype(np.int32)
@@ -286,13 +290,15 @@ class MettaGridVecEnv:
 
             terminals   = sim._c_sim.terminals()
             truncations = sim._c_sim.truncations()
-            done = bool(
-                np.any(terminals) or np.any(truncations) or
-                self.episode_steps[i] >= self.max_steps
-            )
+            terminated = bool(np.any(terminals))
+            truncated = bool(np.any(truncations) or self.episode_steps[i] >= self.max_steps)
+            done = terminated or truncated
             all_dones[i] = float(done)
 
             if done:
+                if truncated and not terminated:
+                    final_obs = sim._c_sim.observations().copy().reshape(self.num_agents, -1)
+                    truncated_final_obs.append((i, final_obs))
                 all_ep_returns.append((
                     float(self.episode_returns[i].sum()),
                     self.episode_returns[i].copy(),       # training returns (post-sharing)
@@ -300,7 +306,7 @@ class MettaGridVecEnv:
                 ))
                 self._reset_sim(i, seed_offset=global_step)
 
-        return self.get_obs(), all_rewards, all_dones, all_ep_returns
+        return self.get_obs(), all_rewards, all_dones, all_ep_returns, truncated_final_obs
 
     def close(self):
         for sim in self.sims:
@@ -404,6 +410,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if cfg.get("corrected_probe"): cond += "_correctedprobe"
     if cfg.get("probe_at_peak"):   cond += "_peak"
     if not cfg.get("combat", True): cond += "_nocombat"
+    if cfg.get("trunc_bootstrap"): cond += "_tb"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -430,6 +437,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                             separate_encoders=cfg.get("separate_encoders", False)).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg["lr"], eps=1e-5)
     anneal_lr = bool(cfg.get("anneal_lr", False))
+    trunc_bootstrap = bool(cfg.get("trunc_bootstrap", False))
 
     T          = cfg["num_steps"]
     E          = cfg["num_envs"]
@@ -497,9 +505,22 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                     obs_t, agent_ids=agent_ids_t)
 
             acts_np = acts.cpu().numpy().reshape(E, n_agents)
-            obs, rews, dones, ep_rets = env.step(
+            obs, rews, dones, ep_rets, trunc_obs = env.step(
                 acts_np, global_step=global_step, reward_type=reward_type
             )
+
+            if trunc_bootstrap and trunc_obs:
+                # Time-limit episodes are not true terminals: add the
+                # discounted value of the actual final state to the last
+                # reward, so GAE bootstraps V(s_T) instead of zero.
+                with torch.no_grad():
+                    for env_i, final_obs in trunc_obs:
+                        fo_t = torch.tensor(final_obs, dtype=torch.float32, device=device)
+                        fo_ids = torch.tensor(
+                            np.arange(n_agents), dtype=torch.long, device=device
+                        ) if policy.separate_encoders else None
+                        _, _, _, fo_vals, _, _ = policy.get_action_and_value(fo_t, agent_ids=fo_ids)
+                        rews[env_i] = rews[env_i] + cfg["gamma"] * fo_vals.cpu().numpy().reshape(n_agents)
 
             act_buf[step]   = acts_np
             rew_buf[step]   = rews
@@ -808,6 +829,12 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             "gate_peak_quality": round(best_quality, 4) if best_quality > float("-inf") else None,
             "gate_peak_quality_step": best_quality_step,
             "gate_final_quality": round(final_quality, 4),
+            # p90 of the rolling-quality series: a noise-robust peak estimate
+            # (max of a rolling mean is biased upward).
+            "gate_quality_p90": (
+                round(float(np.percentile([ep[3] for ep in corrected_probe_episodes], 90)), 4)
+                if corrected_probe_episodes else None
+            ),
             "gate_best_checkpoint": (
                 best_ckpt_path
                 if best_ckpt_path is not None and os.path.exists(best_ckpt_path)
@@ -889,6 +916,8 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "gate_peak_quality":  probe_results.get("gate_peak_quality"),
         "gate_peak_quality_step": probe_results.get("gate_peak_quality_step"),
         "gate_final_quality": probe_results.get("gate_final_quality"),
+        "gate_quality_p90":   probe_results.get("gate_quality_p90"),
+        "trunc_bootstrap":    trunc_bootstrap,
         "gate_best_checkpoint": probe_results.get("gate_best_checkpoint"),
         "seed":               seed,
         "num_agents":         n_agents,
@@ -948,6 +977,11 @@ def main():
                         help="Build the arena with combat disabled (attacks cost 100 lasers). "
                              "Diagnostic for whether late-training return collapse is "
                              "adversarial dynamics rather than optimizer instability")
+    parser.add_argument("--trunc_bootstrap",  action="store_true",
+                        help="Bootstrap V(s_T) at time-limit truncation instead of treating "
+                             "it as a true terminal (adds gamma*V(final obs) to the last "
+                             "reward). Arena episodes always end by time limit, so the "
+                             "zero-bootstrap bias grows as the policy improves")
     parser.add_argument("--update_epochs",    type=int, default=8,
                         help="PPO epochs per rollout (original recipe: 8; stability "
                              "pilot: 4 to halve sample reuse)")
@@ -975,6 +1009,7 @@ def main():
         update_epochs        = args.update_epochs,
         anneal_lr            = args.anneal_lr,
         combat               = not args.no_combat,
+        trunc_bootstrap      = args.trunc_bootstrap,
         lr                   = 3e-4,
         gamma                = 0.99,
         gae_lambda           = 0.95,
@@ -995,6 +1030,7 @@ def main():
     if args.corrected_probe:   cond += "_correctedprobe"
     if args.probe_at_peak:     cond += "_peak"
     if args.no_combat:         cond += "_nocombat"
+    if args.trunc_bootstrap:   cond += "_tb"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds
