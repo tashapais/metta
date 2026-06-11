@@ -5849,6 +5849,44 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     the no-collapse policy;
   - fail -> deeper bug hunt in the training code (coefficients, GAE,
     masking) before any environment work.
+- Phase A-1 result, commit `ea87a9c18` (5 Sky jobs `phaseA1-*`, all
+  SUCCEEDED ~10 min, results under
+  `/workspace/tribal_event_mask_runs/phaseA1_stability_ea87a9c18/`):
+  - FAIL against the pre-registered no-collapse criterion: final/peak
+    quality ratios were individual `0.25, 0.90, 0.25` (seeds 0-2) and
+    shared `0.43, 0.09` (seeds 0-1) -- `1/5` seeds pass;
+  - the fix is directionally useful but insufficient: peaks now occur
+    late (`4.1-4.9M` for 4 of 5 seeds, vs `~2-3M` under the original
+    recipe) and peak quality is slightly higher (`1.0-1.4`), but sharp
+    end-of-run crashes persist;
+  - key anomaly: seed 2 peaked at step `4.47M` and then crashed with the
+    annealed LR already near zero -- the policy can barely move at that
+    point, which argues against step-size/churn as the root cause.
+- Phase A-2 combat-ablation pre-registration (per the A-1 fail rule,
+  before any optimizer-level bug hunt):
+  - root-cause hypothesis from reading `make_arena`: the arena defaults
+    to `combat=True` (attack action with lasers/armor), agents are
+    rewarded only for their OWN hearts, and all 12 share one policy in
+    a free-for-all. Team-total return is then non-monotone BY DESIGN:
+    as the policy discovers combat (freezing/robbing rivals), total
+    hearts can fall while competence rises. This explains every
+    anomaly: healthy entropy, RISING action diversity, tiny value loss,
+    and crashes at near-zero LR;
+  - harness change: `--no_combat` builds the arena with
+    `combat=False` (attacks cost `100` lasers, effectively disabled);
+    run names/conditions gain a `_nocombat` tag; `combat` recorded in
+    result JSONs;
+  - arms: stable recipe + no-combat, same seeds as A-1 (individual
+    `0,1,2`, shared `0,1`), 5M steps, corrected probe + peak
+    diagnostics; A-1 runs are the combat controls;
+  - success criterion: same no-collapse rule (final >= `0.8 x` peak on
+    a majority of seeds);
+  - interpretation: if no-combat stabilizes, the "collapse" was
+    adversarial dynamics, not optimizer instability -- the recipe is
+    adequate, and the cooperative arena (which also removes theft noise
+    from ground-truth contributions) becomes the Phase B instrument,
+    with the differentiation gate evaluated on these runs. If no-combat
+    still collapses, proceed to the optimizer/GAE bug hunt.
 
 ## Candidate Commands
 

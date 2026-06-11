@@ -219,13 +219,14 @@ def supcon_rank_loss(
 
 class MettaGridVecEnv:
     def __init__(self, num_agents: int, num_envs: int, seed: int,
-                 max_steps: int = 1024):
+                 max_steps: int = 1024, combat: bool = True):
         self.num_envs   = num_envs
         self.num_agents = num_agents
         self.max_steps  = max_steps
+        self.combat     = combat
         self.sims = []
         for i in range(num_envs):
-            cfg = make_arena(num_agents=num_agents)
+            cfg = make_arena(num_agents=num_agents, combat=combat)
             sim = Simulation(cfg, seed=seed + i)
             self.sims.append(sim)
 
@@ -242,7 +243,7 @@ class MettaGridVecEnv:
 
     def _reset_sim(self, i: int, seed_offset: int = 0):
         self.sims[i].close()
-        cfg = make_arena(num_agents=self.num_agents)
+        cfg = make_arena(num_agents=self.num_agents, combat=self.combat)
         self.sims[i] = Simulation(cfg, seed=seed_offset + i)
         self.episode_steps[i]   = 0
         self.episode_returns[i] = 0.0
@@ -402,6 +403,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if use_sep_enc:   cond += "_sepenc"
     if cfg.get("corrected_probe"): cond += "_correctedprobe"
     if cfg.get("probe_at_peak"):   cond += "_peak"
+    if not cfg.get("combat", True): cond += "_nocombat"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -418,6 +420,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         num_envs=cfg["num_envs"],
         seed=seed * 100,
         max_steps=cfg["max_steps"],
+        combat=cfg.get("combat", True),
     )
     obs_dim, n_actions = env.obs_dim, env.n_actions
     print(f"[{run_name}] obs_dim={obs_dim}  n_actions={n_actions}")
@@ -875,6 +878,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "contrastive":        use_cl,
         "reward_cl":          use_reward_cl,
         "condition":          cond,
+        "combat":             cfg.get("combat", True),
         "probe_schema":       probe_results.get("probe_schema", "binary_return_top_bottom"),
         "probe_episodes_used": probe_results.get("probe_episodes_used"),
         "probe_episodes_skipped_ties": probe_results.get("probe_episodes_skipped_ties"),
@@ -940,6 +944,10 @@ def main():
     parser.add_argument("--anneal_lr",        action="store_true",
                         help="Linearly anneal the learning rate to zero over training "
                              "(stability fix for late-training return collapse)")
+    parser.add_argument("--no_combat",        action="store_true",
+                        help="Build the arena with combat disabled (attacks cost 100 lasers). "
+                             "Diagnostic for whether late-training return collapse is "
+                             "adversarial dynamics rather than optimizer instability")
     parser.add_argument("--update_epochs",    type=int, default=8,
                         help="PPO epochs per rollout (original recipe: 8; stability "
                              "pilot: 4 to halve sample reuse)")
@@ -966,6 +974,7 @@ def main():
         minibatch_size       = 512,
         update_epochs        = args.update_epochs,
         anneal_lr            = args.anneal_lr,
+        combat               = not args.no_combat,
         lr                   = 3e-4,
         gamma                = 0.99,
         gae_lambda           = 0.95,
@@ -985,6 +994,7 @@ def main():
     if args.separate_encoders: cond += "_sepenc"
     if args.corrected_probe:   cond += "_correctedprobe"
     if args.probe_at_peak:     cond += "_peak"
+    if args.no_combat:         cond += "_nocombat"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds
