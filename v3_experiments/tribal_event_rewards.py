@@ -32,6 +32,7 @@ EVENT_V20_HOME_STAGED_HANDOFF_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V21_HOME_HANDOFF_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
+EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_NAMES = EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES
 
 NAV_AGENT_X = 0
 NAV_AGENT_Y = 1
@@ -623,6 +624,12 @@ EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_CAPS = {
     "crafter_battery_move_toward_empty_depositor": 160,
     "crafter_battery_arrive_adjacent_empty_depositor": 160,
 }
+
+EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_COEFFICIENTS = EVENT_V17_DEPOSITOR_STAGING_ROLE_COEFFICIENTS
+
+EVENT_V24_V17_HANDOFF_POTENTIAL_ACTION_COEFFICIENTS = EVENT_V17_DEPOSITOR_STAGING_ACTION_COEFFICIENTS
+
+EVENT_V24_V17_HANDOFF_POTENTIAL_ACTION_CAPS = EVENT_V17_DEPOSITOR_STAGING_ACTION_CAPS
 
 EVENT_V8_CLEAN_CHAIN_COMPASS_OFFCHAIN_PENALTIES = {
     "resource_water": -0.10,
@@ -1401,6 +1408,72 @@ def event_v23_v17_depositor_rendezvous_bonuses(
         num_agents=num_agents,
     )
     _add_crafter_empty_depositor_rendezvous_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+    )
+    return bonuses
+
+
+def event_v24_v17_handoff_potential_bonuses(
+    event_stats_delta: np.ndarray | None,
+    event_stats_total: np.ndarray | None = None,
+    *,
+    navigation_before: np.ndarray | None = None,
+    navigation_after: np.ndarray | None = None,
+    actions: np.ndarray | None = None,
+    action_mask: np.ndarray | None = None,
+    gamma: float = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA,
+    num_agents: int = CANONICAL_NUM_AGENTS,
+) -> np.ndarray:
+    """Return v17 rewards with the battery-crafter potential retargeted.
+
+    Identical to ``event_v17_depositor_staging_bonuses`` except that the
+    battery-carrying crafter's potential stage measures distance to the
+    nearest empty depositor instead of the home assembler, falling back to
+    the home assembler when no empty depositor exists. No reward terms are
+    added or removed; the existing shaping signal is redirected toward the
+    actual handoff partner.
+    """
+
+    stats = _validate_event_stats_delta(event_stats_delta, num_agents)
+    bonuses = np.zeros(num_agents, dtype=np.float64)
+    if stats is not None:
+        _add_role_coefficients(
+            bonuses,
+            stats,
+            EVENT_V16_HANDOFF_RELIABILITY_ROLE_NAMES,
+            EVENT_V16_HANDOFF_RELIABILITY_ROLE_COEFFICIENTS,
+        )
+    _add_role_gated_handoff_potential_bonuses(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        gamma=gamma,
+        stage_offsets=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_STAGE_OFFSETS,
+        closeness_scales=EVENT_V12_ROLE_GATED_DEPOSITOR_RELIABILITY_CLOSENESS_SCALES,
+    )
+    _add_depositor_home_use_breadcrumb(
+        bonuses,
+        navigation_before,
+        actions,
+        action_mask,
+        coefficient=EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS["depositor_use_home_assembler"],
+    )
+    _add_depositor_final_mile_breadcrumbs(
+        bonuses,
+        navigation_before,
+        navigation_after,
+        actions,
+        action_mask,
+        event_stats_total,
+        action_coefficients=EVENT_V16_HANDOFF_RELIABILITY_ACTION_COEFFICIENTS,
+        action_caps=EVENT_V16_HANDOFF_RELIABILITY_ACTION_CAPS,
+    )
+    _add_depositor_empty_staging_breadcrumbs(
         bonuses,
         navigation_before,
         navigation_after,
@@ -2266,6 +2339,59 @@ def event_v23_v17_depositor_rendezvous_details() -> dict[str, Any]:
     return details
 
 
+def event_v24_v17_handoff_potential_details() -> dict[str, Any]:
+    """Return a JSON-serializable description of the v24 handoff-potential diagnostic."""
+
+    details = event_v17_depositor_staging_details()
+    details.update(
+        {
+            "name": "event_v24_v17_handoff_potential",
+            "summary": (
+                "V17 depositor staging with exactly one change: the "
+                "battery-carrying crafter's potential stage measures Manhattan "
+                "distance to the nearest empty depositor instead of the home "
+                "assembler, falling back to the home assembler when no empty "
+                "depositor exists. No reward terms are added or removed and "
+                "no coefficients change; the existing shaping signal is "
+                "redirected toward the actual handoff partner."
+            ),
+            "role_names": list(EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_NAMES),
+            "role_coefficients": {
+                role: dict(coeffs)
+                for role, coeffs in EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_COEFFICIENTS.items()
+            },
+            "final_mile_action_caps": dict(EVENT_V24_V17_HANDOFF_POTENTIAL_ACTION_CAPS),
+            "v24_changes": {
+                "changes_rewards": True,
+                "adds_reward_terms": False,
+                "retargets_potential_stage": (
+                    "crafter_battery_to_home now targets the nearest empty "
+                    "depositor (manhattan), falling back to the home assembler"
+                ),
+                "target_aware_handoff_mask": True,
+                "reward_penalties_added": False,
+                "scripted_policy_added": False,
+                "changes_action_permissions": False,
+                "depositor_chases_crafter": False,
+                "purpose": (
+                    "Address Stage-32 evidence: crafters craft batteries and "
+                    "hold them near home for hundreds of steps without becoming "
+                    "adjacent to an empty depositor, and every prior fix that "
+                    "ADDED rendezvous breadcrumbs (v18/v21/v23) degraded "
+                    "upstream behavior. v24 redirects v17's existing "
+                    "battery-stage potential instead of adding density."
+                ),
+            },
+        }
+    )
+    details["potential_shaping"] = dict(details.get("potential_shaping", {}))
+    details["potential_shaping"]["crafter_battery_target"] = (
+        "nearest_empty_depositor_manhattan_fallback_home_assembler"
+    )
+    details["action_affordance_curriculum"]["target_aware_handoffs"] = True
+    return details
+
+
 def _validate_event_stats_delta(event_stats_delta: np.ndarray | None, num_agents: int) -> np.ndarray | None:
     if event_stats_delta is None:
         return None
@@ -2502,6 +2628,73 @@ def _role_gated_chain_stage_and_distance(
             NAV_DIST_HOME_ASSEMBLER,
         )
     return "depositor_empty_to_home", _valid_navigation_distance(navigation_row, NAV_DIST_HOME_ASSEMBLER)
+
+
+def _add_role_gated_handoff_potential_bonuses(
+    bonuses: np.ndarray,
+    navigation_before: np.ndarray | None,
+    navigation_after: np.ndarray | None,
+    *,
+    gamma: float,
+    stage_offsets: dict[str, float],
+    closeness_scales: dict[str, float],
+) -> None:
+    before = _validate_navigation_snapshot(navigation_before, bonuses.shape[0])
+    after = _validate_navigation_snapshot(navigation_after, bonuses.shape[0])
+    if before is None or after is None:
+        return
+    bonuses += gamma * _role_gated_handoff_potential_values(
+        after,
+        stage_offsets=stage_offsets,
+        closeness_scales=closeness_scales,
+    ) - _role_gated_handoff_potential_values(
+        before,
+        stage_offsets=stage_offsets,
+        closeness_scales=closeness_scales,
+    )
+
+
+def _role_gated_handoff_potential_values(
+    navigation: np.ndarray,
+    *,
+    stage_offsets: dict[str, float],
+    closeness_scales: dict[str, float],
+) -> np.ndarray:
+    """Role-gated chain potential with the battery-crafter stage retargeted.
+
+    A role-1 crafter holding a battery measures Manhattan distance to the
+    nearest empty role-2 depositor, reusing the ``crafter_battery_to_home``
+    offset and closeness scale so the shaping density matches v17. When no
+    empty depositor exists, the stage falls back to the v17 home-assembler
+    distance.
+    """
+
+    potentials = np.zeros(navigation.shape[0], dtype=np.float64)
+    labels = role_labels(navigation.shape[0], len(EVENT_V11_ROLE_GATED_CHAIN_ROLE_NAMES))
+    empty_depositors = [
+        agent_id
+        for agent_id, row in enumerate(navigation)
+        if int(labels[agent_id]) == 2 and int(row[NAV_INVENTORY_BATTERY]) <= 0
+    ]
+    for agent_id, row in enumerate(navigation):
+        role_id = int(labels[agent_id])
+        stage_name: str | None
+        distance: float | None
+        if role_id == 1 and int(row[NAV_INVENTORY_BATTERY]) > 0 and empty_depositors:
+            target = _nearest_peer_xy(navigation, agent_id, empty_depositors)
+            stage_name = "crafter_battery_to_home"
+            distance = None if target is None else float(_manhattan_distance_to_xy(row, target))
+        else:
+            stage_name, distance = _role_gated_chain_stage_and_distance(row, role_id)
+        if stage_name is None or distance is None:
+            continue
+        clipped_distance = max(0.0, min(EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE, distance))
+        closeness = EVENT_V9_POTENTIAL_CHAIN_MAX_DISTANCE - clipped_distance
+        potentials[agent_id] = (
+            stage_offsets[stage_name]
+            + closeness_scales[stage_name] * closeness
+        )
+    return potentials
 
 
 def _add_depositor_home_use_breadcrumb(

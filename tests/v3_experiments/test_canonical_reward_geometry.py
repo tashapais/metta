@@ -69,6 +69,7 @@ from v3_experiments.tribal_event_rewards import (
     EVENT_V22_V17_TARGETED_PUT_ROLE_NAMES,
     EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ACTION_COEFFICIENTS,
     EVENT_V23_V17_DEPOSITOR_RENDEZVOUS_ROLE_NAMES,
+    EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_NAMES,
     MOVE_VERB,
     NAV_AGENT_X,
     NAV_AGENT_Y,
@@ -123,6 +124,8 @@ from v3_experiments.tribal_event_rewards import (
     event_v22_v17_targeted_put_details,
     event_v23_v17_depositor_rendezvous_bonuses,
     event_v23_v17_depositor_rendezvous_details,
+    event_v24_v17_handoff_potential_bonuses,
+    event_v24_v17_handoff_potential_details,
 )
 from v3_experiments.validate_canonical_reward_geometry_results import validate_record
 
@@ -1666,6 +1669,111 @@ def test_event_v23_does_not_reward_empty_depositor_chasing_crafter():
     )
 
     np.testing.assert_allclose(v23, v22)
+
+
+def test_event_v24_v17_handoff_potential_details_are_serializable():
+    details = event_v24_v17_handoff_potential_details()
+
+    assert details["name"] == "event_v24_v17_handoff_potential"
+    assert details["role_names"] == list(EVENT_V24_V17_HANDOFF_POTENTIAL_ROLE_NAMES)
+    assert details["v24_changes"]["adds_reward_terms"] is False
+    assert details["v24_changes"]["target_aware_handoff_mask"] is True
+    assert details["v24_changes"]["reward_penalties_added"] is False
+    assert details["v24_changes"]["scripted_policy_added"] is False
+    assert details["v24_changes"]["changes_action_permissions"] is False
+    assert details["v24_changes"]["depositor_chases_crafter"] is False
+    assert details["potential_shaping"]["crafter_battery_target"] == (
+        "nearest_empty_depositor_manhattan_fallback_home_assembler"
+    )
+
+
+def test_event_v24_retargets_battery_crafter_potential_toward_empty_depositor():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    # Crafter (agent 1) holds a battery and steps toward the empty depositor
+    # (agent 2) while its home-assembler distance INCREASES, so v17's potential
+    # falls while v24's rises.
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [3, 5], [6, 5]]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [4, 5], [6, 5]]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 2
+    before[1, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[1, NAV_DIST_HOME_ASSEMBLER] = 3
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    noop = np.zeros(3, dtype=np.int64)
+
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=noop,
+        action_mask=None,
+        num_agents=3,
+    )
+    v24 = event_v24_v17_handoff_potential_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=noop,
+        action_mask=None,
+        num_agents=3,
+    )
+
+    assert v24[0] == pytest.approx(v17[0])
+    assert v24[2] == pytest.approx(v17[2])
+    assert v24[1] > v17[1]
+    # v17 crafter stage: home distance 2 -> 3. v24 crafter stage: manhattan
+    # distance to the empty depositor 3 -> 2. Same offset and scale, so the
+    # difference is gamma * scale * (closeness_v24_after - closeness_v17_after)
+    # - scale * (closeness_v24_before - closeness_v17_before).
+    scale = 0.08
+    gamma = EVENT_V9_POTENTIAL_CHAIN_DEFAULT_GAMMA
+    expected_difference = gamma * scale * ((80 - 2) - (80 - 3)) - scale * ((80 - 3) - (80 - 2))
+    assert v24[1] - v17[1] == pytest.approx(expected_difference)
+
+
+def test_event_v24_matches_v17_when_no_empty_depositor():
+    stats = np.zeros((3, len(SIMULATOR_STAT_COLUMNS)), dtype=np.float64)
+    before = np.zeros((3, len(NAVIGATION_SNAPSHOT_COLUMNS)), dtype=np.float64)
+    after = before.copy()
+    before[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [3, 5], [6, 5]]
+    after[:, [NAV_AGENT_X, NAV_AGENT_Y]] = [[0, 0], [4, 5], [6, 5]]
+    before[:, NAV_DIST_HOME_ASSEMBLER] = 4
+    after[:, NAV_DIST_HOME_ASSEMBLER] = 4
+    before[1, NAV_DIST_HOME_ASSEMBLER] = 2
+    after[1, NAV_DIST_HOME_ASSEMBLER] = 3
+    before[1, NAV_INVENTORY_BATTERY] = 1
+    after[1, NAV_INVENTORY_BATTERY] = 1
+    # The only depositor also holds a battery, so no empty depositor exists
+    # and the v24 crafter stage falls back to the v17 home-assembler target.
+    before[2, NAV_INVENTORY_BATTERY] = 1
+    after[2, NAV_INVENTORY_BATTERY] = 1
+    noop = np.zeros(3, dtype=np.int64)
+
+    v17 = event_v17_depositor_staging_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=noop,
+        action_mask=None,
+        num_agents=3,
+    )
+    v24 = event_v24_v17_handoff_potential_bonuses(
+        stats,
+        stats,
+        navigation_before=before,
+        navigation_after=after,
+        actions=noop,
+        action_mask=None,
+        num_agents=3,
+    )
+
+    np.testing.assert_allclose(v24, v17)
 
 
 def test_effective_rank_uses_entropy_of_singular_values():

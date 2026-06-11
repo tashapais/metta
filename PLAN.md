@@ -5438,6 +5438,67 @@ Stage-19 specialization-forcing follow-up:
       paper's behavior-first negative narrative and belongs in
       `main_richard.tex` only as a clearly-labeled diagnostic/limitation
       finding, not as a behavior-validated positive stream.
+- Stage-33 v24 handoff-potential iteration:
+  - new reward design: `event_v24_v17_handoff_potential`;
+  - v24 keeps v17 exactly: same role coefficients, breadcrumbs, caps,
+    target-aware handoff mask, role-gated action mask, chain-compass
+    observation, and positive-only rule. No penalties, no scripted actions,
+    no demonstrations, no action-permission changes, and no new reward
+    terms;
+  - the single change: a battery-carrying role-1 crafter's potential stage
+    measures Manhattan distance to the nearest empty role-2 depositor
+    instead of the home assembler, reusing the existing
+    `crafter_battery_to_home` stage offset (`8.0`) and closeness scale
+    (`0.08`) so the shaping density is unchanged. When no empty depositor
+    exists, the stage falls back to the v17 home-assembler distance;
+  - rationale:
+    - Stage-32 replay evidence shows the dominant failure is handoff:
+      crafters craft batteries early and hold them near home for hundreds
+      of steps without becoming adjacent to an empty depositor;
+    - every prior rendezvous fix (v18, v21, v23) ADDED dense movement
+      breadcrumbs on top of v17 and each degraded upstream behavior;
+    - v24 instead REDIRECTS v17's existing battery-stage potential toward
+      the actual handoff partner, adding zero new reward density. Empty
+      depositors keep the v17 home-staging incentive, so the retargeted
+      pull still terminates near home but in adjacency with a real
+      recipient rather than a region;
+  - local validation before sandbox launch:
+    - full `test_canonical_reward_geometry.py` module passed (`80` tests,
+      including `3` new v24 tests covering details serialization, potential
+      retargeting vs v17, and exact-v17 fallback when no empty depositor
+      exists);
+    - ruff passed for the four edited modules;
+    - mock v24 trainer smoke passed at `/tmp/v24_mock_smoke_5JWxsa` with
+      `chain_compass=true`, `chain_affordance=true`, `target_aware=true`,
+      and the retargeted potential recorded in `reward_design_details`;
+    - real Tribal v24 trainer smoke passed at `/tmp/v24_tribal_smoke_76X4Df`
+      (56-action space, 12 agents);
+    - v24 checkpoint behavior-rollout smoke passed at
+      `/tmp/v24_behavior_smoke_Gy4hzO` with checkpoint chain-affordance,
+      role-gated, and target-aware masks all inferred `true`.
+  - launch plan after validation and push:
+    - budget: `1,000,008` agent steps ONLY, per the Stage-32 finding that
+      longer budgets degrade final-mile behavior;
+    - primary arm: v24, `shared_frac=0.0`, seeds `0,1,2,3` split across
+      `relh-sandbox-1/2`;
+    - contemporaneous control: v17 (`event_v17_depositor_staging`) at the
+      same SHA, same seeds, same eval protocol, launched in parallel.
+      Stage-25's v17 numbers come from commit `ea85f4846` with different
+      eval seeds, so Stage-33 carries its own paired control to remove
+      cross-stage drift;
+    - deterministic behavior gates with `5` episodes x `500` steps per
+      seed, eval seed `33000+seed`, saved replays;
+    - promotion criteria:
+      - v24 must beat the contemporaneous v17 control on
+        battery-to-depositor handoffs and heart deposits;
+      - v24 upstream behavior (ore pickups, ore-to-crafter, battery crafts)
+        must stay within ~20% of the v17 control;
+      - paper consideration additionally requires `>=5` handoffs and `>=4`
+        hearts over the 20 gate episodes (the v17-family historical bar);
+    - classify failures with the Stage-32 buckets (upstream acquisition,
+      handoff, final-use, policy collapse) from replay evidence before any
+      v25 design;
+    - do not update `main_richard.tex` unless behavior gates pass.
 
 ## Candidate Commands
 
@@ -5648,6 +5709,10 @@ uv run python v3_experiments/summarize_tribal_behavior_outputs.py \
       (Gates failed in both arms; no bundle created per the gate-fail rule.)
 - [x] Update `main_richard.tex` with the bounded negative finding from the
       v11-v23 role-targeted shaping campaign and the Stage-32 budget control.
+- [x] Implement and smoke v24 handoff-potential retargeting.
+- [ ] Launch Stage-33 short v24 diagnostics with a contemporaneous v17 control.
+- [ ] Inspect Stage-33 handoffs, deposits, upstream recovery, and stranded batteries.
+- [ ] Classify Stage-33 failures from replay evidence before any v25 design.
 - [ ] Rerun old-style representation plots only for behavior-valid v11/v12 reward-mixing streams.
 - [ ] Reconstruct and smoke-test the SMACv2 `10gen_terran` boundary runner.
 - [ ] Rerun SMACv2 3 seeds per reward mode and aggregate the old table schema.

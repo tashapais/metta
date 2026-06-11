@@ -483,6 +483,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
         "event_v21_home_handoff_rendezvous",
         "event_v22_v17_targeted_put",
         "event_v23_v17_depositor_rendezvous",
+        "event_v24_v17_handoff_potential",
     )
     target_aware_handoff_mask = bool(config.get("target_aware_handoff_mask", False)) or (
         config.get("reward_design")
@@ -497,6 +498,7 @@ def _load_checkpoint_policy(args: argparse.Namespace, env: Any) -> LoadedCheckpo
             "event_v21_home_handoff_rendezvous",
             "event_v22_v17_targeted_put",
             "event_v23_v17_depositor_rendezvous",
+            "event_v24_v17_handoff_potential",
         )
         and chain_affordance_action_mask
     )
@@ -550,6 +552,7 @@ def _checkpoint_uses_chain_affordance_action_mask(
             "event_v21_home_handoff_rendezvous",
             "event_v22_v17_targeted_put",
             "event_v23_v17_depositor_rendezvous",
+            "event_v24_v17_handoff_potential",
         )
     )
 
