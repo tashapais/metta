@@ -5946,6 +5946,55 @@ Phase A-1 stability pilot (pre-registered 2026-06-11):
     advantage normalization, the separate SupCon optimizer step path,
     unclipped value loss, mid-rollout reset/GAE interactions, and
     map-regeneration nonstationarity (`seed_offset=global_step`).
+- Bug-hunt mapping results (rl.bug_fix pipeline, artifacts under
+  `auto_rl/bug_fix/`): four high-confidence findings, all harness-side:
+  - MAP SEEDING (C5): `MapGen.seed=None` plus direct `Simulation`
+    construction means run seeds NEVER controlled map generation --
+    every episode used a fresh OS-entropy map. This explains the
+    seed-flipping across A-1/2/3 variants and breaks reproducibility of
+    every arena run to date. Verified empirically: pre-fix, identical
+    seeds gave different initial observations; post-fix, identical.
+    Checked the newer `~/Code/metta` repo: behavior is identical there
+    (config-gated, not a fixed bug), so the fix belongs in our wrapper;
+  - ADV-NORM-ON-NOISE (C1): rewards are ~1 event per 1e4 samples; many
+    512-sample minibatches contain zero reward events, and per-minibatch
+    normalization rescales them to unit variance -- value noise becomes
+    full-strength policy gradients, applied coherently 96 times per
+    rollout (8 epochs x 12 minibatches) with no KL guard;
+  - TRUNC-BOOTSTRAP SHARED LEAK (C4): the A-3 patch added PER-AGENT
+    `gamma*V` to rewards already team-mean-broadcast, injecting
+    differentiated training signal into the shared condition (likely why
+    A-3 helped shared but destabilized individual);
+  - INFONCE GRADIENT-DEAD (C7): the `--contrastive` InfoNCE loss was
+    computed on detached numpy-buffer embeddings -- constant w.r.t.
+    parameters, a silent no-op. Off in the A-runs, but this invalidates
+    historical "contrastive" conclusions drawn from this script (the
+    CLAUDE.md Exp-5 InfoNCE claims need re-examination).
+  - Decision on the newer repo: `~/Code/metta` main has a DIFFERENT
+    arena (single instance with all agents, changed config API), so
+    migrating mid-hunt would confound the ablation chain. Fix in the
+    tasha fork now; revisit migration in Phase C with
+    coworld-tribal-village.
+- Phase A-4 full-fix pre-registration:
+  - harness changes (all flag-gated): `--seed_maps` (deterministic
+    per-(run, env, episode) map seeds), `--batch_adv_norm` (normalize
+    advantages once over the full 6144-sample batch), corrected
+    `--trunc_bootstrap` (team-mean bootstrap in the shared condition),
+    gradient-attached InfoNCE (re-encodes a 16-timestep observation
+    subsample with grad when `--contrastive`; off in A-4);
+  - validation: compile; map-seed reproducibility test (same seed ->
+    identical initial obs, different seeds -> different); full-flag CPU
+    smoke including the contrastive path;
+  - arms: `--anneal_lr --update_epochs 4 --no_combat --trunc_bootstrap
+    --seed_maps --batch_adv_norm` with corrected probe + peak
+    diagnostics, individual seeds `0,1,2`, shared seeds `0,1`, 5M steps;
+  - success criterion unchanged: `final >= 0.8 x p90(quality)` on a
+    majority of seeds. With seeded maps, seed-to-seed variance should
+    also drop;
+  - if A-4 passes: adopt the recipe, run the full 2x5 gate experiment
+    and the differentiation gate; if it fails: continue the bug-hunt
+    debate cycles with the verifier/critic on the remaining suspects
+    (value-loss clipping, actor-critic interference).
 
 ## Candidate Commands
 

@@ -219,14 +219,24 @@ def supcon_rank_loss(
 
 class MettaGridVecEnv:
     def __init__(self, num_agents: int, num_envs: int, seed: int,
-                 max_steps: int = 1024, combat: bool = True):
+                 max_steps: int = 1024, combat: bool = True,
+                 seed_maps: bool = False):
         self.num_envs   = num_envs
         self.num_agents = num_agents
         self.max_steps  = max_steps
         self.combat     = combat
+        # MapGen.seed defaults to None, which means OS-entropy maps: the run
+        # seed and engine seed never reach map generation. With seed_maps we
+        # derive a deterministic, per-(run, env, episode) map seed so runs are
+        # reproducible while maps still vary across episodes.
+        self.seed_maps  = seed_maps
+        self.base_seed  = seed
+        self._episode_index = np.zeros(num_envs, dtype=np.int64)
         self.sims = []
         for i in range(num_envs):
             cfg = make_arena(num_agents=num_agents, combat=combat)
+            if seed_maps:
+                cfg.game.map_builder.seed = self._map_seed(i)
             sim = Simulation(cfg, seed=seed + i)
             self.sims.append(sim)
 
@@ -241,10 +251,19 @@ class MettaGridVecEnv:
         # conditions can be labeled with identical semantics.
         self.episode_true_returns = np.zeros((num_envs, num_agents), dtype=np.float32)
 
+    def _map_seed(self, i: int) -> int:
+        return int(self.base_seed * 1_000_003 + i * 7_919 + self._episode_index[i])
+
     def _reset_sim(self, i: int, seed_offset: int = 0):
         self.sims[i].close()
+        self._episode_index[i] += 1
         cfg = make_arena(num_agents=self.num_agents, combat=self.combat)
-        self.sims[i] = Simulation(cfg, seed=seed_offset + i)
+        if self.seed_maps:
+            cfg.game.map_builder.seed = self._map_seed(i)
+            engine_seed = self._map_seed(i)
+        else:
+            engine_seed = seed_offset + i
+        self.sims[i] = Simulation(cfg, seed=engine_seed)
         self.episode_steps[i]   = 0
         self.episode_returns[i] = 0.0
         self.episode_true_returns[i] = 0.0
@@ -411,6 +430,8 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     if cfg.get("probe_at_peak"):   cond += "_peak"
     if not cfg.get("combat", True): cond += "_nocombat"
     if cfg.get("trunc_bootstrap"): cond += "_tb"
+    if cfg.get("seed_maps"):       cond += "_seedmaps"
+    if cfg.get("batch_adv_norm"):  cond += "_ban"
     run_name = f"paper_reward_{cond}_{n_agents}agents_seed{seed}"
 
     wandb.init(
@@ -428,6 +449,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         seed=seed * 100,
         max_steps=cfg["max_steps"],
         combat=cfg.get("combat", True),
+        seed_maps=cfg.get("seed_maps", False),
     )
     obs_dim, n_actions = env.obs_dim, env.n_actions
     print(f"[{run_name}] obs_dim={obs_dim}  n_actions={n_actions}")
@@ -438,6 +460,7 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg["lr"], eps=1e-5)
     anneal_lr = bool(cfg.get("anneal_lr", False))
     trunc_bootstrap = bool(cfg.get("trunc_bootstrap", False))
+    batch_adv_norm = bool(cfg.get("batch_adv_norm", False))
 
     T          = cfg["num_steps"]
     E          = cfg["num_envs"]
@@ -520,7 +543,12 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                             np.arange(n_agents), dtype=torch.long, device=device
                         ) if policy.separate_encoders else None
                         _, _, _, fo_vals, _, _ = policy.get_action_and_value(fo_t, agent_ids=fo_ids)
-                        rews[env_i] = rews[env_i] + cfg["gamma"] * fo_vals.cpu().numpy().reshape(n_agents)
+                        fo_v = fo_vals.cpu().numpy().reshape(n_agents)
+                        if reward_type == "shared":
+                            # Preserve the shared-condition invariant: rewards
+                            # are team-uniform, so the bootstrap must be too.
+                            fo_v = np.full_like(fo_v, fo_v.mean())
+                        rews[env_i] = rews[env_i] + cfg["gamma"] * fo_v
 
             act_buf[step]   = acts_np
             rew_buf[step]   = rews
@@ -617,6 +645,13 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
             frac = max(0.0, 1.0 - global_step / total_steps)
             for pg_group in optimizer.param_groups:
                 pg_group["lr"] = cfg["lr"] * frac
+        if batch_adv_norm:
+            # Normalize once over the full rollout batch. Per-minibatch
+            # normalization rescales reward-free 512-sample minibatches
+            # (common at this reward sparsity) from near-zero variance to
+            # unit variance, turning value noise into full-strength,
+            # coherently reused policy gradients.
+            flat_adv = (flat_adv - flat_adv.mean()) / (flat_adv.std() + 1e-8)
         idx = np.arange(n_total)
         total_pg, total_vl, total_ent, total_cl, total_rcl = 0.0, 0.0, 0.0, 0.0, 0.0
         n_updates = 0
@@ -631,7 +666,8 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
                 mb_adv  = torch.tensor(flat_adv[mb],  dtype=torch.float32, device=device)
                 mb_ret  = torch.tensor(flat_ret[mb],  dtype=torch.float32, device=device)
 
-                mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+                if not batch_adv_norm:
+                    mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
                 mb_agent_ids = torch.tensor(flat_agent_ids[mb], dtype=torch.long, device=device) \
                     if policy.separate_encoders else None
@@ -647,9 +683,22 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
 
                 cl_val = torch.tensor(0.0, device=device)
                 if use_cl:
-                    emb_t  = torch.tensor(emb_buf, dtype=torch.float32, device=device)
+                    # Re-encode a subsample of stored observations WITH
+                    # gradients. The previous implementation passed detached
+                    # rollout embeddings (numpy buffer), which made this loss
+                    # constant w.r.t. parameters -- a silent no-op.
+                    t_sub = np.random.choice(T, size=min(16, T), replace=False)
+                    sub_obs_t = torch.tensor(
+                        obs_buf[t_sub].reshape(-1, obs_dim), dtype=torch.float32, device=device
+                    )
+                    sub_ids_t = torch.tensor(
+                        np.tile(np.arange(n_agents), len(t_sub) * E),
+                        dtype=torch.long, device=device,
+                    ) if policy.separate_encoders else None
+                    h_sub = policy.encode(sub_obs_t, sub_ids_t)
+                    emb_sub = policy.emb_head(h_sub).view(len(t_sub), E, n_agents, -1)
                     cl_val = inter_agent_infonce_loss(
-                        emb_t,
+                        emb_sub,
                         temperature=cfg["temperature"],
                         gamma_c=cfg["gamma_c"],
                         n_samples=64,
@@ -918,6 +967,8 @@ def train_one_seed(cfg: dict, seed: int) -> dict:
         "gate_final_quality": probe_results.get("gate_final_quality"),
         "gate_quality_p90":   probe_results.get("gate_quality_p90"),
         "trunc_bootstrap":    trunc_bootstrap,
+        "seed_maps":          bool(cfg.get("seed_maps", False)),
+        "batch_adv_norm":     batch_adv_norm,
         "gate_best_checkpoint": probe_results.get("gate_best_checkpoint"),
         "seed":               seed,
         "num_agents":         n_agents,
@@ -982,6 +1033,14 @@ def main():
                              "it as a true terminal (adds gamma*V(final obs) to the last "
                              "reward). Arena episodes always end by time limit, so the "
                              "zero-bootstrap bias grows as the policy improves")
+    parser.add_argument("--seed_maps",        action="store_true",
+                        help="Deterministically seed map generation per (run, env, episode). "
+                             "Without this, MapGen.seed is None and every episode map comes "
+                             "from OS entropy: run seeds never control the environment")
+    parser.add_argument("--batch_adv_norm",   action="store_true",
+                        help="Normalize advantages once over the full rollout batch instead "
+                             "of per-minibatch (prevents unit-variance rescaling of "
+                             "reward-free minibatches)")
     parser.add_argument("--update_epochs",    type=int, default=8,
                         help="PPO epochs per rollout (original recipe: 8; stability "
                              "pilot: 4 to halve sample reuse)")
@@ -1010,6 +1069,8 @@ def main():
         anneal_lr            = args.anneal_lr,
         combat               = not args.no_combat,
         trunc_bootstrap      = args.trunc_bootstrap,
+        seed_maps            = args.seed_maps,
+        batch_adv_norm       = args.batch_adv_norm,
         lr                   = 3e-4,
         gamma                = 0.99,
         gae_lambda           = 0.95,
@@ -1031,6 +1092,8 @@ def main():
     if args.probe_at_peak:     cond += "_peak"
     if args.no_combat:         cond += "_nocombat"
     if args.trunc_bootstrap:   cond += "_tb"
+    if args.seed_maps:         cond += "_seedmaps"
+    if args.batch_adv_norm:    cond += "_ban"
     all_results = []
 
     seed_end = args.seed_start + args.num_seeds
